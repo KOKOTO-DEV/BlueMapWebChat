@@ -1,0 +1,95 @@
+package dev.kokoto.bluemapwebchat;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+public class ChatMessage {
+    public String id;
+    public long time;
+    public String source;
+    public String sender;
+    public String realSender;
+    public String playerUuid;
+    public String role;
+    public String message;
+    public String i18nKey;
+    public String i18nArgs;
+    public boolean hidden;
+
+    public ChatMessage(long time, String source, String sender, String role, String message) {
+        this.id = SecurityUtil.randomToken(8);
+        this.time = time;
+        this.source = source;
+        this.sender = sender;
+        this.role = role;
+        this.message = message;
+    }
+
+    public ChatMessage withRealSender(String realSender, String playerUuid) {
+        this.realSender = realSender == null ? "" : realSender;
+        this.playerUuid = playerUuid == null ? "" : playerUuid;
+        return this;
+    }
+
+    public ChatMessage withI18n(String key, String argsJson) {
+        this.i18nKey = key == null ? "" : key;
+        this.i18nArgs = argsJson == null ? "" : argsJson;
+        return this;
+    }
+
+    public String toJson() {
+        Map<String, Object> m = baseMap();
+        m.put("message", hidden ? "[deleted]" : message);
+        return JsonUtil.obj(m);
+    }
+
+    public String toPersistJson() {
+        Map<String, Object> m = baseMap();
+        m.put("message", message);
+        return JsonUtil.obj(m);
+    }
+
+    private Map<String, Object> baseMap() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", id);
+        m.put("time", time);
+        m.put("source", source);
+        m.put("sender", sender);
+        if (realSender != null && !realSender.isBlank() && !realSender.equals(sender)) m.put("realSender", realSender);
+        if (playerUuid != null && !playerUuid.isBlank()) m.put("playerUuid", playerUuid);
+        m.put("role", role);
+        m.put("hidden", hidden);
+        if (i18nKey != null && !i18nKey.isBlank()) m.put("i18nKey", i18nKey);
+        if (i18nArgs != null && !i18nArgs.isBlank()) m.put("i18nArgs", i18nArgs);
+        return m;
+    }
+
+    public static ChatMessage fromMap(Map<String, String> m) {
+        long time = parseLong(m.get("time"), System.currentTimeMillis());
+        String source = value(m.get("source"), "web");
+        String sender = value(m.get("sender"), "Unknown");
+        String role = value(m.get("role"), "USER");
+        String message = value(m.get("message"), "");
+        ChatMessage msg = new ChatMessage(time, source, sender, role, message);
+        msg.realSender = value(m.get("realSender"), "");
+        msg.playerUuid = value(m.get("playerUuid"), "");
+        String id = m.get("id");
+        if (id != null && !id.isBlank()) msg.id = id;
+        msg.i18nKey = value(m.get("i18nKey"), "");
+        msg.i18nArgs = value(m.get("i18nArgs"), "");
+        msg.hidden = Boolean.parseBoolean(value(m.get("hidden"), "false"));
+        return msg;
+    }
+
+    private static String value(String s, String fallback) {
+        return s == null ? fallback : s;
+    }
+
+    private static long parseLong(String s, long fallback) {
+        try {
+            return s == null ? fallback : Long.parseLong(s.trim());
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+}

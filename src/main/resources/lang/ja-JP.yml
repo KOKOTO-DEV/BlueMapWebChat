@@ -1,0 +1,286 @@
+web:
+  title:
+    full: BlueMap チャット
+    minimized: チャット
+  status:
+    connecting: 接続中...
+    guest: ゲスト
+    reconnecting: 再接続中...
+    loggedIn: ログイン済み
+  button:
+    admin: 管理
+    login: ログイン
+    upload: 添付
+    resize: サイズ変更
+    send: 送信
+    reset: リセット
+    close: 閉じる
+    start: 開始
+    save: 保存
+    skip: スキップ
+    logout: ログアウト
+    setPassword: パスワード設定
+    clearHistory: Web履歴を消去
+    mute: ミュート
+    unmute: 解除
+    revoke: 解除
+    delete: 削除
+    cancel: キャンセル
+    pin: 固定
+    moderationActionsEnable: 固定 / 削除を有効化
+    moderationActionsDisable: 固定 / 削除を無効化
+    unpin: 解除
+    commands: コマンド
+    pip: PIP
+    run: 実行
+  placeholder:
+    guestName: ゲスト名
+    captchaAnswer: 答え
+    message: メッセージ
+    username: ユーザー名
+    password: パスワード
+    newPassword: 新しいパスワード
+    muteTarget: ゲスト名またはIP
+    minutes: 分
+    reason: 理由
+  message:
+    deleted: '[削除済み]'
+  alert:
+    rateLimited: 送信が速すぎます。しばらく待ってください。
+    sendFailed: '送信失敗: {error}'
+    serverUnavailable: チャットサーバーに接続できません。
+    uploadNotAllowed: ファイルアップロードは許可されていません。
+    uploadTooMany: 一度に選択できるファイルは{max}個までです。
+    uploadExtensionDenied: '許可されていないファイル形式です: {name}'
+    uploadTooLarge: 'ファイルが大きすぎます: {name}'
+    uploadFailed: 'アップロード失敗: {error}'
+    confirmDelete: このメッセージを非表示にしますか？
+    deleteFailed: '削除失敗: {error}'
+    confirmClearHistory: Webチャット履歴を消去しますか？
+    failed: '失敗: {error}'
+    loginFailed: 'ログイン失敗: {error}'
+    codeFailed: 'コード発行に失敗しました: {error}'
+    saveFailed: '保存失敗: {error}'
+    pinFailed: '固定に失敗しました: {error}'
+    unpinFailed: '固定解除に失敗しました: {error}'
+  admin:
+    title: BlueMap チャット管理
+    summary: 概要
+    mutes: ミュート
+    sessions: セッション
+    loading: 読み込み中...
+    failed: '失敗: {error}'
+    revokeConfirm: '{username} の全セッションを解除しますか？'
+    online: オンライン
+    accounts: アカウント
+    onlinePlayers: オンラインプレイヤー
+    none: なし
+    muteGuestIp: ゲスト/IPをミュート
+    typeGuest: ゲスト
+    typeIp: IP
+    currentMutes: 現在のミュート
+    expires: 期限
+    never: なし
+  login:
+    title: BlueMap チャットログイン
+    tabLogin: ログイン
+    tabLink: 連携
+    description: 連携済みアカウントでログインします。
+  link:
+    description: ゲーム内で次のコマンドを入力してください。
+    commandHint: /bmchat auth <code>
+    statusReady: 開始を押してコードを発行してください。
+    statusWaiting: ゲーム内で /bmchat auth {code} の入力待ち...
+    statusLinked: 連携完了。
+    statusExpired: コードの有効期限が切れました。
+  password:
+    title: パスワード設定
+    description: 次回からゲームに参加せずWebログインでチャットできます。
+  account:
+    role: 権限
+  pip:
+    unsupported: このブラウザーは Document Picture-in-Picture に対応していません。デスクトップ版 Chrome または
+      Edge でお試しください。
+    openFailed: 'Picture-in-Picture ウィンドウを開けませんでした: {error}'
+  preferences:
+    title: チャット設定
+    fontSize: 文字サイズ
+    fontFamily: フォント
+    fontCustom: 直接入力
+    fontCustomPlaceholder: インストール済みフォント名またはCSS font-family
+    fontApply: 適用
+    fontTest: 確認
+    fontHelp: font-family 名は OS のフォント設定で確認できます。
+    fontExample: '例: Malgun Gothic, Noto Sans KR, D2Coding。'
+    fontDetected: 'このブラウザーで検出されました: {name}'
+    fontNotDetected: 検出できませんでした。font-family 名、またはこの端末にフォントがインストールされているか確認してください。
+    fontGeneric: 'CSS 汎用フォントファミリー: {name}'
+    fontUnknown: このブラウザーではフォントを確認できません。
+    textColor: 文字色
+    uiTextColor: UI文字色
+    inputBackgroundColor: 入力欄の背景色
+    backgroundColor: 背景色
+    language: 言語
+    languageDefault: デフォルト
+    fontDefault: デフォルト
+    fontSystem: システム
+    note: この設定はこのブラウザにのみ保存されます。
+    noteDrag: タイトルをドラッグして移動できます。
+  opacity:
+    title: 透明度
+  role:
+    admin:
+      short: 管理
+    moderator:
+      short: MOD
+    user:
+      short: USER
+    guest:
+      short: ゲスト
+  upload:
+    ready: 準備完了
+    preparing: アップロード準備中...
+    progress: 'アップロード中 {current}/{total}: {name}'
+    canceling: キャンセル中...
+    canceled: アップロードをキャンセルしました。
+    complete: アップロード完了。
+    dropTitle: ファイルをドロップしてアップロード
+    dropSubtitle: チャットパネル内で離すとアップロードします。
+    dropDenied: ファイルアップロードは許可されていません。
+    dropBusy: すでにアップロード中です。
+  media:
+    videoUnavailable: 動画プレビューを利用できません
+    audioUnavailable: 音声プレビューを利用できません
+    youtube: YouTube
+    youtubeTitle: YouTube 動画
+    loadVideo: ▶ 動画
+    loadAudio: ▶ 音声
+  error:
+    unknown: 不明なエラー
+    network: ネットワークエラー
+    invalid_response: サーバー応答が不正です
+    method_not_allowed: 許可されていないリクエスト方式です
+    empty_message: メッセージが空です
+    permission_denied: 権限がありません
+    guest_disabled: ゲストチャットは無効です
+    captcha_failed: 認証に失敗しました
+    blocked_name: このゲスト名はブロックされています
+    guest_muted: ゲストチャットはミュートされています
+    guest_mutedWithReason: 'ゲストチャットはミュートされています: {reason}'
+    rate_limited: リクエストが多すぎます。しばらくお待ちください。
+    upload_disabled: ファイルアップロードは無効です
+    multipart_required: アップロードリクエストが不正です
+    file_too_large: ファイルが大きすぎます
+    file_missing: アップロードされたファイルがありません
+    upload_permission_denied: ファイルをアップロードする権限がありません
+    extension_not_allowed: 許可されていないファイル形式です
+    invalid_path: ファイルパスが不正です
+    not_found: 見つかりません
+    invalid_file: ファイルが不正です
+    invalid_url: URLが不正です
+    not_available: 利用できません
+    auth_disabled: アカウント連携は無効です
+    password_login_disabled: パスワードログインは無効です
+    login_locked: ログイン失敗回数が多すぎます。しばらくしてから再試行してください。
+    invalid_login: ユーザー名またはパスワードが違います
+    admin_ip_not_allowed: このIPからの管理者ログインは許可されていません
+    not_logged_in: ログインしていません
+    password_too_short: パスワードは6文字以上にしてください
+    admin_panel_disabled: Web管理パネルは無効です
+    empty_value: 値が空です
+    pinned_disabled: 固定メッセージは無効です
+    message_not_found: メッセージが見つかりません
+    pin_limit_reached: 固定メッセージの上限に達しました
+    commands_disabled: Webコマンドは無効です
+    command_not_found: コマンドが見つかりません
+    invalid_command: 無効なコマンドです
+    command_failed: コマンド実行に失敗しました
+    command_too_long: コマンドが長すぎます
+  announcement:
+    minecraft-join: 🟢 {player} がサーバーに参加しました。
+    minecraft-quit: 🔴 {player} がサーバーから退出しました。
+    first-join: ✨ {player} が初めてサーバーに参加しました。
+    death: ☠ {message}
+    advancement: 🏆 {player} が進捗 [{advancement}] を達成しました。
+    server-start: 🟢 サーバーが起動しました。
+    server-stop: 🔴 サーバーを停止しています。
+    world-change: 🌍 {player} が {to_world} に移動しました。
+    gamemode-change: 🎮 {player} のゲームモードが {to_gamemode} に変更されました。
+    level-change: ⭐ {player} のレベルが {old_level} から {new_level} に変わりました。
+    bed-enter: 💤 {player} がベッドに入りました。
+    web-login: 🌐 {name} がWebチャットにログインしました。
+    web-logout: 🌐 {name} がWebチャットからログアウトしました。
+  sender:
+    server: サーバー
+    discord: Discord
+    originalId: '元のID: {name}'
+    displayName: '表示名: {name}'
+    command: コマンド
+    system: システム
+  source:
+    game: ゲーム
+    web: Web
+    guest: ゲスト
+    discord: Discord
+    event: システム
+  command:
+    onlyPlayers: このコマンドはプレイヤーのみ使用できます。
+    noPermission: 権限がありません。
+    passwordSet: Web チャットのパスワードを設定しました。
+    configReloaded: BlueMapWebChat の設定を再読み込みしました。
+    guestNoMutes: ゲスト/IP のミュートはありません。
+    guestMutesTitle: 'BlueMapWebChat ミュート一覧:'
+    guestMuteEntry: '- {type}:{value} 理由={reason} 期限={expires}'
+    guestMuteAdded: 'ミュートを追加しました: {type}:{value} ({minutes}分)'
+    guestMuteRemoved: ミュートを解除しました。
+    guestMuteNotFound: ミュートが見つかりません。
+    guestUnknownSubcommand: 不明な guest サブコマンドです。
+    sessionsTitle: 'BlueMapWebChat セッション: {count}'
+    sessionEntry: '- {username} {role} ip={ip}'
+    revokeDone: '{username} のセッションを {count} 件取り消しました。'
+    adminLocalDisabled: ローカル管理者アカウントの作成は無効です。
+    adminCreated: 'ローカル管理者アカウントを作成しました: {username}'
+    adminSetPasswordHint: 'パスワード設定: /bmchat admin password {username} <password>'
+    adminAccountNotFound: アカウントが見つかりません。
+    adminPasswordSetFor: 'パスワードを設定しました: {username}'
+    adminRoleInvalid: ロールは user, moderator, admin のいずれかにしてください。
+    adminRoleChanged: '{username} のロールを {role} に変更しました。'
+    adminUnknownSubcommand: 不明な admin サブコマンドです。
+    helpAuth: Web アカウントを連携
+    helpPassword: Web ログインパスワードを設定
+    helpReload: 設定を再読み込み
+    helpAdmin: 管理者アカウントとロールを管理
+    helpGuest: ゲスト/IP ミュートを管理
+    helpSessions: Web セッション一覧を表示
+    helpRevoke: Web セッションを取り消し
+    never: なし
+    authInvalid: 無効な認証リクエストです。
+    authCodeExpired: 認証コードが存在しないか期限切れです。
+    authComplete: Web チャットアカウントの連携が完了しました。ブラウザに戻ってください。
+  pinned:
+    count: 固定メッセージ {count}件
+    compact: '{count}'
+    single: '{title}'
+    multiple: '{title} 他{rest}件'
+    title: 固定メッセージ
+    empty: 固定メッセージはありません。
+    untitled: 固定メッセージ
+    pinnedBy: '{user} が固定'
+  commands:
+    title: サーバーコマンド
+    description: 事前に許可されたサーバーコマンドをWeb UIから実行します。
+    descriptionAll: Web UIから任意のサーバーコンソールコマンドを実行します。
+    directPlaceholder: / なしでコマンドを入力
+    runDirect: コマンド実行
+    search: プリセットコマンド検索
+    noMatches: 一致するコマンドがありません。
+    notAvailable: コマンドパネルは利用できません。
+    confirm: コマンドを実行しますか？ /{command}
+    submitted: 'コマンドを送信しました: {label}'
+    failed: 'コマンド実行失敗: {error}'
+    tooLong: コマンドが長すぎます。最大 {max} 文字です。
+    maxLengthHint: 最大 {max} 文字
+  system:
+    command-executed: 'Web コマンドを実行しました: {label}'
+    note: サーバーイベントや Web コマンド結果などのシステムメッセージは、i18n キーがある場合 Web UI で翻訳されます。config.yml
+      のカスタム announcement 文はフォールバックとして使用されます。

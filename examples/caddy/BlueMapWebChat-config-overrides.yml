@@ -1,0 +1,26 @@
+# Copy these values into plugins/BlueMapWebChat/config.yml for the recommended Caddy same-domain HTTPS deployment.
+# Replace https://map.example.com with your actual public map URL.
+
+http:
+  host: "127.0.0.1"
+  port: 8899
+  path-prefix: "/api"
+  cors-origin: "https://map.example.com"
+  trusted-proxies:
+    - "127.0.0.1"
+    - "::1"
+  log-client-ip-resolution: false
+
+standalone-web:
+  enabled: true
+  path: "/chat"
+  # With the Caddy route below, open https://map.example.com/bmwc/chat.
+  api-base-url: "/bmwc/api"
+
+web-addon:
+  # Caddy route: /bmwc/* -> 127.0.0.1:8899
+  # External /bmwc/api/config becomes internal /api/config.
+  api-base-url: "/bmwc/api"
+
+upload:
+  public-base-url: "/bmwc/api/uploads"

@@ -1,0 +1,22 @@
+name: BlueMapWebChat
+version: 3.0.0
+main: dev.kokoto.bluemapwebchat.BlueMapWebChatPlugin
+api-version: '1.21'
+authors: [KOKOTO]
+description: Standalone BlueMap web chat addon with guest chat, account linking, moderation, and optional captcha.
+softdepend: [DiscordSRV]
+commands:
+  bmchat:
+    description: BlueMapWebChat command
+    usage: /bmchat <auth|password|reload|admin>
+    aliases: [bluemapchat, bmc]
+permissions:
+  bluemapwebchat.auth:
+    description: Allows linking a web account to a Minecraft account.
+    default: true
+  bluemapwebchat.webchat:
+    description: Allows using authenticated web chat.
+    default: true
+  bluemapwebchat.admin:
+    description: Allows administrating BlueMapWebChat.
+    default: op

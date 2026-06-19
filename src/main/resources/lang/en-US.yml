@@ -1,0 +1,289 @@
+web:
+  title:
+    full: BlueMap Chat
+    minimized: Chat
+  status:
+    connecting: connecting...
+    guest: guest
+    reconnecting: reconnecting...
+    loggedIn: logged in
+  button:
+    admin: Admin
+    login: Login
+    upload: Attach
+    resize: Resize
+    send: Send
+    reset: Reset
+    close: Close
+    cancel: Cancel
+    start: Start
+    save: Save
+    skip: Skip
+    logout: Logout
+    setPassword: Set password
+    clearHistory: Clear web history
+    mute: Mute
+    unmute: Unmute
+    revoke: Revoke
+    delete: delete
+    pin: pin
+    moderationActionsEnable: Enable pin/delete
+    moderationActionsDisable: Disable pin/delete
+    unpin: unpin
+    commands: Commands
+    pip: PIP
+    run: Run
+  placeholder:
+    guestName: Guest name
+    captchaAnswer: answer
+    message: message
+    username: username
+    password: password
+    newPassword: new password
+    muteTarget: Guest name or IP
+    minutes: minutes
+    reason: reason
+  message:
+    deleted: '[deleted]'
+  alert:
+    rateLimited: You are sending messages too quickly. Please wait.
+    sendFailed: 'Send failed: {error}'
+    serverUnavailable: Cannot connect to chat server.
+    uploadNotAllowed: File upload is not allowed.
+    uploadTooMany: Only {max} file(s) can be selected at once.
+    uploadExtensionDenied: 'This file type is not allowed: {name}'
+    uploadTooLarge: 'File is too large: {name}'
+    uploadFailed: 'Upload failed: {error}'
+    confirmDelete: Hide this message?
+    deleteFailed: 'Delete failed: {error}'
+    confirmClearHistory: Clear web chat history?
+    failed: 'Failed: {error}'
+    loginFailed: 'Login failed: {error}'
+    codeFailed: 'Failed to issue code: {error}'
+    saveFailed: 'Save failed: {error}'
+    pinFailed: 'Pin failed: {error}'
+    unpinFailed: 'Unpin failed: {error}'
+  admin:
+    title: BlueMap Chat Admin
+    summary: Summary
+    mutes: Mutes
+    sessions: Sessions
+    loading: Loading...
+    failed: 'Failed: {error}'
+    revokeConfirm: Revoke all sessions for {username}?
+    online: Online
+    accounts: Accounts
+    onlinePlayers: Online players
+    none: none
+    muteGuestIp: Mute guest/IP
+    typeGuest: guest
+    typeIp: ip
+    currentMutes: Current mutes
+    expires: expires
+    never: never
+  login:
+    title: BlueMap Chat Login
+    tabLogin: Login
+    tabLink: Link
+    description: Log in with an already linked account.
+  link:
+    description: Run the command below in game.
+    commandHint: /bmchat auth <code>
+    statusReady: Press Start to issue a code.
+    statusWaiting: Waiting for /bmchat auth {code} in game...
+    statusLinked: Linked.
+    statusExpired: Code expired.
+  password:
+    title: Set password
+    description: Set a web password so you can log in without joining the game next
+      time.
+  account:
+    role: Role
+  pip:
+    unsupported: Document Picture-in-Picture is not supported by this browser. Try
+      desktop Chrome or Edge.
+    openFailed: 'Failed to open Picture-in-Picture window: {error}'
+  preferences:
+    title: Chat settings
+    fontSize: Font size
+    fontFamily: Font
+    fontCustom: Custom font
+    fontCustomPlaceholder: Installed font name or CSS font-family
+    fontApply: Apply
+    fontTest: Test
+    fontHelp: Find the font family name in your OS font settings.
+    fontExample: 'Examples: Malgun Gothic, Noto Sans KR, D2Coding.'
+    fontDetected: 'Detected in this browser: {name}'
+    fontNotDetected: Not detected. Check the font family name or install the font
+      on this device.
+    fontGeneric: 'Generic CSS family: {name}'
+    fontUnknown: Could not test this font in this browser.
+    textColor: Message text color
+    uiTextColor: UI text color
+    inputBackgroundColor: Input background color
+    backgroundColor: Background color
+    language: Language
+    languageDefault: Default
+    fontDefault: Default
+    fontSystem: System
+    note: Saved only in this browser.
+    noteDrag: Drag the title to move this window.
+  opacity:
+    title: Opacity
+  upload:
+    ready: Ready
+    preparing: Preparing upload...
+    progress: 'Uploading {current}/{total}: {name}'
+    canceling: Canceling...
+    canceled: Upload canceled.
+    complete: Upload complete.
+    dropTitle: Drop files to upload
+    dropSubtitle: Release inside the chat panel.
+    dropDenied: File upload is not allowed.
+    dropBusy: Upload is already in progress.
+  role:
+    admin:
+      short: ADMIN
+    moderator:
+      short: MOD
+    user:
+      short: USER
+    guest:
+      short: GUEST
+  media:
+    videoUnavailable: Video preview unavailable
+    audioUnavailable: Audio preview unavailable
+    youtube: YouTube
+    youtubeTitle: YouTube video
+    loadVideo: ▶ Video
+    loadAudio: ▶ Audio
+  error:
+    unknown: Unknown error
+    network: Network error
+    invalid_response: Invalid server response
+    method_not_allowed: Method not allowed
+    empty_message: Message is empty
+    permission_denied: Permission denied
+    guest_disabled: Guest chat is disabled
+    captcha_failed: Captcha verification failed
+    blocked_name: This guest name is blocked
+    guest_muted: Guest chat is muted
+    guest_mutedWithReason: 'Guest chat is muted: {reason}'
+    rate_limited: Too many requests. Please wait.
+    upload_disabled: File upload is disabled
+    multipart_required: Upload request is invalid
+    file_too_large: File is too large
+    file_missing: No file was uploaded
+    upload_permission_denied: You do not have permission to upload files
+    extension_not_allowed: This file type is not allowed
+    invalid_path: Invalid file path
+    not_found: Not found
+    invalid_file: Invalid file
+    invalid_url: Invalid URL
+    not_available: Not available
+    auth_disabled: Account linking is disabled
+    password_login_disabled: Password login is disabled
+    login_locked: Too many failed login attempts. Please try again later.
+    invalid_login: Invalid username or password
+    admin_ip_not_allowed: Admin login is not allowed from this IP
+    not_logged_in: You are not logged in
+    password_too_short: Password must be at least 6 characters
+    admin_panel_disabled: Web admin panel is disabled
+    empty_value: Value is empty
+    pinned_disabled: Pinned messages are disabled
+    message_not_found: Message not found
+    pin_limit_reached: Pinned message limit reached
+    commands_disabled: Web commands are disabled
+    command_not_found: Command not found
+    invalid_command: Invalid command
+    command_failed: Command failed
+    command_too_long: Command is too long
+  announcement:
+    minecraft-join: 🟢 {player} joined the server.
+    minecraft-quit: 🔴 {player} left the server.
+    first-join: ✨ {player} joined the server for the first time.
+    death: ☠ {message}
+    advancement: 🏆 {player} completed the advancement [{advancement}].
+    server-start: 🟢 Server started.
+    server-stop: 🔴 Server is stopping.
+    world-change: 🌍 {player} moved to {to_world}.
+    gamemode-change: 🎮 {player} changed game mode to {to_gamemode}.
+    level-change: ⭐ {player} changed level from {old_level} to {new_level}.
+    bed-enter: 💤 {player} entered a bed.
+    web-login: 🌐 {name} logged in to web chat.
+    web-logout: 🌐 {name} logged out of web chat.
+  sender:
+    server: Server
+    discord: Discord
+    originalId: 'Original ID: {name}'
+    displayName: 'Display name: {name}'
+    command: Command
+    system: System
+  source:
+    game: game
+    web: web
+    guest: guest
+    discord: discord
+    event: system
+  command:
+    onlyPlayers: This command can only be used by players.
+    noPermission: You do not have permission.
+    passwordSet: Web chat password has been set.
+    configReloaded: BlueMapWebChat configuration reloaded.
+    guestNoMutes: There are no guest/IP mutes.
+    guestMutesTitle: 'BlueMapWebChat mutes:'
+    guestMuteEntry: '- {type}:{value} reason={reason} expires={expires}'
+    guestMuteAdded: 'Mute added: {type}:{value} ({minutes} min)'
+    guestMuteRemoved: Mute removed.
+    guestMuteNotFound: Mute not found.
+    guestUnknownSubcommand: Unknown guest subcommand.
+    sessionsTitle: 'BlueMapWebChat sessions: {count}'
+    sessionEntry: '- {username} {role} ip={ip}'
+    revokeDone: Revoked {count} session(s) for {username}.
+    adminLocalDisabled: Local admin account creation is disabled.
+    adminCreated: 'Created local admin account: {username}'
+    adminSetPasswordHint: 'Set password: /bmchat admin password {username} <password>'
+    adminAccountNotFound: Account not found.
+    adminPasswordSetFor: 'Password has been set for: {username}'
+    adminRoleInvalid: 'Role must be one of: user, moderator, admin.'
+    adminRoleChanged: '{username} role changed to {role}.'
+    adminUnknownSubcommand: Unknown admin subcommand.
+    helpAuth: Link web account
+    helpPassword: Set web login password
+    helpReload: Reload configuration
+    helpAdmin: Manage admin accounts and roles
+    helpGuest: Manage guest/IP mutes
+    helpSessions: List web sessions
+    helpRevoke: Revoke web sessions
+    never: never
+    authInvalid: Invalid authentication request.
+    authCodeExpired: The authentication code is missing or expired.
+    authComplete: Web chat account linking is complete. Return to your browser.
+  pinned:
+    count: 'Pinned messages: {count}'
+    compact: '{count}'
+    single: '{title}'
+    multiple: '{title} and {rest} more'
+    title: Pinned messages
+    empty: No pinned messages.
+    untitled: Pinned message
+    pinnedBy: pinned by {user}
+  commands:
+    title: Server commands
+    description: Run a pre-approved server command from the web UI.
+    descriptionAll: Run any server console command from the web UI.
+    directPlaceholder: Command without /
+    runDirect: Run command
+    search: Search preset commands
+    noMatches: No matching commands.
+    notAvailable: Command panel is not available.
+    confirm: 'Run command: /{command}?'
+    submitted: 'Command submitted: {label}'
+    failed: 'Command failed: {error}'
+    tooLong: 'Command is too long. Maximum: {max} characters.'
+    maxLengthHint: 'Maximum: {max} characters'
+  system:
+    command-executed: 'Executed web command: {label}'
+    note: System messages such as server events and web command results are translated
+      in the web UI when an i18n key is available. Custom announcement text in config.yml
+      remains the fallback text.

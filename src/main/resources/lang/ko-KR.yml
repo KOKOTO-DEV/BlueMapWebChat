@@ -1,0 +1,286 @@
+web:
+  title:
+    full: BlueMap 채팅
+    minimized: 채팅
+  status:
+    connecting: 연결 중...
+    guest: 게스트
+    reconnecting: 재연결 중...
+    loggedIn: 로그인됨
+  button:
+    admin: 관리
+    login: 로그인
+    upload: 첨부
+    resize: 크기 조절
+    send: 전송
+    reset: 초기화
+    close: 닫기
+    start: 시작
+    save: 저장
+    skip: 건너뛰기
+    logout: 로그아웃
+    setPassword: 비밀번호 설정
+    clearHistory: 웹 히스토리 비우기
+    mute: 차단
+    unmute: 차단 해제
+    revoke: 세션 해제
+    delete: 삭제
+    cancel: 취소
+    pin: 고정
+    moderationActionsEnable: 고정 / 삭제 활성화
+    moderationActionsDisable: 고정 / 삭제 비활성화
+    unpin: 해제
+    commands: 명령어
+    pip: PIP
+    run: 실행
+  placeholder:
+    guestName: 게스트 이름
+    captchaAnswer: 답
+    message: 메시지
+    username: 사용자명
+    password: 비밀번호
+    newPassword: 새 비밀번호
+    muteTarget: 게스트 이름 또는 IP
+    minutes: 분
+    reason: 사유
+  message:
+    deleted: '[삭제됨]'
+  alert:
+    rateLimited: 전송이 너무 빠릅니다. 잠시 후 다시 보내주세요.
+    sendFailed: '전송 실패: {error}'
+    serverUnavailable: 채팅 서버에 연결할 수 없습니다.
+    uploadNotAllowed: 파일 업로드가 허용되지 않았습니다.
+    uploadTooMany: 한 번에 {max}개 파일만 선택할 수 있습니다.
+    uploadExtensionDenied: '허용되지 않은 파일 형식입니다: {name}'
+    uploadTooLarge: '파일이 너무 큽니다: {name}'
+    uploadFailed: '업로드 실패: {error}'
+    confirmDelete: 이 메시지를 숨길까요?
+    deleteFailed: '삭제 실패: {error}'
+    confirmClearHistory: 웹 채팅창 히스토리를 비울까요?
+    failed: '실패: {error}'
+    loginFailed: '로그인 실패: {error}'
+    codeFailed: '코드 발급 실패: {error}'
+    saveFailed: '저장 실패: {error}'
+    pinFailed: '고정 실패: {error}'
+    unpinFailed: '고정 해제 실패: {error}'
+  admin:
+    title: BlueMap 채팅 관리
+    summary: 요약
+    mutes: 차단
+    sessions: 세션
+    loading: 불러오는 중...
+    failed: '실패: {error}'
+    revokeConfirm: '{username} 세션을 모두 해제할까요?'
+    online: 온라인
+    accounts: 계정
+    onlinePlayers: 온라인 플레이어
+    none: 없음
+    muteGuestIp: 게스트/IP 차단
+    typeGuest: 게스트
+    typeIp: IP
+    currentMutes: 현재 차단 목록
+    expires: 만료
+    never: 없음
+  login:
+    title: BlueMap 채팅 로그인
+    tabLogin: 로그인
+    tabLink: 연동
+    description: 이미 연동한 계정으로 로그인합니다.
+  link:
+    description: 게임 안에서 아래 명령어를 입력하세요.
+    commandHint: /bmchat auth <code>
+    statusReady: 코드를 발급하려면 시작을 누르세요.
+    statusWaiting: 게임에서 /bmchat auth {code} 입력 대기 중...
+    statusLinked: 연동 완료.
+    statusExpired: 코드가 만료되었습니다.
+  password:
+    title: 비밀번호 설정
+    description: 다음부터 게임 접속 없이 웹 로그인으로 채팅할 수 있습니다.
+  account:
+    role: 권한
+  pip:
+    unsupported: 이 브라우저는 Document Picture-in-Picture를 지원하지 않습니다. 데스크톱 Chrome 또는 Edge에서
+      시도해 주세요.
+    openFailed: 'Picture-in-Picture 창을 열지 못했습니다: {error}'
+  preferences:
+    title: 채팅 설정
+    fontSize: 글자 크기
+    fontFamily: 폰트
+    fontCustom: 직접 입력
+    fontCustomPlaceholder: 설치된 글꼴 이름 또는 CSS font-family
+    fontApply: 적용
+    fontTest: 확인
+    fontHelp: 글꼴의 font-family 이름은 OS 글꼴 설정에서 확인합니다.
+    fontExample: '예: Malgun Gothic, Noto Sans KR, D2Coding.'
+    fontDetected: '이 브라우저에서 감지됨: {name}'
+    fontNotDetected: 감지되지 않았습니다. font-family 이름이 맞는지 또는 이 기기에 글꼴이 설치되어 있는지 확인하세요.
+    fontGeneric: 'CSS 기본 글꼴 계열: {name}'
+    fontUnknown: 이 브라우저에서 글꼴을 확인할 수 없습니다.
+    textColor: 글자 색
+    uiTextColor: UI 글자 색
+    inputBackgroundColor: 입력창 배경색
+    backgroundColor: 배경색
+    language: 언어
+    languageDefault: 기본값
+    fontDefault: 기본값
+    fontSystem: 시스템
+    note: 이 설정은 이 브라우저에만 저장됩니다.
+    noteDrag: 제목을 잡고 이동할 수 있습니다.
+  opacity:
+    title: 투명도
+  role:
+    admin:
+      short: 관리자
+    moderator:
+      short: MOD
+    user:
+      short: USER
+    guest:
+      short: 게스트
+  upload:
+    ready: 준비됨
+    preparing: 업로드 준비 중...
+    progress: '업로드 중 {current}/{total}: {name}'
+    canceling: 취소 중...
+    canceled: 업로드가 취소되었습니다.
+    complete: 업로드 완료.
+    dropTitle: 파일을 놓아 업로드
+    dropSubtitle: 채팅 패널 안에서 놓으면 업로드됩니다.
+    dropDenied: 파일 업로드가 허용되지 않습니다.
+    dropBusy: 이미 업로드가 진행 중입니다.
+  media:
+    videoUnavailable: 영상 미리보기를 사용할 수 없습니다
+    audioUnavailable: 오디오 미리보기를 사용할 수 없습니다
+    youtube: YouTube
+    youtubeTitle: YouTube 영상
+    loadVideo: ▶ 영상
+    loadAudio: ▶ 오디오
+  error:
+    unknown: 알 수 없는 오류
+    network: 네트워크 오류
+    invalid_response: 서버 응답이 올바르지 않습니다
+    method_not_allowed: 허용되지 않은 요청 방식입니다
+    empty_message: 메시지가 비어 있습니다
+    permission_denied: 권한이 없습니다
+    guest_disabled: 게스트 채팅이 비활성화되어 있습니다
+    captcha_failed: 캡차 확인에 실패했습니다
+    blocked_name: 차단된 게스트 이름입니다
+    guest_muted: 게스트 채팅이 차단되어 있습니다
+    guest_mutedWithReason: '게스트 채팅이 차단되어 있습니다: {reason}'
+    rate_limited: 요청이 너무 많습니다. 잠시 후 다시 시도하세요.
+    upload_disabled: 파일 업로드가 비활성화되어 있습니다
+    multipart_required: 업로드 요청 형식이 올바르지 않습니다
+    file_too_large: 파일이 너무 큽니다
+    file_missing: 업로드된 파일이 없습니다
+    upload_permission_denied: 파일 업로드 권한이 없습니다
+    extension_not_allowed: 허용되지 않은 파일 형식입니다
+    invalid_path: 파일 경로가 올바르지 않습니다
+    not_found: 찾을 수 없습니다
+    invalid_file: 파일이 올바르지 않습니다
+    invalid_url: URL이 올바르지 않습니다
+    not_available: 사용할 수 없습니다
+    auth_disabled: 계정 연동이 비활성화되어 있습니다
+    password_login_disabled: 비밀번호 로그인이 비활성화되어 있습니다
+    login_locked: 로그인 실패 횟수가 너무 많습니다. 잠시 후 다시 시도하세요.
+    invalid_login: 사용자명 또는 비밀번호가 올바르지 않습니다
+    admin_ip_not_allowed: 이 IP에서는 관리자 로그인이 허용되지 않습니다
+    not_logged_in: 로그인되어 있지 않습니다
+    password_too_short: 비밀번호는 최소 6자 이상이어야 합니다
+    admin_panel_disabled: 웹 관리자 패널이 비활성화되어 있습니다
+    empty_value: 값이 비어 있습니다
+    pinned_disabled: 고정 메시지가 비활성화되어 있습니다
+    message_not_found: 메시지를 찾을 수 없습니다
+    pin_limit_reached: 고정 메시지 최대 개수에 도달했습니다
+    commands_disabled: 웹 명령어가 비활성화되어 있습니다
+    command_not_found: 명령어를 찾을 수 없습니다
+    invalid_command: 올바르지 않은 명령어입니다
+    command_failed: 명령어 실행에 실패했습니다
+    command_too_long: 명령어가 너무 깁니다
+  announcement:
+    minecraft-join: 🟢 {player}님이 서버에 접속했습니다.
+    minecraft-quit: 🔴 {player}님이 서버에서 나갔습니다.
+    first-join: ✨ {player}님이 서버에 처음 접속했습니다.
+    death: ☠ {message}
+    advancement: 🏆 {player}님이 발전 과제 [{advancement}]를 달성했습니다.
+    server-start: 🟢 서버가 시작되었습니다.
+    server-stop: 🔴 서버가 종료 중입니다.
+    world-change: 🌍 {player}님이 {to_world}(으)로 이동했습니다.
+    gamemode-change: 🎮 {player}님의 게임 모드가 {to_gamemode}(으)로 변경되었습니다.
+    level-change: ⭐ {player}님의 레벨이 {old_level}에서 {new_level}(으)로 변경되었습니다.
+    bed-enter: 💤 {player}님이 침대에 누웠습니다.
+    web-login: 🌐 {name}님이 웹 채팅에 로그인했습니다.
+    web-logout: 🌐 {name}님이 웹 채팅에서 로그아웃했습니다.
+  sender:
+    server: 서버
+    discord: Discord
+    originalId: '원래 ID: {name}'
+    displayName: '표시 이름: {name}'
+    command: 명령어
+    system: 시스템
+  source:
+    game: 게임
+    web: 웹
+    guest: 게스트
+    discord: 디스코드
+    event: 시스템
+  command:
+    onlyPlayers: 이 명령어는 플레이어만 사용할 수 있습니다.
+    noPermission: 권한이 없습니다.
+    passwordSet: 웹 채팅 비밀번호가 설정되었습니다.
+    configReloaded: BlueMapWebChat 설정을 다시 불러왔습니다.
+    guestNoMutes: 게스트/IP 뮤트가 없습니다.
+    guestMutesTitle: 'BlueMapWebChat 뮤트 목록:'
+    guestMuteEntry: '- {type}:{value} 사유={reason} 만료={expires}'
+    guestMuteAdded: '뮤트 추가됨: {type}:{value} ({minutes}분)'
+    guestMuteRemoved: 뮤트가 해제되었습니다.
+    guestMuteNotFound: 뮤트를 찾을 수 없습니다.
+    guestUnknownSubcommand: 알 수 없는 guest 하위 명령어입니다.
+    sessionsTitle: 'BlueMapWebChat 세션: {count}'
+    sessionEntry: '- {username} {role} ip={ip}'
+    revokeDone: '{username}의 세션 {count}개를 취소했습니다.'
+    adminLocalDisabled: 로컬 관리자 계정 생성이 비활성화되어 있습니다.
+    adminCreated: '로컬 관리자 계정 생성됨: {username}'
+    adminSetPasswordHint: '비밀번호 설정: /bmchat admin password {username} <password>'
+    adminAccountNotFound: 계정을 찾을 수 없습니다.
+    adminPasswordSetFor: '비밀번호가 설정되었습니다: {username}'
+    adminRoleInvalid: 역할은 user, moderator, admin 중 하나여야 합니다.
+    adminRoleChanged: '{username}의 역할이 {role}(으)로 변경되었습니다.'
+    adminUnknownSubcommand: 알 수 없는 admin 하위 명령어입니다.
+    helpAuth: 웹 계정 연동
+    helpPassword: 웹 로그인 비밀번호 설정
+    helpReload: 설정 다시 불러오기
+    helpAdmin: 관리자 계정과 역할 관리
+    helpGuest: 게스트/IP 뮤트 관리
+    helpSessions: 웹 세션 목록 보기
+    helpRevoke: 웹 세션 취소
+    never: 없음
+    authInvalid: 잘못된 인증 요청입니다.
+    authCodeExpired: 인증 코드가 없거나 만료되었습니다.
+    authComplete: 웹 채팅 계정 연동이 완료되었습니다. 브라우저로 돌아가세요.
+  pinned:
+    count: 고정 메시지 {count}개
+    compact: '{count}'
+    single: '{title}'
+    multiple: '{title} 외 {rest}개'
+    title: 고정 메시지
+    empty: 고정된 메시지가 없습니다.
+    untitled: 고정 메시지
+    pinnedBy: '{user}님이 고정'
+  commands:
+    title: 서버 명령어
+    description: 웹 UI에서 사전에 허용된 서버 명령어를 실행합니다.
+    descriptionAll: 웹 UI에서 임의의 서버 콘솔 명령어를 실행합니다.
+    directPlaceholder: / 없이 명령어 입력
+    runDirect: 명령어 실행
+    search: 프리셋 명령어 검색
+    noMatches: 일치하는 명령어가 없습니다.
+    notAvailable: 명령어 패널을 사용할 수 없습니다.
+    confirm: 명령어를 실행할까요? /{command}
+    submitted: '명령어 실행 요청됨: {label}'
+    failed: '명령어 실행 실패: {error}'
+    tooLong: 명령어가 너무 깁니다. 최대 {max}자입니다.
+    maxLengthHint: 최대 {max}자
+  system:
+    command-executed: '웹 명령어 실행됨: {label}'
+    note: 서버 이벤트와 웹 명령어 결과 같은 시스템 메시지는 i18n 키가 있으면 웹 UI에서 번역됩니다. config.yml의 사용자 지정
+      announcement 문구는 fallback 문구로 유지됩니다.

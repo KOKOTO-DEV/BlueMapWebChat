@@ -1,0 +1,442 @@
+# BlueMapWebChat 3.0.0 configuration
+# Default profile: guest-enabled direct HTTP.
+# - Minecraft plugin serves its own API on http://<server-host>:8899/api
+# - Standalone web UI is available at http://<server-host>:8899/chat
+# - BlueMap can also load the web addon from addons/bluemap-web-chat
+# - Guest chat is enabled, with captcha + rate limits to reduce spam.
+#
+# HTTPS / reverse proxy note:
+# - Put Caddy/Nginx in front of the API and keep this plugin bound to localhost.
+# - Change http.host to "127.0.0.1".
+# - If the proxy exposes the API on the same domain as BlueMap, set
+#   web-addon.api-base-url to a same-origin path such as "/bmwc/api".
+# - The same /bmwc/* reverse proxy path can also expose standalone mode as
+#   https://<domain>/bmwc/chat while the plugin still sees /chat internally.
+# - If uploads are also proxied under that path, set upload.public-base-url to
+#   "/bmwc/api/uploads". A leading slash is kept as a
+#   same-origin browser path instead of being expanded to http://host/... .
+
+http:
+  # Direct HTTP default. Use "127.0.0.1" when reverse-proxying with HTTPS.
+  host: "0.0.0.0"
+  port: 8899
+  path-prefix: "/api"
+  # Direct HTTP / personal use default. For HTTPS proxy, set this to your domain,
+  # for example: "https://map.example.com"
+  cors-origin: "*"
+  # Only trust X-Forwarded-For from these reverse proxy IPs/CIDRs.
+  # Empty = ignore client-supplied X-Forwarded-For and use the direct socket IP.
+  # Keep [] for direct HTTP. When Caddy/Nginx runs on the same host, use block style:
+  # trusted-proxies:
+  #   - "127.0.0.1"
+  #   - "::1"
+  trusted-proxies: []
+  # Debug helper. When true, logs socket IP, X-Forwarded-For and resolved client IP
+  # to the server console and logs/latest.log.
+  # Use temporarily when checking reverse proxy/trusted-proxies behavior.
+  log-client-ip-resolution: false
+
+standalone-web:
+  # Serve a direct chat page from the plugin HTTP server.
+  # Disabled by default so the plugin behaves as a BlueMap web addon unless you explicitly enable it.
+  # Set true to open http://<server-host>:8899/chat or a proxied URL such as https://<domain>/bmwc/chat.
+  enabled: false
+  path: "/chat"
+  # Empty = auto. Direct HTTP uses location.origin + http.path-prefix.
+  # HTTPS reverse proxy can reuse web-addon.api-base-url when that is set.
+  # Explicit reverse proxy example: "/bmwc/api"
+  api-base-url: ""
+
+web-addon:
+  auto-install: true
+  auto-patch-webapp-conf: true
+  # Empty = direct HTTP auto URL: http://<browser-host>:8899/api
+  # HTTPS same-domain proxy example: "/bmwc/api"
+  # HTTPS separate API domain example: "https://api.example.com/bmwc/api"
+  api-base-url: ""
+
+  # Advanced path overrides. Normally leave these as-is; the plugin also tries
+  # common BlueMap paths automatically. Change only if BlueMap uses custom paths.
+  bluemap-web-root: "bluemap/web"
+  bluemap-webapp-conf: "plugins/BlueMap/webapp.conf"
+  addon-path: "addons/bluemap-web-chat"
+
+chat:
+  history-size: 1000
+  history-retention-days: 5
+  history-persist: false
+  history-persist-retention-days: 5
+  history-file: "history.jsonl"
+  # Messages fetched per history request. 0 = all available history.
+  history-page-size: 80
+
+  # 0 = unlimited. max-url-message-length also uses 0 = unlimited.
+  max-message-length: 120
+  max-url-message-length: 2048
+
+  web-user-to-game-format: "[Web] {player}: {message}"
+  web-guest-to-game-format: "[Web Guest] {guest}: {message}"
+  web-admin-to-game-format: "[Web Admin] {player}: {message}"
+
+  broadcast-web-chat-to-web: true
+  broadcast-ingame-chat-to-web: true
+  send-web-chat-to-game: true
+  clickable-urls-in-game: true
+
+announcements:
+  broadcast-to-web-chat: true
+  # Built-in announcement events are sent with an i18n key.
+  # The message below is kept as fallback/custom text; the web UI translates it when a matching lang key exists.
+
+  minecraft-join:
+    enabled: true
+    message: "🟢 {player} joined the server."
+  minecraft-quit:
+    enabled: true
+    message: "🔴 {player} left the server."
+  first-join:
+    enabled: true
+    message: "✨ {player} joined the server for the first time."
+  death:
+    enabled: true
+    message: "☠ {message}"
+  advancement:
+    enabled: true
+    message: "🏆 {player} completed the advancement [{advancement}]."
+  server-start:
+    enabled: true
+    message: "🟢 Server started."
+  server-stop:
+    enabled: true
+    message: "🔴 Server is stopping."
+
+  world-change:
+    enabled: false
+    message: "🌍 {player} moved to {to_world}."
+  gamemode-change:
+    enabled: false
+    message: "🎮 {player} changed game mode to {to_gamemode}."
+  level-change:
+    enabled: false
+    message: "⭐ {player} changed level from {old_level} to {new_level}."
+  bed-enter:
+    enabled: false
+    message: "💤 {player} entered a bed."
+  web-login:
+    enabled: false
+    message: "🌐 {name} logged in to web chat."
+  web-logout:
+    enabled: false
+    message: "🌐 {name} logged out of web chat."
+
+ui:
+  # Default UI language. Supported values: en-US, ko-KR, ja-JP, zh-CN.
+  # Users can still override this per browser from Chat settings when user-preferences-control is true.
+  language: "en-US"
+  # Fallback language used when a translation key is missing. Supported values: en-US, ko-KR, ja-JP, zh-CN.
+  language-fallback: "en-US"
+  # Time zone used for chat timestamps. Supported values: local, UTC, or an IANA time zone such as Asia/Seoul.
+  # local = browser/device time zone. Invalid values fall back to local in the web UI.
+  time-zone: "local"
+  # Default theme. Supported values: system, dark, light, high-contrast.
+  # When sync-bluemap-theme is true, the embedded BlueMap addon can follow BlueMap's current theme.
+  theme: "system"
+  sync-bluemap-theme: true
+  opacity: 0.92
+
+  linkify-urls: true
+  image-preview-enabled: true
+  # 0 = unlimited. Use image-preview-enabled/upload.preview-* to disable previews.
+  image-preview-max-per-message: 3
+  # Recommended: 640-720. 0 = unlimited; unlimited or very large previews can cause visible scroll jumps
+  # with virtual scrolling when images, GIFs, videos, or iframes finish loading.
+  image-preview-max-height: 720
+  google-drive-image-preview: false
+  google-drive-preview-mode: "thumbnail"
+
+  hide-chat-for-guests-when-guest-disabled: true
+  show-login-only-when-hidden: true
+
+  resizable: true
+  remember-window-size: true
+  default-width: 372
+  default-height: 462
+  min-width: 280
+  min-height: 240
+  # 0 = no configured maximum, still bounded by the browser viewport when embedded.
+  max-width: 640
+  max-height: 720
+
+  font-size: 13
+  message-font-size: 13
+  input-font-size: 13
+  # Empty = follow the selected theme. Set a hex color such as "#ffffff" to override chat message text.
+  text-color: ""
+  # Empty = follow the selected theme. Set a hex color to override UI labels such as role/source/time,
+  # input placeholders, command/upload buttons, pinned-message labels, and other small UI text/glyphs.
+  ui-text-color: ""
+  # Empty = follow the selected theme. Set a hex color such as "#1e1e24" to override all chat input backgrounds.
+  input-background-color: ""
+  button-font-size: 12
+  badge-font-size: 10
+  # CSS font-family used by default. Empty = built-in default.
+  # Local installed fonts are resolved on each user's browser/device, not on the Minecraft server.
+  # Examples: '"Malgun Gothic", sans-serif', '"Noto Sans KR", sans-serif', '"맑은 고딕", sans-serif'.
+  font-family: ""
+  user-preferences-control: true
+
+  # Experimental: opens a separate browser Picture-in-Picture chat instance.
+  # Browser UI such as the URL/close controls cannot be hidden.
+  # Keep this disabled unless you explicitly want the experimental duplicate window.
+  # This single flag controls both the PIP button and PIP execution.
+  picture-in-picture:
+    enabled: false
+
+  # Font choices shown in the per-browser Chat settings modal.
+  # Empty string means browser/system default.
+  # Add installed local font families here if you want them in the dropdown.
+  # Users can also type an installed font name directly in Chat settings.
+  user-font-options:
+    - ""
+    - "system-ui, sans-serif"
+    - "Arial, sans-serif"
+    - "Verdana, sans-serif"
+    - "Georgia, serif"
+    - "monospace"
+
+  virtual-scroll:
+    enabled: true
+    # Extra screens rendered above/below viewport. 0 = no overscan.
+    overscan-screens: 0.75
+    # Minimum rendered messages. 0 = no minimum beyond viewport calculation.
+    min-rendered-messages: 30
+    preserve-visible-media: false
+    preserve-playing-media: true
+
+  history-preload:
+    screens: 0.70
+    min-px: 200
+
+  auto-follow-bottom-threshold-px: 80
+  scroll-interaction-idle-ms: 160
+
+  resume-refresh:
+    enabled: true
+    min-interval-seconds: 5
+    skip-while-media-active: true
+    skip-unchanged: true
+
+# Player name shown for Minecraft-origin messages and announcements.
+# name = real Minecraft username, display-name = Bukkit displayName used by nickname plugins,
+# custom-name = customName first, then displayName.
+# When a display/custom nickname differs from the real Minecraft username,
+# web chat sends the real username too so the UI can show it on hover/click.
+# strip-colors: true removes legacy Minecraft color codes.
+# strip-colors: false keeps &/§ color codes and the web UI renders supported
+# legacy Minecraft colors/formats in the sender name.
+player-display:
+  mode: "name"
+  strip-colors: true
+
+# Guest mode is enabled by default for direct HTTP personal use.
+# Spam controls below are intentionally conservative:
+# - first message requires math captcha
+# - captcha pass expires after 2 hours
+# - guests are rate-limited by cooldown and per-minute count
+# - guest file upload is disabled by default
+guest:
+  enabled: true
+  allow-custom-name: true
+  name-prefix: "Guest-"
+  cooldown-seconds: 6
+  max-messages-per-minute: 6
+  block-player-name-spoofing: true
+  blocked-names:
+    - "admin"
+    - "administrator"
+    - "server"
+    - "op"
+    - "console"
+    - "moderator"
+    - "owner"
+
+captcha:
+  # "math" enables a simple math challenge for guests. Use "off" to disable.
+  mode: "math"
+  expire-seconds: 120
+  # false = once solved, guest can chat until pass-valid-minutes expires.
+  # true = require captcha on every guest message.
+  require-on-each-message: false
+  pass-valid-minutes: 120
+
+auth:
+  # Keep auth enabled even in guest mode so players can link with /bmchat auth
+  # and optionally set a web password later.
+  enabled: true
+  link-code-length: 6
+  link-code-expire-seconds: 180
+  # Web-side link code issue rate limit per remote IP. 0 disables each limit.
+  link-code-cooldown-seconds: 3
+  link-code-max-per-minute: 10
+  password-login: true
+  remember-session-days: 30
+  auto-admin-from-permission: true
+  admin-permission: "bluemapwebchat.admin"
+
+security:
+  # Password login brute-force protection.
+  # 0 disables the failure limit.
+  login-fail-limit: 5
+  # Failed attempts are counted within this time window.
+  login-fail-window-seconds: 300
+  # 0 disables lockout even when failures are counted.
+  login-lock-seconds: 600
+  # Server-Sent Events (/stream) connection limits. 0 disables each limit.
+  max-sse-connections-per-ip: 5
+  max-sse-connections-total: 200
+
+admin:
+  allow-local-admin-accounts: true
+  admin-session-expire-hours: 12
+  # Empty = no IP restriction. Use block style when restricting by IP/CIDR:
+  # allow-admin-login-from:
+  #   - "127.0.0.1"
+  #   - "10.0.0.0/8"
+  allow-admin-login-from: []
+
+moderation:
+  enabled: true
+  allow-web-admin-panel: true
+  allow-moderator-message-delete: true
+  allow-moderator-guest-mute: true
+  default-mute-minutes: 60
+
+# Optional web command panel. Disabled by default because it runs console commands.
+# By default only pre-approved presets are exposed to the web UI; allow-all enables arbitrary command input.
+commands:
+  enabled: false
+  # false = only presets below can be executed. true = users at min-role can run any console command.
+  # Keep this false unless the web UI is strongly protected.
+  allow-all: false
+  min-role: ADMIN
+  show-button: true
+  # false = commands can only be run from the command button/modal.
+  # true = entering /command in the chat input can execute a command when allow-all is true.
+  run-from-chat-input: false
+  # Only used when run-from-chat-input is true. Shows an inline run/preview panel for /commands.
+  show-when-input-starts-with-slash: true
+  require-confirm: true
+  # Maximum length for direct commands when allow-all is true.
+  # 0 = unlimited. Positive values are used directly; no hard upper cap is applied.
+  max-length: 0
+  broadcast-result-to-web-chat: false
+  presets:
+    # - id: day
+    #   label: Set day
+    #   description: Set the current world time to day.
+    #   command: "time set day"
+    #   confirm: true
+    # - id: weather-clear
+    #   label: Clear weather
+    #   command: "weather clear"
+    #   confirm: true
+
+discordsrv:
+  enabled: false
+  channel: "global"
+  web-to-discord: true
+  discord-to-web: true
+  ignore-bot-messages: true
+  suppress-game-echo: true
+  suppress-game-echo-seconds: 5
+  send-web-user-chat-to-discord: true
+  send-web-guest-chat-to-discord: false
+  send-web-admin-chat-to-discord: true
+  web-to-discord-format: "[Web] {sender}: {message}"
+  discord-to-web-sender-format: "Discord:{sender}"
+  discord-to-web-message-format: "{message}"
+
+upload:
+  enabled: true
+  # Guest uploads are disabled by default to reduce spam and storage abuse.
+  allow-guest-upload: false
+  allow-user-upload: true
+  allow-moderator-upload: true
+  allow-admin-upload: true
+  cooldown-seconds: 5
+  # 0 = unlimited for max-* upload limits.
+  max-uploads-per-minute: 4
+  max-file-size-mb: 20
+  max-files-per-message: 3
+  directory: "uploads"
+  # Empty = direct HTTP: http://<browser-host>:8899/api/uploads/...
+  # HTTPS same-domain proxy example: "/bmwc/api/uploads"
+  # HTTPS separate API domain example: "https://api.example.com/bmwc/api/uploads"
+  public-base-url: ""
+  retention-days: 5
+  allowed-extensions:
+    - png
+    - jpg
+    - jpeg
+    - gif
+    - webp
+    - mp4
+    - webm
+    - mp3
+    - m4a
+    - ogg
+    - wav
+    - flac
+
+  clipboard-upload-enabled: true
+  clipboard-upload-send-mode: "insert"
+  clipboard-image-default-extension: "png"
+
+  preview-images: true
+  preview-videos: true
+  preview-audio: true
+
+preview:
+  youtube-embed-enabled: true
+  youtube-click-to-load: true
+  media-click-to-load: true
+  youtube-nocookie: true
+  youtube-remember-expanded: true
+  youtube-autoplay-on-open: false
+  # 0 = unlimited YouTube embeds per message. Use youtube-embed-enabled: false to disable.
+  youtube-max-embeds-per-message: 1
+
+  # External media cache is mainly used for expiring Discord CDN attachment URLs.
+  external-media-cache-enabled: true
+  cache-discord-cdn: true
+  external-media-cache-directory: "uploads/external-media-cache"
+  # 0 = unlimited per external cached media file.
+  external-media-cache-max-size-mb: 20
+  external-media-cache-retention-days: 5
+  external-media-cache-timeout-seconds: 6
+
+# Optional web font serving. Files are read from plugins/BlueMapWebChat/fonts
+# by default and served through the BlueMapWebChat HTTP API.
+web-fonts:
+  enabled: false
+  directory: "fonts"
+  items: []
+  # Example:
+  # items:
+  #   - family: "Pretendard"
+  #     file: "Pretendard.woff2"
+  #     weight: 400
+  #     style: "normal"
+
+# Pinned messages are stored separately from normal chat history.
+# They are shown in a compact top bar and opened in a popup.
+pinned:
+  enabled: true
+  # 0 = unlimited pins.
+  max-pins: 20
+  # Show pinned messages to visitors who are not logged in.
+  # false = pinned messages are only returned/displayed after web login.
+  show-to-logged-out: true
+  # Keep uploaded files / external cached media referenced by pinned messages
+  # even when normal upload/cache retention cleanup runs.
+  preserve-uploads: true

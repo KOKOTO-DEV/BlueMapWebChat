@@ -1,0 +1,285 @@
+web:
+  title:
+    full: BlueMap 聊天
+    minimized: 聊天
+  status:
+    connecting: 连接中...
+    guest: 访客
+    reconnecting: 重新连接中...
+    loggedIn: 已登录
+  button:
+    admin: 管理
+    login: 登录
+    upload: 附件
+    resize: 调整大小
+    send: 发送
+    reset: 重置
+    close: 关闭
+    start: 开始
+    save: 保存
+    skip: 跳过
+    logout: 退出登录
+    setPassword: 设置密码
+    clearHistory: 清空网页历史
+    mute: 禁言
+    unmute: 解除禁言
+    revoke: 撤销会话
+    delete: 删除
+    cancel: 取消
+    pin: 置顶
+    moderationActionsEnable: 启用固定/删除
+    moderationActionsDisable: 停用固定/删除
+    unpin: 取消置顶
+    commands: 命令
+    pip: PIP
+    run: 运行
+  placeholder:
+    guestName: 访客名称
+    captchaAnswer: 答案
+    message: 消息
+    username: 用户名
+    password: 密码
+    newPassword: 新密码
+    muteTarget: 访客名称或 IP
+    minutes: 分钟
+    reason: 原因
+  message:
+    deleted: '[已删除]'
+  alert:
+    rateLimited: 发送太快了，请稍后再试。
+    sendFailed: '发送失败: {error}'
+    serverUnavailable: 无法连接到聊天服务器。
+    uploadNotAllowed: 不允许上传文件。
+    uploadTooMany: 一次最多只能选择 {max} 个文件。
+    uploadExtensionDenied: '不允许的文件类型: {name}'
+    uploadTooLarge: '文件太大: {name}'
+    uploadFailed: '上传失败: {error}'
+    confirmDelete: 要隐藏这条消息吗？
+    deleteFailed: '删除失败: {error}'
+    confirmClearHistory: 要清空网页聊天历史吗？
+    failed: '失败: {error}'
+    loginFailed: '登录失败: {error}'
+    codeFailed: '代码生成失败: {error}'
+    saveFailed: '保存失败: {error}'
+    pinFailed: 置顶失败：{error}
+    unpinFailed: 取消置顶失败：{error}
+  admin:
+    title: BlueMap 聊天管理
+    summary: 摘要
+    mutes: 禁言
+    sessions: 会话
+    loading: 加载中...
+    failed: '失败: {error}'
+    revokeConfirm: 要撤销 {username} 的所有会话吗？
+    online: 在线
+    accounts: 账户
+    onlinePlayers: 在线玩家
+    none: 无
+    muteGuestIp: 禁言访客/IP
+    typeGuest: 访客
+    typeIp: IP
+    currentMutes: 当前禁言
+    expires: 到期
+    never: 永不
+  login:
+    title: BlueMap 聊天登录
+    tabLogin: 登录
+    tabLink: 绑定
+    description: 使用已绑定账户登录。
+  link:
+    description: 请在游戏内输入以下命令。
+    commandHint: /bmchat auth <code>
+    statusReady: 点击开始生成代码。
+    statusWaiting: 等待在游戏内输入 /bmchat auth {code} ...
+    statusLinked: 绑定完成。
+    statusExpired: 代码已过期。
+  password:
+    title: 设置密码
+    description: 设置网页密码后，下次无需进入游戏即可登录聊天。
+  account:
+    role: 角色
+  pip:
+    unsupported: 此浏览器不支持 Document Picture-in-Picture。请尝试桌面版 Chrome 或 Edge。
+    openFailed: 无法打开 Picture-in-Picture 窗口：{error}
+  preferences:
+    title: 聊天设置
+    fontSize: 字体大小
+    fontFamily: 字体
+    fontCustom: 自定义字体
+    fontCustomPlaceholder: 已安装字体名称或 CSS font-family
+    fontApply: 应用
+    fontTest: 检测
+    fontHelp: font-family 名称可在系统字体设置中查看。
+    fontExample: 示例：Malgun Gothic、Noto Sans KR、D2Coding。
+    fontDetected: 此浏览器中已检测到：{name}
+    fontNotDetected: 未检测到。请确认 font-family 名称是否正确，或此设备是否已安装该字体。
+    fontGeneric: CSS 通用字体族：{name}
+    fontUnknown: 此浏览器无法检测该字体。
+    textColor: 文字颜色
+    uiTextColor: UI 文字颜色
+    inputBackgroundColor: 输入框背景颜色
+    backgroundColor: 背景颜色
+    language: 语言
+    languageDefault: 默认
+    fontDefault: 默认
+    fontSystem: 系统
+    note: 此设置仅保存在当前浏览器中。
+    noteDrag: 可拖动标题移动此窗口。
+  opacity:
+    title: 透明度
+  role:
+    admin:
+      short: 管理
+    moderator:
+      short: MOD
+    user:
+      short: USER
+    guest:
+      short: 访客
+  upload:
+    ready: 就绪
+    preparing: 正在准备上传...
+    progress: '正在上传 {current}/{total}: {name}'
+    canceling: 正在取消...
+    canceled: 上传已取消。
+    complete: 上传完成。
+    dropTitle: 拖放文件以上传
+    dropSubtitle: 在聊天面板内松开即可上传。
+    dropDenied: 不允许上传文件。
+    dropBusy: 已有上传正在进行。
+  media:
+    videoUnavailable: 视频预览不可用
+    audioUnavailable: 音频预览不可用
+    youtube: YouTube
+    youtubeTitle: YouTube 视频
+    loadVideo: ▶ 视频
+    loadAudio: ▶ 音频
+  error:
+    unknown: 未知错误
+    network: 网络错误
+    invalid_response: 服务器响应无效
+    method_not_allowed: 不允许的请求方法
+    empty_message: 消息为空
+    permission_denied: 权限不足
+    guest_disabled: 访客聊天已禁用
+    captcha_failed: 验证码验证失败
+    blocked_name: 该访客名称已被屏蔽
+    guest_muted: 访客聊天已被禁言
+    guest_mutedWithReason: 访客聊天已被禁言：{reason}
+    rate_limited: 请求过于频繁，请稍后再试。
+    upload_disabled: 文件上传已禁用
+    multipart_required: 上传请求无效
+    file_too_large: 文件过大
+    file_missing: 没有上传文件
+    upload_permission_denied: 你没有上传文件的权限
+    extension_not_allowed: 不允许的文件类型
+    invalid_path: 文件路径无效
+    not_found: 未找到
+    invalid_file: 文件无效
+    invalid_url: URL 无效
+    not_available: 不可用
+    auth_disabled: 账户绑定已禁用
+    password_login_disabled: 密码登录已禁用
+    login_locked: 登录失败次数过多。请稍后再试。
+    invalid_login: 用户名或密码无效
+    admin_ip_not_allowed: 不允许从此 IP 进行管理员登录
+    not_logged_in: 尚未登录
+    password_too_short: 密码至少需要 6 个字符
+    admin_panel_disabled: 网页管理面板已禁用
+    empty_value: 值为空
+    pinned_disabled: 置顶消息已禁用
+    message_not_found: 找不到消息
+    pin_limit_reached: 已达到置顶消息数量上限
+    commands_disabled: 网页命令已禁用
+    command_not_found: 找不到命令
+    invalid_command: 命令无效
+    command_failed: 命令运行失败
+    command_too_long: 命令过长
+  announcement:
+    minecraft-join: 🟢 {player} 加入了服务器。
+    minecraft-quit: 🔴 {player} 离开了服务器。
+    first-join: ✨ {player} 首次加入了服务器。
+    death: ☠ {message}
+    advancement: 🏆 {player} 完成了进度 [{advancement}]。
+    server-start: 🟢 服务器已启动。
+    server-stop: 🔴 服务器正在停止。
+    world-change: 🌍 {player} 移动到了 {to_world}。
+    gamemode-change: 🎮 {player} 的游戏模式已更改为 {to_gamemode}。
+    level-change: ⭐ {player} 的等级从 {old_level} 变为 {new_level}。
+    bed-enter: 💤 {player} 上床了。
+    web-login: 🌐 {name} 登录了网页聊天。
+    web-logout: 🌐 {name} 退出了网页聊天。
+  sender:
+    server: 服务器
+    discord: Discord
+    originalId: '原始ID: {name}'
+    displayName: '显示名称: {name}'
+    command: 命令
+    system: 系统
+  source:
+    game: 游戏
+    web: 网页
+    guest: 访客
+    discord: Discord
+    event: 系统
+  command:
+    onlyPlayers: 此命令只能由玩家使用。
+    noPermission: 你没有权限。
+    passwordSet: Web 聊天密码已设置。
+    configReloaded: BlueMapWebChat 配置已重新加载。
+    guestNoMutes: 没有访客/IP 禁言。
+    guestMutesTitle: 'BlueMapWebChat 禁言列表:'
+    guestMuteEntry: '- {type}:{value} 原因={reason} 过期={expires}'
+    guestMuteAdded: '已添加禁言: {type}:{value} ({minutes} 分钟)'
+    guestMuteRemoved: 禁言已移除。
+    guestMuteNotFound: 未找到禁言。
+    guestUnknownSubcommand: 未知的 guest 子命令。
+    sessionsTitle: 'BlueMapWebChat 会话: {count}'
+    sessionEntry: '- {username} {role} ip={ip}'
+    revokeDone: 已撤销 {username} 的 {count} 个会话。
+    adminLocalDisabled: 本地管理员账号创建已禁用。
+    adminCreated: '已创建本地管理员账号: {username}'
+    adminSetPasswordHint: '设置密码: /bmchat admin password {username} <password>'
+    adminAccountNotFound: 未找到账号。
+    adminPasswordSetFor: '密码已设置: {username}'
+    adminRoleInvalid: 角色必须是 user、moderator 或 admin。
+    adminRoleChanged: '{username} 的角色已更改为 {role}。'
+    adminUnknownSubcommand: 未知的 admin 子命令。
+    helpAuth: 关联 Web 账号
+    helpPassword: 设置 Web 登录密码
+    helpReload: 重新加载配置
+    helpAdmin: 管理管理员账号和角色
+    helpGuest: 管理访客/IP 禁言
+    helpSessions: 列出 Web 会话
+    helpRevoke: 撤销 Web 会话
+    never: 永不
+    authInvalid: 无效的认证请求。
+    authCodeExpired: 认证代码不存在或已过期。
+    authComplete: Web 聊天账号关联完成。请返回浏览器。
+  pinned:
+    count: 置顶消息：{count}
+    compact: '{count}'
+    single: '{title}'
+    multiple: '{title} 等 {rest} 条'
+    title: 置顶消息
+    empty: 没有置顶消息。
+    untitled: 置顶消息
+    pinnedBy: 由 {user} 置顶
+  commands:
+    title: 服务器命令
+    description: 从网页界面运行预先允许的服务器命令。
+    descriptionAll: 从网页界面运行任意服务器控制台命令。
+    directPlaceholder: 输入不带 / 的命令
+    runDirect: 运行命令
+    search: 搜索预设命令
+    noMatches: 没有匹配的命令。
+    notAvailable: 命令面板不可用。
+    confirm: 要运行命令吗？ /{command}
+    submitted: 命令已提交：{label}
+    failed: 命令运行失败：{error}
+    tooLong: 命令过长。最多 {max} 个字符。
+    maxLengthHint: 最多 {max} 个字符
+  system:
+    command-executed: 已执行 Web 命令：{label}
+    note: 服务器事件和 Web 命令结果等系统消息在存在 i18n 键时会在 Web UI 中翻译。config.yml 中的自定义 announcement
+      文本会作为回退文本保留。

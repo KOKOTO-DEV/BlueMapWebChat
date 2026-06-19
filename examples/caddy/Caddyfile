@@ -1,0 +1,29 @@
+# BlueMapWebChat HTTPS reverse proxy example for Caddy v2
+#
+# Replace map.example.com with your actual domain.
+# Install notes: see examples/caddy/INSTALL.md and docs/CADDY_HTTPS_EN.md.
+#
+# External URLs:
+#   https://map.example.com/
+#   https://map.example.com/bmwc/api/...
+#   https://map.example.com/bmwc/chat
+#
+# Internal services:
+#   BlueMap        -> http://127.0.0.1:8100
+#   BlueMapWebChat -> http://127.0.0.1:8899/api and /chat
+
+map.example.com {
+    encode zstd gzip
+
+    # BlueMapWebChat API and standalone web.
+    # Browser path /bmwc/api/config becomes internal /api/config.
+    # Browser path /bmwc/chat becomes internal /chat.
+    handle_path /bmwc/* {
+        reverse_proxy 127.0.0.1:8899
+    }
+
+    # BlueMap web map.
+    handle {
+        reverse_proxy 127.0.0.1:8100
+    }
+}

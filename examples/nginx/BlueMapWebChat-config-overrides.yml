@@ -1,0 +1,24 @@
+# Minimal BlueMapWebChat overrides when publishing through nginx at https://map.example.com/bmwc/.
+# Merge these values into plugins/BlueMapWebChat/config.yml.
+
+http:
+  host: "127.0.0.1"
+  port: 8899
+  path-prefix: "/api"
+  cors-origin: "https://map.example.com"
+
+standalone-web:
+  enabled: true
+  path: "/chat"
+  api-base-url: "/bmwc/api"
+
+web-addon:
+  api-base-url: "/bmwc/api"
+
+upload:
+  public-base-url: "/bmwc/api/uploads"
+
+# Keep media preview max-height enabled for scroll stability.
+# Recommended: 640-720. 0 means unlimited and may cause scroll jumps.
+ui:
+  image-preview-max-height: 720
