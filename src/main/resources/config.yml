@@ -1,4 +1,4 @@
-# BlueMapWebChat 3.0.0 configuration
+# BlueMapWebChat 3.1.0 configuration
 # Default profile: guest-enabled direct HTTP.
 # - Minecraft plugin serves its own API on http://<server-host>:8899/api
 # - Standalone web UI is available at http://<server-host>:8899/chat
@@ -175,6 +175,14 @@ ui:
   # Empty = follow the selected theme. Set a hex color to override UI labels such as role/source/time,
   # input placeholders, command/upload buttons, pinned-message labels, and other small UI text/glyphs.
   ui-text-color: ""
+  # Text shadow helps keep text readable on very dark/bright custom colors or map backgrounds.
+  # Supported modes: none, auto, dark, light, custom.
+  # auto = dark shadow for bright text and light shadow for dark text.
+  text-shadow-mode: "auto"
+  # Used only when text-shadow-mode is custom. The chat settings UI edits this with
+  # a color picker and sliders for X offset, Y offset, blur, and opacity.
+  # Stored as standard CSS text-shadow syntax. Example: "0 1px 2px rgba(0, 0, 0, 0.85)"
+  text-shadow-custom: "0 1px 2px rgba(0, 0, 0, 0.85)"
   # Empty = follow the selected theme. Set a hex color such as "#1e1e24" to override all chat input backgrounds.
   input-background-color: ""
   button-font-size: 12

@@ -1,5 +1,5 @@
 name: BlueMapWebChat
-version: 3.0.0
+version: 3.1.0
 main: dev.kokoto.bluemapwebchat.BlueMapWebChatPlugin
 api-version: '1.21'
 authors: [KOKOTO]

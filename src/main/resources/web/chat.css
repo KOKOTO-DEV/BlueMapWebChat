@@ -1330,6 +1330,25 @@
   font-size: var(--bmwc-badge-font-size, 10px) !important;
 }
 
+#bmwc-root .bmwc-history-end {
+  font-family: inherit !important;
+  font-size: max(10.5px, calc(var(--bmwc-message-font-size, 13px) * 0.82)) !important;
+  box-sizing: border-box !important;
+  min-width: min(268px, calc(100% - 24px)) !important;
+  max-width: calc(100% - 24px) !important;
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+#bmwc-root .bmwc-jump-latest {
+  font-family: inherit !important;
+  font-size: var(--bmwc-button-font-size, 12px) !important;
+}
+
 /* All outer edges and corners are transparent resize hit areas. */
 .bmwc-parent-resize-handle {
   background: transparent !important;
@@ -1359,6 +1378,8 @@
   --bmwc-link-color: #9fd0ff;
   --bmwc-modal-bg-rgb: 29, 29, 36;
   --bmwc-shadow-color: rgba(0,0,0,0.35);
+  --bmwc-text-shadow: 0 1px 2px rgba(0,0,0,0.85);
+  --bmwc-ui-text-shadow: 0 1px 2px rgba(0,0,0,0.85);
 }
 
 #bmwc-root.bmwc-theme-dark,
@@ -1379,19 +1400,19 @@
 }
 
 #bmwc-root.bmwc-theme-light {
-  --bmwc-panel-bg-rgb: 248, 250, 252;
-  --bmwc-text-color: #151922;
-  --bmwc-muted-color: rgba(21,25,34,0.72);
-  --bmwc-border-color: rgba(15,23,42,0.16);
-  --bmwc-header-bg: rgba(15,23,42,0.06);
-  --bmwc-form-bg: rgba(15,23,42,0.04);
-  --bmwc-button-bg: rgba(15,23,42,0.10);
-  --bmwc-button-hover-bg: rgba(15,23,42,0.18);
-  --bmwc-button-text: #151922;
-  --bmwc-input-bg: rgba(255,255,255,0.72);
-  --bmwc-link-color: #075bb5;
-  --bmwc-modal-bg-rgb: 248, 250, 252;
-  --bmwc-shadow-color: rgba(15,23,42,0.22);
+  --bmwc-panel-bg-rgb: 255, 255, 255;
+  --bmwc-text-color: #0f172a;
+  --bmwc-muted-color: rgba(51,65,85,0.86);
+  --bmwc-border-color: rgba(71,85,105,0.42);
+  --bmwc-header-bg: rgba(226,232,240,0.88);
+  --bmwc-form-bg: rgba(241,245,249,0.90);
+  --bmwc-button-bg: rgba(226,232,240,0.98);
+  --bmwc-button-hover-bg: rgba(203,213,225,1.0);
+  --bmwc-button-text: #0f172a;
+  --bmwc-input-bg: rgba(255,255,255,0.96);
+  --bmwc-link-color: #0b5cad;
+  --bmwc-modal-bg-rgb: 255, 255, 255;
+  --bmwc-shadow-color: rgba(15,23,42,0.24);
 }
 
 #bmwc-root.bmwc-theme-high-contrast {
@@ -1412,19 +1433,19 @@
 
 @media (prefers-color-scheme: light) {
   #bmwc-root.bmwc-theme-system {
-    --bmwc-panel-bg-rgb: 248, 250, 252;
-    --bmwc-text-color: #151922;
-    --bmwc-muted-color: rgba(21,25,34,0.72);
-    --bmwc-border-color: rgba(15,23,42,0.16);
-    --bmwc-header-bg: rgba(15,23,42,0.06);
-    --bmwc-form-bg: rgba(15,23,42,0.04);
-    --bmwc-button-bg: rgba(15,23,42,0.10);
-    --bmwc-button-hover-bg: rgba(15,23,42,0.18);
-    --bmwc-button-text: #151922;
-    --bmwc-input-bg: rgba(255,255,255,0.72);
-    --bmwc-link-color: #075bb5;
-    --bmwc-modal-bg-rgb: 248, 250, 252;
-    --bmwc-shadow-color: rgba(15,23,42,0.22);
+    --bmwc-panel-bg-rgb: 255, 255, 255;
+    --bmwc-text-color: #0f172a;
+    --bmwc-muted-color: rgba(51,65,85,0.86);
+    --bmwc-border-color: rgba(71,85,105,0.42);
+    --bmwc-header-bg: rgba(226,232,240,0.88);
+    --bmwc-form-bg: rgba(241,245,249,0.90);
+    --bmwc-button-bg: rgba(226,232,240,0.98);
+    --bmwc-button-hover-bg: rgba(203,213,225,1.0);
+    --bmwc-button-text: #0f172a;
+    --bmwc-input-bg: rgba(255,255,255,0.96);
+    --bmwc-link-color: #0b5cad;
+    --bmwc-modal-bg-rgb: 255, 255, 255;
+    --bmwc-shadow-color: rgba(15,23,42,0.24);
   }
 }
 
@@ -1463,6 +1484,85 @@
 
 #bmwc-root .bmwc-input::placeholder {
   color: var(--bmwc-muted-color) !important;
+}
+
+#bmwc-root .bmwc-message,
+#bmwc-root .bmwc-system,
+#bmwc-root .bmwc-body,
+#bmwc-root .bmwc-text,
+#bmwc-root .bmwc-sender,
+#bmwc-root .bmwc-meta,
+#bmwc-root .bmwc-time,
+#bmwc-root .bmwc-source-label,
+#bmwc-root .bmwc-source-badge,
+#bmwc-root .bmwc-role-badge,
+#bmwc-root .bmwc-status,
+#bmwc-root .bmwc-button,
+#bmwc-root .bmwc-input,
+#bmwc-root .bmwc-input::placeholder,
+#bmwc-root .bmwc-upload,
+#bmwc-root .bmwc-command,
+#bmwc-root .bmwc-mini-action,
+#bmwc-root .bmwc-pinned-open,
+#bmwc-root .bmwc-pinned-item,
+#bmwc-root .bmwc-history-end,
+#bmwc-root .bmwc-jump-latest,
+#bmwc-root .bmwc-pref-label,
+#bmwc-root .bmwc-pref-hints,
+#bmwc-root .bmwc-pref-font-help,
+#bmwc-root .bmwc-pref-font-status {
+  text-shadow: var(--bmwc-text-shadow, none);
+}
+
+#bmwc-root .bmwc-meta,
+#bmwc-root .bmwc-time,
+#bmwc-root .bmwc-source-label,
+#bmwc-root .bmwc-source-badge,
+#bmwc-root .bmwc-role-badge,
+#bmwc-root .bmwc-status,
+#bmwc-root .bmwc-button,
+#bmwc-root .bmwc-input,
+#bmwc-root .bmwc-input::placeholder,
+#bmwc-root .bmwc-upload,
+#bmwc-root .bmwc-command,
+#bmwc-root .bmwc-mini-action,
+#bmwc-root .bmwc-pinned-open,
+#bmwc-root .bmwc-pinned-item,
+#bmwc-root .bmwc-history-end,
+#bmwc-root .bmwc-jump-latest,
+#bmwc-root .bmwc-pref-label,
+#bmwc-root .bmwc-pref-hints,
+#bmwc-root .bmwc-pref-font-help,
+#bmwc-root .bmwc-pref-font-status {
+  text-shadow: var(--bmwc-ui-text-shadow, var(--bmwc-text-shadow, none));
+}
+
+#bmwc-root.bmwc-text-shadow-none .bmwc-message,
+#bmwc-root.bmwc-text-shadow-none .bmwc-system,
+#bmwc-root.bmwc-text-shadow-none .bmwc-body,
+#bmwc-root.bmwc-text-shadow-none .bmwc-text,
+#bmwc-root.bmwc-text-shadow-none .bmwc-sender,
+#bmwc-root.bmwc-text-shadow-none .bmwc-meta,
+#bmwc-root.bmwc-text-shadow-none .bmwc-time,
+#bmwc-root.bmwc-text-shadow-none .bmwc-source-label,
+#bmwc-root.bmwc-text-shadow-none .bmwc-source-badge,
+#bmwc-root.bmwc-text-shadow-none .bmwc-role-badge,
+#bmwc-root.bmwc-text-shadow-none .bmwc-status,
+#bmwc-root.bmwc-text-shadow-none .bmwc-button,
+#bmwc-root.bmwc-text-shadow-none .bmwc-input,
+#bmwc-root.bmwc-text-shadow-none .bmwc-input::placeholder,
+#bmwc-root.bmwc-text-shadow-none .bmwc-upload,
+#bmwc-root.bmwc-text-shadow-none .bmwc-command,
+#bmwc-root.bmwc-text-shadow-none .bmwc-mini-action,
+#bmwc-root.bmwc-text-shadow-none .bmwc-pinned-open,
+#bmwc-root.bmwc-text-shadow-none .bmwc-pinned-item,
+#bmwc-root.bmwc-text-shadow-none .bmwc-history-end,
+#bmwc-root.bmwc-text-shadow-none .bmwc-jump-latest,
+#bmwc-root.bmwc-text-shadow-none .bmwc-pref-label,
+#bmwc-root.bmwc-text-shadow-none .bmwc-pref-hints,
+#bmwc-root.bmwc-text-shadow-none .bmwc-pref-font-help,
+#bmwc-root.bmwc-text-shadow-none .bmwc-pref-font-status {
+  text-shadow: none;
 }
 
 #bmwc-root .bmwc-status,
@@ -1563,6 +1663,25 @@
   width: 100%;
   box-sizing: border-box;
   margin-bottom: 8px;
+}
+
+.bmwc-shadow-custom-panel {
+  margin: 8px 0 10px;
+  padding: 8px;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.14));
+  border-radius: 10px;
+  background: rgba(0,0,0,0.10);
+}
+
+.bmwc-shadow-preview {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.08);
+  color: var(--bmwc-text-color, #fff);
+  font-family: inherit;
+  font-size: var(--bmwc-message-font-size, 13px);
+  text-align: center;
 }
 
 .bmwc-pref-note {
@@ -2081,24 +2200,24 @@
 }
 
 #bmwc-root.bmwc-theme-light {
-  --bmwc-surface-bg: rgba(15,23,42,0.055);
-  --bmwc-surface-strong-bg: rgba(15,23,42,0.095);
-  --bmwc-surface-hover-bg: rgba(15,23,42,0.16);
-  --bmwc-progress-bg: rgba(15,23,42,0.16);
-  --bmwc-drop-backdrop: rgba(248,250,252,0.68);
-  --bmwc-drop-box-bg: rgba(255,255,255,0.96);
-  --bmwc-pinned-bg: rgba(180,120,0,0.12);
+  --bmwc-surface-bg: rgba(241,245,249,0.96);
+  --bmwc-surface-strong-bg: rgba(226,232,240,0.98);
+  --bmwc-surface-hover-bg: rgba(203,213,225,1.0);
+  --bmwc-progress-bg: rgba(148,163,184,0.34);
+  --bmwc-drop-backdrop: rgba(248,250,252,0.78);
+  --bmwc-drop-box-bg: rgba(255,255,255,0.98);
+  --bmwc-pinned-bg: rgba(245,158,11,0.18);
 }
 
 @media (prefers-color-scheme: light) {
   #bmwc-root.bmwc-theme-system {
-    --bmwc-surface-bg: rgba(15,23,42,0.055);
-    --bmwc-surface-strong-bg: rgba(15,23,42,0.095);
-    --bmwc-surface-hover-bg: rgba(15,23,42,0.16);
-    --bmwc-progress-bg: rgba(15,23,42,0.16);
-    --bmwc-drop-backdrop: rgba(248,250,252,0.68);
-    --bmwc-drop-box-bg: rgba(255,255,255,0.96);
-    --bmwc-pinned-bg: rgba(180,120,0,0.12);
+    --bmwc-surface-bg: rgba(241,245,249,0.96);
+    --bmwc-surface-strong-bg: rgba(226,232,240,0.98);
+    --bmwc-surface-hover-bg: rgba(203,213,225,1.0);
+    --bmwc-progress-bg: rgba(148,163,184,0.34);
+    --bmwc-drop-backdrop: rgba(248,250,252,0.78);
+    --bmwc-drop-box-bg: rgba(255,255,255,0.98);
+    --bmwc-pinned-bg: rgba(245,158,11,0.18);
   }
 }
 
@@ -2261,7 +2380,7 @@
 #bmwc-root #bmwc-login.bmwc-login-user {
   font-weight: 700;
   border: 1px solid var(--bmwc-border-color) !important;
-  text-shadow: none !important;
+  text-shadow: var(--bmwc-ui-text-shadow, var(--bmwc-text-shadow, none)) !important;
 }
 
 /* interactive pre-approved server command panel */
@@ -2561,4 +2680,742 @@ body.bmwc-pip-mode {
 #bmwc-root .bmwc-button.bmwc-command,
 #bmwc-root .bmwc-mini-action {
   color: var(--bmwc-ui-color, var(--bmwc-button-text)) !important;
+}
+
+/* oldest-history notice and jump-to-latest affordance */
+.bmwc-history-end {
+  flex: 0 0 auto;
+  align-self: center;
+  margin: 2px auto 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: max(10.5px, calc(var(--bmwc-message-font-size, 13px) * 0.82));
+  line-height: 1.25;
+  color: var(--bmwc-ui-text-color, rgba(255,255,255,0.72));
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.10);
+  opacity: 0.78;
+  pointer-events: none;
+  user-select: none;
+}
+
+.bmwc-jump-latest {
+  position: absolute;
+  left: 50%;
+  right: auto;
+  bottom: 72px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  max-width: calc(100% - 28px);
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 999px;
+  color: var(--bmwc-ui-text-color, #fff);
+  background: rgba(28, 35, 48, 0.92);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.28);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--bmwc-button-font-size, 12px);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.bmwc-jump-latest:hover {
+  background: rgba(42, 52, 70, 0.96);
+}
+
+.bmwc-jump-latest-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+#bmwc-root.bmwc-minimized .bmwc-history-end,
+#bmwc-root.bmwc-minimized .bmwc-jump-latest,
+#bmwc-root.bmwc-guest-hidden .bmwc-history-end,
+#bmwc-root.bmwc-guest-hidden .bmwc-jump-latest {
+  display: none !important;
+}
+
+
+/* Keep moderation actions next to the timestamp/source label. */
+#bmwc-root .bmwc-mini-actions {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  min-width: 0;
+  margin-left: 6px;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+#bmwc-root .bmwc-mini-action {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+#bmwc-root .bmwc-history-end {
+  position: relative;
+  z-index: 1;
+}
+
+
+/* Stable inline moderation actions next to source/time labels.
+   Keep this as normal flow (not right-aligned) so each action clearly belongs
+   to the same message, but isolate the row from tiny inline/text-node
+   reflow differences during virtual-scroll remounts. */
+#bmwc-root .bmwc-meta {
+  display: flex !important;
+  align-items: baseline !important;
+  justify-content: flex-start !important;
+  flex-wrap: wrap !important;
+  column-gap: 4px !important;
+  row-gap: 1px !important;
+}
+
+#bmwc-root .bmwc-meta-sep {
+  flex: 0 0 auto;
+  opacity: 0.82;
+  user-select: none;
+}
+
+#bmwc-root .bmwc-source-label,
+#bmwc-root .bmwc-time,
+#bmwc-root .bmwc-mini-actions,
+#bmwc-root .bmwc-mini-action {
+  flex: 0 0 auto !important;
+}
+
+#bmwc-root .bmwc-mini-actions {
+  position: static !important;
+  margin-left: 2px !important;
+  transform: none !important;
+}
+
+
+/* Stable history-end notice and inline moderation action grouping. */
+#bmwc-root .bmwc-history-end {
+  flex: 0 0 auto !important;
+  order: -1;
+}
+
+#bmwc-root .bmwc-time-actions {
+  display: inline-flex !important;
+  align-items: baseline !important;
+  gap: 4px !important;
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+  min-width: max-content !important;
+}
+
+#bmwc-root .bmwc-time-actions .bmwc-mini-actions {
+  margin-left: 2px !important;
+}
+
+/* Keep large media inside the visible chat viewport even when the configured
+   preview max-height is very large or unlimited. Inline per-message max-height
+   values are intentionally overridden here so images/videos/YouTube cards do
+   not exceed the current chat window. */
+#bmwc-root .bmwc-image-link,
+#bmwc-root .bmwc-video-wrap,
+#bmwc-root .bmwc-youtube-wrap,
+#bmwc-root .bmwc-youtube-card,
+#bmwc-root .bmwc-media-card {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+#bmwc-root .bmwc-image-preview,
+#bmwc-root .bmwc-video-preview {
+  max-width: 100% !important;
+  max-height: var(--bmwc-media-viewport-max-height, min(720px, calc(100vh - 180px))) !important;
+  width: auto !important;
+  height: auto !important;
+  object-fit: contain !important;
+}
+
+#bmwc-root .bmwc-youtube-wrap,
+#bmwc-root .bmwc-youtube-card {
+  max-height: var(--bmwc-media-viewport-max-height, min(720px, calc(100vh - 180px))) !important;
+}
+
+#bmwc-root .bmwc-youtube-wrap,
+#bmwc-root .bmwc-youtube-card {
+  aspect-ratio: 16 / 9;
+}
+
+#bmwc-root .bmwc-youtube-card iframe,
+#bmwc-root .bmwc-youtube-wrap iframe,
+#bmwc-root .bmwc-media-card iframe {
+  max-width: 100% !important;
+  max-height: var(--bmwc-media-viewport-max-height, min(720px, calc(100vh - 180px))) !important;
+  box-sizing: border-box !important;
+}
+
+/* Theme-colored scroll affordances.  These two controls intentionally use the
+   selected theme colors instead of the user-overridable UI text color so they
+   remain readable even when chat/UI text colors are customized. */
+#bmwc-root {
+  --bmwc-affordance-text-color: #ffffff;
+  --bmwc-affordance-bg-rgb: 18, 18, 22;
+}
+#bmwc-root.bmwc-theme-dark,
+#bmwc-root.bmwc-theme-system {
+  --bmwc-affordance-text-color: #ffffff;
+  --bmwc-affordance-bg-rgb: 18, 18, 22;
+}
+#bmwc-root.bmwc-theme-light {
+  --bmwc-affordance-text-color: #0f172a;
+  --bmwc-affordance-bg-rgb: 226, 232, 240;
+}
+#bmwc-root.bmwc-theme-high-contrast {
+  --bmwc-affordance-text-color: #ffffff;
+  --bmwc-affordance-bg-rgb: 0, 0, 0;
+}
+@media (prefers-color-scheme: light) {
+  #bmwc-root.bmwc-theme-system {
+    --bmwc-affordance-text-color: #0f172a;
+    --bmwc-affordance-bg-rgb: 226, 232, 240;
+  }
+}
+
+#bmwc-root .bmwc-history-end {
+  position: absolute !important;
+  top: var(--bmwc-affordance-top, 54px) !important;
+  left: 50% !important;
+  right: auto !important;
+  transform: translateX(-50%) !important;
+  z-index: 6 !important;
+  order: initial !important;
+  color: var(--bmwc-affordance-text-color) !important;
+  background: rgba(var(--bmwc-affordance-bg-rgb), 0.92) !important;
+  border-color: var(--bmwc-border-color) !important;
+  box-shadow: 0 4px 16px var(--bmwc-shadow-color) !important;
+  backdrop-filter: blur(8px);
+}
+
+#bmwc-root .bmwc-jump-latest {
+  bottom: var(--bmwc-affordance-bottom, 72px) !important;
+  color: var(--bmwc-affordance-text-color) !important;
+  background: rgba(var(--bmwc-affordance-bg-rgb), 0.92) !important;
+  border-color: var(--bmwc-border-color) !important;
+}
+
+#bmwc-root .bmwc-jump-latest:hover {
+  background: var(--bmwc-header-bg) !important;
+}
+
+
+/* Stronger light-theme affordance and button contrast.  The original light
+   palette was intentionally subtle, but against a bright map/background many
+   buttons became hard to see.  Keep the dark theme unchanged and make light
+   controls look like actual controls with stronger surfaces, borders and focus
+   rings. */
+#bmwc-root.bmwc-theme-light .bmwc-button,
+#bmwc-root.bmwc-theme-light .bmwc-mini-action,
+#bmwc-root.bmwc-theme-light .bmwc-media-load,
+#bmwc-root.bmwc-theme-light .bmwc-command-inline-item,
+#bmwc-root.bmwc-theme-light .bmwc-jump-latest,
+#bmwc-root.bmwc-theme-light .bmwc-history-end {
+  border-color: rgba(71,85,105,0.48) !important;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.12) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-button:hover,
+#bmwc-root.bmwc-theme-light .bmwc-mini-action:hover,
+#bmwc-root.bmwc-theme-light .bmwc-media-load:hover,
+#bmwc-root.bmwc-theme-light .bmwc-command-inline-item:hover,
+#bmwc-root.bmwc-theme-light .bmwc-jump-latest:hover {
+  border-color: rgba(51,65,85,0.58) !important;
+  box-shadow: 0 2px 6px rgba(15,23,42,0.16) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-input:focus,
+#bmwc-root.bmwc-theme-light .bmwc-button:focus-visible,
+#bmwc-root.bmwc-theme-light .bmwc-mini-action:focus-visible,
+#bmwc-root.bmwc-theme-light .bmwc-command-inline-item:focus-visible {
+  outline: 2px solid rgba(37,99,235,0.35) !important;
+  outline-offset: 2px !important;
+  border-color: rgba(37,99,235,0.72) !important;
+}
+
+@media (prefers-color-scheme: light) {
+  #bmwc-root.bmwc-theme-system .bmwc-button,
+  #bmwc-root.bmwc-theme-system .bmwc-mini-action,
+  #bmwc-root.bmwc-theme-system .bmwc-media-load,
+  #bmwc-root.bmwc-theme-system .bmwc-command-inline-item,
+  #bmwc-root.bmwc-theme-system .bmwc-jump-latest,
+  #bmwc-root.bmwc-theme-system .bmwc-history-end {
+    border-color: rgba(71,85,105,0.48) !important;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.12) !important;
+  }
+
+  #bmwc-root.bmwc-theme-system .bmwc-button:hover,
+  #bmwc-root.bmwc-theme-system .bmwc-mini-action:hover,
+  #bmwc-root.bmwc-theme-system .bmwc-media-load:hover,
+  #bmwc-root.bmwc-theme-system .bmwc-command-inline-item:hover,
+  #bmwc-root.bmwc-theme-system .bmwc-jump-latest:hover {
+    border-color: rgba(51,65,85,0.58) !important;
+    box-shadow: 0 2px 6px rgba(15,23,42,0.16) !important;
+  }
+
+  #bmwc-root.bmwc-theme-system .bmwc-input:focus,
+  #bmwc-root.bmwc-theme-system .bmwc-button:focus-visible,
+  #bmwc-root.bmwc-theme-system .bmwc-mini-action:focus-visible,
+  #bmwc-root.bmwc-theme-system .bmwc-command-inline-item:focus-visible {
+    outline: 2px solid rgba(37,99,235,0.35) !important;
+    outline-offset: 2px !important;
+    border-color: rgba(37,99,235,0.72) !important;
+  }
+}
+
+
+/* Light theme admin indicators need a real edge.  Without a border they can
+   look like plain white text/surface against the light chat background. */
+#bmwc-root.bmwc-theme-light .bmwc-status-role-ADMIN,
+#bmwc-root.bmwc-theme-light .bmwc-role-ADMIN .bmwc-sender {
+  display: inline-block !important;
+  padding: 0 5px !important;
+  border-radius: 6px !important;
+  color: #5f3b00 !important;
+  background: rgba(255, 193, 7, 0.28) !important;
+  border: 1px solid rgba(132, 78, 0, 0.55) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12) !important;
+  line-height: 1.35 !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-status-role-MODERATOR,
+#bmwc-root.bmwc-theme-light .bmwc-role-MODERATOR .bmwc-sender {
+  display: inline-block !important;
+  padding: 0 5px !important;
+  border-radius: 6px !important;
+  color: #004f7a !important;
+  background: rgba(14, 165, 233, 0.18) !important;
+  border: 1px solid rgba(0, 95, 135, 0.42) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.10) !important;
+  line-height: 1.35 !important;
+}
+
+@media (prefers-color-scheme: light) {
+  #bmwc-root.bmwc-theme-system .bmwc-status-role-ADMIN,
+  #bmwc-root.bmwc-theme-system .bmwc-role-ADMIN .bmwc-sender {
+    display: inline-block !important;
+    padding: 0 5px !important;
+    border-radius: 6px !important;
+    color: #5f3b00 !important;
+    background: rgba(255, 193, 7, 0.28) !important;
+    border: 1px solid rgba(132, 78, 0, 0.55) !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12) !important;
+    line-height: 1.35 !important;
+  }
+
+  #bmwc-root.bmwc-theme-system .bmwc-status-role-MODERATOR,
+  #bmwc-root.bmwc-theme-system .bmwc-role-MODERATOR .bmwc-sender {
+    display: inline-block !important;
+    padding: 0 5px !important;
+    border-radius: 6px !important;
+    color: #004f7a !important;
+    background: rgba(14, 165, 233, 0.18) !important;
+    border: 1px solid rgba(0, 95, 135, 0.42) !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.10) !important;
+    line-height: 1.35 !important;
+  }
+}
+
+
+/* polished light theme palette.
+   Keep dark/high-contrast unchanged, but make light mode use one calm slate
+   palette instead of mixed white/gray surfaces. */
+#bmwc-root.bmwc-theme-light {
+  color-scheme: light;
+  --bmwc-panel-bg-rgb: 248, 250, 252;
+  --bmwc-modal-bg-rgb: 248, 250, 252;
+  --bmwc-text-color: #111827;
+  --bmwc-muted-color: #64748b;
+  --bmwc-border-color: rgba(148, 163, 184, 0.46);
+  --bmwc-header-bg: rgba(241, 245, 249, 0.94);
+  --bmwc-form-bg: rgba(248, 250, 252, 0.96);
+  --bmwc-button-bg: rgba(241, 245, 249, 0.96);
+  --bmwc-button-hover-bg: rgba(226, 232, 240, 0.98);
+  --bmwc-button-text: #1e293b;
+  --bmwc-input-bg: rgba(255, 255, 255, 0.98);
+  --bmwc-link-color: #2563eb;
+  --bmwc-shadow-color: rgba(15, 23, 42, 0.18);
+  --bmwc-surface-bg: rgba(255, 255, 255, 0.70);
+  --bmwc-surface-strong-bg: rgba(241, 245, 249, 0.94);
+  --bmwc-surface-hover-bg: rgba(226, 232, 240, 0.94);
+  --bmwc-progress-bg: rgba(148, 163, 184, 0.26);
+  --bmwc-drop-backdrop: rgba(241, 245, 249, 0.76);
+  --bmwc-drop-box-bg: rgba(255, 255, 255, 0.98);
+  --bmwc-pinned-bg: rgba(251, 191, 36, 0.14);
+  --bmwc-affordance-text-color: #1e293b;
+  --bmwc-affordance-bg-rgb: 255, 255, 255;
+  --bmwc-admin-text: #7a4b00;
+  --bmwc-admin-bg: rgba(251, 191, 36, 0.20);
+  --bmwc-admin-border: rgba(180, 83, 9, 0.36);
+  --bmwc-mod-text: #075985;
+  --bmwc-mod-bg: rgba(14, 165, 233, 0.15);
+  --bmwc-mod-border: rgba(2, 132, 199, 0.32);
+}
+
+@media (prefers-color-scheme: light) {
+  #bmwc-root.bmwc-theme-system {
+    color-scheme: light;
+    --bmwc-panel-bg-rgb: 248, 250, 252;
+    --bmwc-modal-bg-rgb: 248, 250, 252;
+    --bmwc-text-color: #111827;
+    --bmwc-muted-color: #64748b;
+    --bmwc-border-color: rgba(148, 163, 184, 0.46);
+    --bmwc-header-bg: rgba(241, 245, 249, 0.94);
+    --bmwc-form-bg: rgba(248, 250, 252, 0.96);
+    --bmwc-button-bg: rgba(241, 245, 249, 0.96);
+    --bmwc-button-hover-bg: rgba(226, 232, 240, 0.98);
+    --bmwc-button-text: #1e293b;
+    --bmwc-input-bg: rgba(255, 255, 255, 0.98);
+    --bmwc-link-color: #2563eb;
+    --bmwc-shadow-color: rgba(15, 23, 42, 0.18);
+    --bmwc-surface-bg: rgba(255, 255, 255, 0.70);
+    --bmwc-surface-strong-bg: rgba(241, 245, 249, 0.94);
+    --bmwc-surface-hover-bg: rgba(226, 232, 240, 0.94);
+    --bmwc-progress-bg: rgba(148, 163, 184, 0.26);
+    --bmwc-drop-backdrop: rgba(241, 245, 249, 0.76);
+    --bmwc-drop-box-bg: rgba(255, 255, 255, 0.98);
+    --bmwc-pinned-bg: rgba(251, 191, 36, 0.14);
+    --bmwc-affordance-text-color: #1e293b;
+    --bmwc-affordance-bg-rgb: 255, 255, 255;
+    --bmwc-admin-text: #7a4b00;
+    --bmwc-admin-bg: rgba(251, 191, 36, 0.20);
+    --bmwc-admin-border: rgba(180, 83, 9, 0.36);
+    --bmwc-mod-text: #075985;
+    --bmwc-mod-bg: rgba(14, 165, 233, 0.15);
+    --bmwc-mod-border: rgba(2, 132, 199, 0.32);
+  }
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, var(--bmwc-panel-opacity)), rgba(var(--bmwc-panel-bg-rgb), var(--bmwc-panel-opacity))) !important;
+  border-color: rgba(148, 163, 184, 0.50) !important;
+  box-shadow: 0 10px 32px rgba(15, 23, 42, 0.18) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-header,
+#bmwc-root.bmwc-theme-light .bmwc-form {
+  background: var(--bmwc-header-bg) !important;
+  border-color: var(--bmwc-border-color) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-form {
+  background: var(--bmwc-form-bg) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-modal {
+  background: linear-gradient(180deg, rgba(255, 255, 255, var(--bmwc-panel-opacity)), rgba(248, 250, 252, var(--bmwc-panel-opacity))) !important;
+  border-color: rgba(148, 163, 184, 0.52) !important;
+  box-shadow: 0 16px 44px rgba(15, 23, 42, 0.20) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-button,
+#bmwc-root.bmwc-theme-light .bmwc-mini-action,
+#bmwc-root.bmwc-theme-light .bmwc-media-load,
+#bmwc-root.bmwc-theme-light .bmwc-command-inline-item,
+#bmwc-root.bmwc-theme-light .bmwc-jump-latest,
+#bmwc-root.bmwc-theme-light .bmwc-history-end {
+  color: var(--bmwc-button-text) !important;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), var(--bmwc-button-bg)) !important;
+  border-color: rgba(148, 163, 184, 0.55) !important;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.10) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-button:hover,
+#bmwc-root.bmwc-theme-light .bmwc-mini-action:hover,
+#bmwc-root.bmwc-theme-light .bmwc-media-load:hover,
+#bmwc-root.bmwc-theme-light .bmwc-command-inline-item:hover,
+#bmwc-root.bmwc-theme-light .bmwc-jump-latest:hover {
+  background: linear-gradient(180deg, rgba(248,250,252,1), var(--bmwc-button-hover-bg)) !important;
+  border-color: rgba(100, 116, 139, 0.58) !important;
+  box-shadow: 0 2px 7px rgba(15,23,42,0.14) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-input,
+#bmwc-root.bmwc-theme-light .bmwc-pref-input,
+#bmwc-root.bmwc-theme-light .bmwc-pref-select,
+#bmwc-root.bmwc-theme-light .bmwc-pref-color {
+  color: var(--bmwc-text-color) !important;
+  background: var(--bmwc-input-bg) !important;
+  border-color: rgba(148, 163, 184, 0.54) !important;
+  box-shadow: inset 0 1px 2px rgba(15,23,42,0.04) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-input:focus,
+#bmwc-root.bmwc-theme-light .bmwc-pref-input:focus,
+#bmwc-root.bmwc-theme-light .bmwc-pref-select:focus,
+#bmwc-root.bmwc-theme-light .bmwc-button:focus-visible,
+#bmwc-root.bmwc-theme-light .bmwc-mini-action:focus-visible,
+#bmwc-root.bmwc-theme-light .bmwc-command-inline-item:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.20) !important;
+  outline-offset: 2px !important;
+  border-color: rgba(37, 99, 235, 0.55) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-admin-grid,
+#bmwc-root.bmwc-theme-light .bmwc-admin-list,
+#bmwc-root.bmwc-theme-light .bmwc-upload-progress,
+#bmwc-root.bmwc-theme-light .bmwc-media-card,
+#bmwc-root.bmwc-theme-light .bmwc-media-error,
+#bmwc-root.bmwc-theme-light .bmwc-pinned-item,
+#bmwc-root.bmwc-theme-light .bmwc-pinned-open,
+#bmwc-root.bmwc-theme-light .bmwc-code,
+#bmwc-root.bmwc-theme-light .bmwc-pref-preview,
+#bmwc-root.bmwc-theme-light .bmwc-pref-fieldset {
+  background: var(--bmwc-surface-bg) !important;
+  border-color: var(--bmwc-border-color) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-admin-item,
+#bmwc-root.bmwc-theme-light .bmwc-pinned-bar,
+#bmwc-root.bmwc-theme-light .bmwc-pref-row {
+  border-color: var(--bmwc-border-color) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-drop-overlay {
+  background: var(--bmwc-drop-backdrop) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-drop-box {
+  background: var(--bmwc-drop-box-bg) !important;
+  border-color: rgba(37, 99, 235, 0.34) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-status-role-ADMIN,
+#bmwc-root.bmwc-theme-light .bmwc-role-ADMIN .bmwc-sender {
+  color: var(--bmwc-admin-text) !important;
+  background: var(--bmwc-admin-bg) !important;
+  border-color: var(--bmwc-admin-border) !important;
+  box-shadow: 0 1px 2px rgba(120, 53, 15, 0.10) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-status-role-MODERATOR,
+#bmwc-root.bmwc-theme-light .bmwc-role-MODERATOR .bmwc-sender {
+  color: var(--bmwc-mod-text) !important;
+  background: var(--bmwc-mod-bg) !important;
+  border-color: var(--bmwc-mod-border) !important;
+  box-shadow: 0 1px 2px rgba(7, 89, 133, 0.08) !important;
+}
+
+@media (prefers-color-scheme: light) {
+  #bmwc-root.bmwc-theme-system .bmwc-panel {
+    background: linear-gradient(180deg, rgba(255, 255, 255, var(--bmwc-panel-opacity)), rgba(var(--bmwc-panel-bg-rgb), var(--bmwc-panel-opacity))) !important;
+    border-color: rgba(148, 163, 184, 0.50) !important;
+    box-shadow: 0 10px 32px rgba(15, 23, 42, 0.18) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-header,
+  #bmwc-root.bmwc-theme-system .bmwc-form {
+    background: var(--bmwc-header-bg) !important;
+    border-color: var(--bmwc-border-color) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-form {
+    background: var(--bmwc-form-bg) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-modal {
+    background: linear-gradient(180deg, rgba(255, 255, 255, var(--bmwc-panel-opacity)), rgba(248, 250, 252, var(--bmwc-panel-opacity))) !important;
+    border-color: rgba(148, 163, 184, 0.52) !important;
+    box-shadow: 0 16px 44px rgba(15, 23, 42, 0.20) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-button,
+  #bmwc-root.bmwc-theme-system .bmwc-mini-action,
+  #bmwc-root.bmwc-theme-system .bmwc-media-load,
+  #bmwc-root.bmwc-theme-system .bmwc-command-inline-item,
+  #bmwc-root.bmwc-theme-system .bmwc-jump-latest,
+  #bmwc-root.bmwc-theme-system .bmwc-history-end {
+    color: var(--bmwc-button-text) !important;
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), var(--bmwc-button-bg)) !important;
+    border-color: rgba(148, 163, 184, 0.55) !important;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.10) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-button:hover,
+  #bmwc-root.bmwc-theme-system .bmwc-mini-action:hover,
+  #bmwc-root.bmwc-theme-system .bmwc-media-load:hover,
+  #bmwc-root.bmwc-theme-system .bmwc-command-inline-item:hover,
+  #bmwc-root.bmwc-theme-system .bmwc-jump-latest:hover {
+    background: linear-gradient(180deg, rgba(248,250,252,1), var(--bmwc-button-hover-bg)) !important;
+    border-color: rgba(100, 116, 139, 0.58) !important;
+    box-shadow: 0 2px 7px rgba(15,23,42,0.14) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-input,
+  #bmwc-root.bmwc-theme-system .bmwc-pref-input,
+  #bmwc-root.bmwc-theme-system .bmwc-pref-select,
+  #bmwc-root.bmwc-theme-system .bmwc-pref-color {
+    color: var(--bmwc-text-color) !important;
+    background: var(--bmwc-input-bg) !important;
+    border-color: rgba(148, 163, 184, 0.54) !important;
+    box-shadow: inset 0 1px 2px rgba(15,23,42,0.04) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-input:focus,
+  #bmwc-root.bmwc-theme-system .bmwc-pref-input:focus,
+  #bmwc-root.bmwc-theme-system .bmwc-pref-select:focus,
+  #bmwc-root.bmwc-theme-system .bmwc-button:focus-visible,
+  #bmwc-root.bmwc-theme-system .bmwc-mini-action:focus-visible,
+  #bmwc-root.bmwc-theme-system .bmwc-command-inline-item:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.20) !important;
+    outline-offset: 2px !important;
+    border-color: rgba(37, 99, 235, 0.55) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-admin-grid,
+  #bmwc-root.bmwc-theme-system .bmwc-admin-list,
+  #bmwc-root.bmwc-theme-system .bmwc-upload-progress,
+  #bmwc-root.bmwc-theme-system .bmwc-media-card,
+  #bmwc-root.bmwc-theme-system .bmwc-media-error,
+  #bmwc-root.bmwc-theme-system .bmwc-pinned-item,
+  #bmwc-root.bmwc-theme-system .bmwc-pinned-open,
+  #bmwc-root.bmwc-theme-system .bmwc-code,
+  #bmwc-root.bmwc-theme-system .bmwc-pref-preview,
+  #bmwc-root.bmwc-theme-system .bmwc-pref-fieldset {
+    background: var(--bmwc-surface-bg) !important;
+    border-color: var(--bmwc-border-color) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.72) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-admin-item,
+  #bmwc-root.bmwc-theme-system .bmwc-pinned-bar,
+  #bmwc-root.bmwc-theme-system .bmwc-pref-row {
+    border-color: var(--bmwc-border-color) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-drop-overlay {
+    background: var(--bmwc-drop-backdrop) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-drop-box {
+    background: var(--bmwc-drop-box-bg) !important;
+    border-color: rgba(37, 99, 235, 0.34) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-status-role-ADMIN,
+  #bmwc-root.bmwc-theme-system .bmwc-role-ADMIN .bmwc-sender {
+    color: var(--bmwc-admin-text) !important;
+    background: var(--bmwc-admin-bg) !important;
+    border-color: var(--bmwc-admin-border) !important;
+    box-shadow: 0 1px 2px rgba(120, 53, 15, 0.10) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-status-role-MODERATOR,
+  #bmwc-root.bmwc-theme-system .bmwc-role-MODERATOR .bmwc-sender {
+    color: var(--bmwc-mod-text) !important;
+    background: var(--bmwc-mod-bg) !important;
+    border-color: var(--bmwc-mod-border) !important;
+    box-shadow: 0 1px 2px rgba(7, 89, 133, 0.08) !important;
+  }
+}
+
+/* 3.1.0 correction: only the header role indicator gets a bordered badge.
+   Message sender names keep their normal colored text without badge chrome. */
+#bmwc-root.bmwc-theme-light .bmwc-role-ADMIN .bmwc-sender,
+#bmwc-root.bmwc-theme-light .bmwc-role-MODERATOR .bmwc-sender {
+  display: inline !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  line-height: inherit !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-role-ADMIN .bmwc-sender {
+  color: var(--bmwc-admin-text, #704600) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-role-MODERATOR .bmwc-sender {
+  color: var(--bmwc-mod-text, #004f7a) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-status-role-ADMIN,
+#bmwc-root.bmwc-theme-light .bmwc-status-role-MODERATOR {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  align-self: center !important;
+  box-sizing: border-box !important;
+  height: 18px !important;
+  min-width: 34px !important;
+  max-width: 62px !important;
+  padding: 0 6px !important;
+  margin-left: 6px !important;
+  border-radius: 6px !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
+  opacity: 1 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.01em !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-status-role-ADMIN {
+  color: var(--bmwc-admin-text, #704600) !important;
+  background: var(--bmwc-admin-bg, rgba(255, 193, 7, 0.24)) !important;
+  border: 1px solid var(--bmwc-admin-border, rgba(160, 100, 0, 0.42)) !important;
+  box-shadow: 0 1px 2px rgba(120, 53, 15, 0.10) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-status-role-MODERATOR {
+  color: var(--bmwc-mod-text, #004f7a) !important;
+  background: var(--bmwc-mod-bg, rgba(14, 165, 233, 0.16)) !important;
+  border: 1px solid var(--bmwc-mod-border, rgba(0, 95, 135, 0.36)) !important;
+  box-shadow: 0 1px 2px rgba(7, 89, 133, 0.08) !important;
+}
+
+@media (prefers-color-scheme: light) {
+  #bmwc-root.bmwc-theme-system .bmwc-role-ADMIN .bmwc-sender,
+  #bmwc-root.bmwc-theme-system .bmwc-role-MODERATOR .bmwc-sender {
+    display: inline !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    line-height: inherit !important;
+  }
+
+  #bmwc-root.bmwc-theme-system .bmwc-role-ADMIN .bmwc-sender {
+    color: var(--bmwc-admin-text, #704600) !important;
+  }
+
+  #bmwc-root.bmwc-theme-system .bmwc-role-MODERATOR .bmwc-sender {
+    color: var(--bmwc-mod-text, #004f7a) !important;
+  }
+
+  #bmwc-root.bmwc-theme-system .bmwc-status-role-ADMIN,
+  #bmwc-root.bmwc-theme-system .bmwc-status-role-MODERATOR {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    align-self: center !important;
+    box-sizing: border-box !important;
+    height: 18px !important;
+    min-width: 34px !important;
+    max-width: 62px !important;
+    padding: 0 6px !important;
+    margin-left: 6px !important;
+    border-radius: 6px !important;
+    line-height: 1 !important;
+    vertical-align: middle !important;
+    opacity: 1 !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.01em !important;
+  }
+
+  #bmwc-root.bmwc-theme-system .bmwc-status-role-ADMIN {
+    color: var(--bmwc-admin-text, #704600) !important;
+    background: var(--bmwc-admin-bg, rgba(255, 193, 7, 0.24)) !important;
+    border: 1px solid var(--bmwc-admin-border, rgba(160, 100, 0, 0.42)) !important;
+    box-shadow: 0 1px 2px rgba(120, 53, 15, 0.10) !important;
+  }
+
+  #bmwc-root.bmwc-theme-system .bmwc-status-role-MODERATOR {
+    color: var(--bmwc-mod-text, #004f7a) !important;
+    background: var(--bmwc-mod-bg, rgba(14, 165, 233, 0.16)) !important;
+    border: 1px solid var(--bmwc-mod-border, rgba(0, 95, 135, 0.36)) !important;
+    box-shadow: 0 1px 2px rgba(7, 89, 133, 0.08) !important;
+  }
 }

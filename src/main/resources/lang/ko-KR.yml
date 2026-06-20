@@ -33,6 +33,7 @@ web:
     commands: 명령어
     pip: PIP
     run: 실행
+    jumpLatest: 최신 메시지로 이동
   placeholder:
     guestName: 게스트 이름
     captchaAnswer: 답
@@ -99,11 +100,17 @@ web:
   account:
     role: 권한
   pip:
-    unsupported: 이 브라우저는 Document Picture-in-Picture를 지원하지 않습니다. 데스크톱 Chrome 또는 Edge에서
-      시도해 주세요.
+    unsupported: 이 브라우저는 Document Picture-in-Picture를 지원하지 않습니다. 데스크톱 Chrome 또는 Edge에서 시도해 주세요.
     openFailed: 'Picture-in-Picture 창을 열지 못했습니다: {error}'
   preferences:
     title: 채팅 설정
+    theme: 테마
+    themeDefault: 기본값
+    themeSystem: 시스템
+    themeDark: 어두운 테마
+    themeLight: 밝은 테마
+    themeHighContrast: 고대비
+    themeResetNote: 테마를 변경하면 시각 관련 채팅 설정이 해당 테마 기본값으로 초기화됩니다.
     fontSize: 글자 크기
     fontFamily: 폰트
     fontCustom: 직접 입력
@@ -118,6 +125,20 @@ web:
     fontUnknown: 이 브라우저에서 글꼴을 확인할 수 없습니다.
     textColor: 글자 색
     uiTextColor: UI 글자 색
+    textShadow: 텍스트 그림자
+    textShadowNone: 없음
+    textShadowAuto: 자동
+    textShadowDark: 어두운 그림자
+    textShadowLight: 밝은 그림자
+    textShadowCustom: 사용자 지정
+    textShadowCustomValue: 사용자 지정 그림자
+    textShadowCustomColor: 그림자 색
+    textShadowCustomX: 가로 위치
+    textShadowCustomY: 세로 위치
+    textShadowCustomBlur: 흐림
+    textShadowCustomOpacity: 불투명도
+    textShadowCustomPreview: 그림자 미리보기
+    textShadowCustomPlaceholder: 0 1px 2px rgba(0, 0, 0, 0.85)
     inputBackgroundColor: 입력창 배경색
     backgroundColor: 배경색
     language: 언어
@@ -282,5 +303,6 @@ web:
     maxLengthHint: 최대 {max}자
   system:
     command-executed: '웹 명령어 실행됨: {label}'
-    note: 서버 이벤트와 웹 명령어 결과 같은 시스템 메시지는 i18n 키가 있으면 웹 UI에서 번역됩니다. config.yml의 사용자 지정
-      announcement 문구는 fallback 문구로 유지됩니다.
+    note: 서버 이벤트와 웹 명령어 결과 같은 시스템 메시지는 i18n 키가 있으면 웹 UI에서 번역됩니다. config.yml의 사용자 지정 announcement 문구는 fallback 문구로 유지됩니다.
+  history:
+    end: 더 이상 표시할 메시지가 없습니다.

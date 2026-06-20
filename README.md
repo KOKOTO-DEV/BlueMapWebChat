@@ -2,8 +2,6 @@
 
 A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can run as a BlueMap web addon, as a standalone `/chat` page served by the plugin, or both at the same time.
 
-<img width="1057" height="682" alt="Image" src="https://github.com/user-attachments/assets/722761ea-94a4-4da9-be79-3cd04997c166" />
-
 ## Features
 
 - BlueMap embedded chat panel and standalone web chat page
@@ -16,18 +14,6 @@ A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can r
 - Pinned messages, virtual scrolling, draggable/resizable window, experimental PIP
 - Built-in UI languages: en-US, ko-KR, ja-JP, zh-CN
 
-
-## Media preview height and scroll stability
-
-The recommended media preview max height is `640-720px`. The default is `ui.image-preview-max-height: 720`.
-
-Keeping this limit enabled gives the best scroll stability with virtual scrolling. Setting the value to `0` means unlimited height, but very large or unlimited image/GIF/video/iframe previews can cause visible scroll jumps while media finishes loading, especially in long media-heavy chat histories.
-
-```yaml
-ui:
-  image-preview-max-height: 720
-```
-
 ## Build
 
 ```bash
@@ -35,7 +21,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-3.0.0.jar
+target/BlueMapWebChat-3.1.0.jar
 ```
 
 ## Install
@@ -78,7 +64,7 @@ Standalone URL:
 http://<server-host>:8899/chat
 ```
 
-## HTTPS / reverse proxy recommended setup
+## HTTPS / Caddy recommended setup
 
 For public servers, keep BlueMap and BlueMapWebChat as internal HTTP services and expose them through HTTPS.
 
@@ -109,13 +95,12 @@ https://map.example.com/bmwc/api  # BlueMapWebChat API
 https://map.example.com/bmwc/chat # standalone chat
 ```
 
-See `docs/CADDY_HTTPS_EN.md` for Caddy or `docs/NGINX_HTTPS_EN.md` for nginx.
+See `docs/CADDY_HTTPS_EN.md` for details.
 
 ## Common options
 
 - `ui.language`: default UI language. `en-US`, `ko-KR`, `ja-JP`, `zh-CN`
 - `ui.theme`: `system`, `dark`, `light`, `high-contrast`
-- `ui.image-preview-max-height`: recommended `640-720`; `0` means unlimited and may cause scroll jumps with media-heavy virtual scrolling
 - `player-display.mode`: `name`, `display-name`, `custom-name`
 - `player-display.strip-colors`: when `false`, Minecraft legacy colors are rendered for actual chat sender names. System/event lines are always stripped.
 - `commands.enabled`: enable the web command panel
@@ -150,8 +135,7 @@ bluemapwebchat.admin
 ## Documentation
 
 - `docs/CONFIGURATION_EN.md` - configuration reference
-- `docs/CADDY_HTTPS_EN.md` - HTTPS reverse proxy setup with Caddy
-- `docs/NGINX_HTTPS_EN.md` - HTTPS reverse proxy setup with nginx
+- `docs/CADDY_HTTPS_EN.md` - HTTPS reverse proxy setup
 - `docs/I18N_EN.md` - language files and fallback behavior
 - `docs/INSTALL_TROUBLESHOOTING_EN.md` - install, upgrade, troubleshooting
 - `docs/UPLOAD_SECURITY_EN.md` - upload security notes
@@ -164,5 +148,3 @@ bluemapwebchat.admin
 HTTP-only mode is supported for private/testing use. Passwords are stored hashed on the server, but HTTP login traffic is not encrypted. Use HTTPS for public servers.
 
 Font note: Installed fonts must be typed by their CSS font-family name. Chat settings include a Test button that estimates whether the typed name is available in the current browser without requesting local-font permissions.
-Chat settings also separate message text color from UI text/glyph color. The UI color covers role labels, Web/Game source labels, timestamps, placeholders, upload/command buttons, and pinned labels.
-Folded pinned-message text follows the configured chat font and message font size. Built-in system messages such as server announcements and web command results are translated by language files when an i18n key is available.

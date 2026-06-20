@@ -33,6 +33,7 @@ web:
     commands: コマンド
     pip: PIP
     run: 実行
+    jumpLatest: 最新メッセージへ
   placeholder:
     guestName: ゲスト名
     captchaAnswer: 答え
@@ -99,11 +100,17 @@ web:
   account:
     role: 権限
   pip:
-    unsupported: このブラウザーは Document Picture-in-Picture に対応していません。デスクトップ版 Chrome または
-      Edge でお試しください。
+    unsupported: このブラウザーは Document Picture-in-Picture に対応していません。デスクトップ版 Chrome または Edge でお試しください。
     openFailed: 'Picture-in-Picture ウィンドウを開けませんでした: {error}'
   preferences:
     title: チャット設定
+    theme: テーマ
+    themeDefault: デフォルト
+    themeSystem: システム
+    themeDark: ダーク
+    themeLight: ライト
+    themeHighContrast: ハイコントラスト
+    themeResetNote: テーマを変更すると、表示関連のチャット設定はそのテーマの既定値にリセットされます。
     fontSize: 文字サイズ
     fontFamily: フォント
     fontCustom: 直接入力
@@ -118,6 +125,20 @@ web:
     fontUnknown: このブラウザーではフォントを確認できません。
     textColor: 文字色
     uiTextColor: UI文字色
+    textShadow: テキストシャドウ
+    textShadowNone: なし
+    textShadowAuto: 自動
+    textShadowDark: 暗い影
+    textShadowLight: 明るい影
+    textShadowCustom: カスタム
+    textShadowCustomValue: カスタムシャドウ
+    textShadowCustomColor: 影の色
+    textShadowCustomX: 横方向
+    textShadowCustomY: 縦方向
+    textShadowCustomBlur: ぼかし
+    textShadowCustomOpacity: 不透明度
+    textShadowCustomPreview: 影のプレビュー
+    textShadowCustomPlaceholder: 0 1px 2px rgba(0, 0, 0, 0.85)
     inputBackgroundColor: 入力欄の背景色
     backgroundColor: 背景色
     language: 言語
@@ -282,5 +303,6 @@ web:
     maxLengthHint: 最大 {max} 文字
   system:
     command-executed: 'Web コマンドを実行しました: {label}'
-    note: サーバーイベントや Web コマンド結果などのシステムメッセージは、i18n キーがある場合 Web UI で翻訳されます。config.yml
-      のカスタム announcement 文はフォールバックとして使用されます。
+    note: サーバーイベントや Web コマンド結果などのシステムメッセージは、i18n キーがある場合 Web UI で翻訳されます。config.yml のカスタム announcement 文はフォールバックとして使用されます。
+  history:
+    end: これ以上表示できるメッセージはありません。

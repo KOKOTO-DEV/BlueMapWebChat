@@ -187,3 +187,10 @@ This single flag controls both the PIP button and PIP execution. Browser URL/clo
 Built-in announcements and web command result messages include i18n keys. Keep `announcements.*.message` as the fallback/custom text; viewers will see the translated language-file text when the key exists.
 
 Collapsed pinned-message bar text follows the configured chat font and message font size.
+
+### Text shadow / readability
+
+- `ui.text-shadow-mode`: `none`, `auto`, `dark`, `light`, or `custom`. Use this to keep text readable when custom text/background colors have low contrast.
+- `ui.text-shadow-custom`: CSS `text-shadow` value used when the mode is `custom`. In the chat settings UI, this is edited with a color picker and sliders for X offset, Y offset, blur, and opacity; the stored value remains standard CSS, for example `0 1px 2px rgba(0, 0, 0, 0.85)`.
+
+> The theme can also be changed per browser from Chat settings. Changing the theme resets visual settings such as text colors, background colors, and shadows to that theme's defaults.

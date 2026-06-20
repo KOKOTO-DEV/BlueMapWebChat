@@ -14,18 +14,6 @@
 - 置顶消息、虚拟滚动、可拖动/缩放窗口、实验性 PIP
 - UI 语言: en-US, ko-KR, ja-JP, zh-CN
 
-
-## 媒体预览高度与滚动稳定性
-
-推荐的媒体预览最大高度为 `640-720px`。默认值为 `ui.image-preview-max-height: 720`。
-
-启用该限制可在使用 virtual scroll 时获得更好的滚动稳定性。设置为 `0` 表示不限制高度，但非常大的图片/GIF/视频/iframe 预览可能会在媒体加载完成时造成可见的滚动跳动，尤其是在包含大量媒体的长聊天记录中。
-
-```yaml
-ui:
-  image-preview-max-height: 720
-```
-
 ## 构建
 
 ```bash
@@ -33,7 +21,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-3.0.0.jar
+target/BlueMapWebChat-3.1.0.jar
 ```
 
 ## 安装
@@ -50,7 +38,7 @@ target/BlueMapWebChat-3.0.0.jar
 http://<server-host>:8899/chat
 ```
 
-## HTTPS / 反向代理推荐配置
+## HTTPS / Caddy 推荐配置
 
 公开服务器建议将 BlueMap 和 BlueMapWebChat 保持为内部 HTTP 服务，并通过 HTTPS 反向代理对外提供。
 
@@ -73,13 +61,12 @@ upload:
   public-base-url: "/bmwc/api/uploads"
 ```
 
-Caddy 见 `docs/CADDY_HTTPS_ZH_CN.md`，nginx 见 `docs/NGINX_HTTPS_ZH_CN.md`。
+更多内容见 `docs/CADDY_HTTPS_ZH_CN.md`。
 
 ## 常用设置
 
 - `ui.language`: `en-US`, `ko-KR`, `ja-JP`, `zh-CN`
 - `ui.theme`: `system`, `dark`, `light`, `high-contrast`
-- `ui.image-preview-max-height`: 推荐 `640-720`；`0` 表示无限制，在媒体较多的 virtual scroll 中可能导致滚动跳动
 - `player-display.mode`: `name`, `display-name`, `custom-name`
 - `player-display.strip-colors`: 为 `false` 时，实际聊天发送者名称会渲染 Minecraft legacy 颜色代码。system/event 消息始终会去除颜色代码。
 - `commands.enabled`: Web 命令面板
@@ -115,7 +102,6 @@ bluemapwebchat.admin
 
 - `docs/CONFIGURATION_ZH_CN.md`
 - `docs/CADDY_HTTPS_ZH_CN.md`
-- `docs/NGINX_HTTPS_ZH_CN.md`
 - `docs/I18N_ZH_CN.md`
 - `docs/INSTALL_TROUBLESHOOTING_ZH_CN.md`
 - `docs/UPLOAD_SECURITY_ZH_CN.md`
@@ -124,5 +110,3 @@ bluemapwebchat.admin
 - `docs/OPERATIONS_SECURITY_ZH_CN.md`
 
 字体说明：已安装字体需要输入 CSS font-family 名称。聊天设置中的检测按钮可在不请求本地字体权限的情况下，估算当前浏览器是否可使用该名称。
-聊天设置可以分别调整消息正文颜色和 UI 文字/图标颜色。UI 颜色会应用到角色标记、Web/Game 来源、时间、占位文字、上传/命令按钮和置顶标签。
-折叠的置顶消息文字也会使用配置的聊天字体和消息字号。服务器 announcement 和 Web 命令结果等内置系统消息在存在 i18n 键时会按语言文件翻译。

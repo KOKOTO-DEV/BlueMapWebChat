@@ -33,6 +33,7 @@ web:
     commands: 命令
     pip: PIP
     run: 运行
+    jumpLatest: 跳到最新消息
   placeholder:
     guestName: 访客名称
     captchaAnswer: 答案
@@ -103,6 +104,13 @@ web:
     openFailed: 无法打开 Picture-in-Picture 窗口：{error}
   preferences:
     title: 聊天设置
+    theme: 主题
+    themeDefault: 默认
+    themeSystem: 系统
+    themeDark: 深色
+    themeLight: 浅色
+    themeHighContrast: 高对比度
+    themeResetNote: 切换主题时，聊天外观设置会重置为该主题的默认值。
     fontSize: 字体大小
     fontFamily: 字体
     fontCustom: 自定义字体
@@ -117,6 +125,20 @@ web:
     fontUnknown: 此浏览器无法检测该字体。
     textColor: 文字颜色
     uiTextColor: UI 文字颜色
+    textShadow: 文字阴影
+    textShadowNone: 无
+    textShadowAuto: 自动
+    textShadowDark: 深色阴影
+    textShadowLight: 浅色阴影
+    textShadowCustom: 自定义
+    textShadowCustomValue: 自定义阴影
+    textShadowCustomColor: 阴影颜色
+    textShadowCustomX: 水平偏移
+    textShadowCustomY: 垂直偏移
+    textShadowCustomBlur: 模糊
+    textShadowCustomOpacity: 不透明度
+    textShadowCustomPreview: 阴影预览
+    textShadowCustomPlaceholder: 0 1px 2px rgba(0, 0, 0, 0.85)
     inputBackgroundColor: 输入框背景颜色
     backgroundColor: 背景颜色
     language: 语言
@@ -281,5 +303,6 @@ web:
     maxLengthHint: 最多 {max} 个字符
   system:
     command-executed: 已执行 Web 命令：{label}
-    note: 服务器事件和 Web 命令结果等系统消息在存在 i18n 键时会在 Web UI 中翻译。config.yml 中的自定义 announcement
-      文本会作为回退文本保留。
+    note: 服务器事件和 Web 命令结果等系统消息在存在 i18n 键时会在 Web UI 中翻译。config.yml 中的自定义 announcement 文本会作为回退文本保留。
+  history:
+    end: 没有更多可显示的消息。

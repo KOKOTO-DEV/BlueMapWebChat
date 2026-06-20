@@ -295,6 +295,8 @@ public class WebChatServer {
         m.put("uiInputFontSize", c.uiInputFontSize);
         m.put("uiTextColor", c.uiTextColor);
         m.put("uiUiTextColor", c.uiUiTextColor);
+        m.put("uiTextShadowMode", c.uiTextShadowMode);
+        m.put("uiTextShadowCustom", c.uiTextShadowCustom);
         m.put("uiInputBackgroundColor", c.uiInputBackgroundColor);
         m.put("uiButtonFontSize", c.uiButtonFontSize);
         m.put("uiBadgeFontSize", c.uiBadgeFontSize);

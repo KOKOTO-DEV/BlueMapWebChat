@@ -33,6 +33,7 @@ web:
     commands: Commands
     pip: PIP
     run: Run
+    jumpLatest: Jump to latest
   placeholder:
     guestName: Guest name
     captchaAnswer: answer
@@ -95,16 +96,21 @@ web:
     statusExpired: Code expired.
   password:
     title: Set password
-    description: Set a web password so you can log in without joining the game next
-      time.
+    description: Set a web password so you can log in without joining the game next time.
   account:
     role: Role
   pip:
-    unsupported: Document Picture-in-Picture is not supported by this browser. Try
-      desktop Chrome or Edge.
+    unsupported: Document Picture-in-Picture is not supported by this browser. Try desktop Chrome or Edge.
     openFailed: 'Failed to open Picture-in-Picture window: {error}'
   preferences:
     title: Chat settings
+    theme: Theme
+    themeDefault: Default
+    themeSystem: System
+    themeDark: Dark
+    themeLight: Light
+    themeHighContrast: High contrast
+    themeResetNote: Changing the theme resets visual chat settings to the theme defaults.
     fontSize: Font size
     fontFamily: Font
     fontCustom: Custom font
@@ -114,12 +120,25 @@ web:
     fontHelp: Find the font family name in your OS font settings.
     fontExample: 'Examples: Malgun Gothic, Noto Sans KR, D2Coding.'
     fontDetected: 'Detected in this browser: {name}'
-    fontNotDetected: Not detected. Check the font family name or install the font
-      on this device.
+    fontNotDetected: Not detected. Check the font family name or install the font on this device.
     fontGeneric: 'Generic CSS family: {name}'
     fontUnknown: Could not test this font in this browser.
     textColor: Message text color
     uiTextColor: UI text color
+    textShadow: Text shadow
+    textShadowNone: None
+    textShadowAuto: Auto
+    textShadowDark: Dark shadow
+    textShadowLight: Light shadow
+    textShadowCustom: Custom
+    textShadowCustomValue: Custom shadow
+    textShadowCustomColor: Shadow color
+    textShadowCustomX: X offset
+    textShadowCustomY: Y offset
+    textShadowCustomBlur: Blur
+    textShadowCustomOpacity: Opacity
+    textShadowCustomPreview: Shadow preview
+    textShadowCustomPlaceholder: 0 1px 2px rgba(0, 0, 0, 0.85)
     inputBackgroundColor: Input background color
     backgroundColor: Background color
     language: Language
@@ -284,6 +303,7 @@ web:
     maxLengthHint: 'Maximum: {max} characters'
   system:
     command-executed: 'Executed web command: {label}'
-    note: System messages such as server events and web command results are translated
-      in the web UI when an i18n key is available. Custom announcement text in config.yml
-      remains the fallback text.
+    note: System messages such as server events and web command results are translated in the web UI when an i18n key is available.
+      Custom announcement text in config.yml remains the fallback text.
+  history:
+    end: No more messages to display.

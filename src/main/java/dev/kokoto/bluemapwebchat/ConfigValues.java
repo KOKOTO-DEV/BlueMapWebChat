@@ -83,6 +83,8 @@ public class ConfigValues {
     public int uiInputFontSize;
     public String uiTextColor;
     public String uiUiTextColor;
+    public String uiTextShadowMode;
+    public String uiTextShadowCustom;
     public String uiInputBackgroundColor;
     public int uiButtonFontSize;
     public int uiBadgeFontSize;
@@ -338,6 +340,8 @@ public class ConfigValues {
         v.uiInputFontSize = c.getInt("ui.input-font-size", 13);
         v.uiTextColor = normalizeHexColor(c.getString("ui.text-color", ""));
         v.uiUiTextColor = normalizeHexColor(c.getString("ui.ui-text-color", ""));
+        v.uiTextShadowMode = normalizeTextShadowMode(c.getString("ui.text-shadow-mode", "auto"));
+        v.uiTextShadowCustom = sanitizeTextShadow(c.getString("ui.text-shadow-custom", "0 1px 2px rgba(0, 0, 0, 0.85)"));
         v.uiInputBackgroundColor = normalizeHexColor(c.getString("ui.input-background-color", ""));
         v.uiButtonFontSize = c.getInt("ui.button-font-size", 12);
         v.uiBadgeFontSize = c.getInt("ui.badge-font-size", 10);
@@ -602,6 +606,23 @@ public class ConfigValues {
             return ("#" + r + r + g + g + b + b).toLowerCase(Locale.ROOT);
         }
         return "";
+    }
+
+    private static String normalizeTextShadowMode(String value) {
+        if (value == null) return "auto";
+        String v = value.trim().toLowerCase(Locale.ROOT);
+        if (List.of("none", "auto", "dark", "light", "custom").contains(v)) return v;
+        return "auto";
+    }
+
+    private static String sanitizeTextShadow(String value) {
+        if (value == null) return "";
+        String v = value.trim();
+        if (v.length() > 120) v = v.substring(0, 120);
+        // CSS text-shadow does not need URLs/functions other than rgb/rgba. Keep only conservative characters.
+        if (!v.matches("^[#a-zA-Z0-9(),.%\\s+\\-]*$")) return "0 1px 2px rgba(0, 0, 0, 0.85)";
+        if (v.toLowerCase(Locale.ROOT).contains("url")) return "0 1px 2px rgba(0, 0, 0, 0.85)";
+        return v;
     }
 
     private static String normalizeTimeZone(String value) {

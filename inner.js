@@ -72,11 +72,23 @@
     autoFollowLatest: true,
     suppressAutoFollowUpdate: false,
     suppressScrollRenderUntil: 0,
+    preventBottomStickUntil: 0,
+    forceHistoryEndNoticeUntil: 0,
     youtubeExpanded: new Set(),
     youtubeOpen: new Set(),
     mediaOpen: new Set(),
     failedMediaPreviews: new Set(),
     lastUserScrollAt: 0,
+    lastDirectScrollInputAt: 0,
+    lastNonScrollUiActionAt: 0,
+    historyEndNoticeStickySince: 0,
+    historyEndNoticeProtectedUntil: 0,
+    historyEndNoticeVisible: false,
+    historyEndNoticeUiTransitionUntil: 0,
+    historyEndNoticeTimer: null,
+    historyEndNoticeVisibleUntil: 0,
+    historyEndNoticeLastShownAt: 0,
+    historyEndNoticePendingUserTopUntil: 0,
     pendingMediaRender: false,
     scrollInteractionUntil: 0,
     scrollIdleTimer: null,
@@ -1368,15 +1380,20 @@
         else if (data.key === "fontFamily") setUserFontFamily(data.value);
         else if (data.key === "textColor") setUserTextColor(data.value);
         else if (data.key === "uiTextColor") setUserUiTextColor(data.value);
+        else if (data.key === "textShadowMode") setUserTextShadowMode(data.value);
+        else if (data.key === "textShadowCustom") setUserTextShadowCustom(data.value);
         else if (data.key === "backgroundColor") setUserBackgroundColor(data.value);
         else if (data.key === "inputBackgroundColor") setUserInputBackgroundColor(data.value);
         else if (data.key === "language") setUserLanguage(data.value);
+        else if (data.key === "theme") setUserTheme(data.value);
       } else if (data.type === "userPreferencesReset") {
         resetUserOpacity();
         resetUserFontSize();
         resetUserFontFamily();
         resetUserTextColor();
         resetUserUiTextColor();
+        resetUserTextShadowMode();
+        resetUserTextShadowCustom();
         resetUserBackgroundColor();
         resetUserInputBackgroundColor();
         resetUserLanguage();
@@ -1386,12 +1403,18 @@
         // The original chat window should behave exactly as if the user pressed
         // the minimize button once a duplicate PIP window has actually opened.
         // This applies to both BlueMap addon and standalone pages.
+        protectHistoryEndNotice("pip-opened", 7000);
         if (!state.isPip && !state.minimized) toggleMin();
+        state.forceHistoryEndNoticeUntil = Math.max(Number(state.forceHistoryEndNoticeUntil || 0), Date.now() + 7000);
+        scheduleScrollAffordanceRefresh("pip-opened");
       } else if (data.type === "pipClosed") {
         // When the PIP window is closed, restore the original chat window just
         // like pressing the minimized + button. This keeps BlueMap addon and
         // standalone behavior consistent with common PIP workflows.
+        protectHistoryEndNotice("pip-closed", 8000);
         if (!state.isPip && state.minimized) toggleMin();
+        state.forceHistoryEndNoticeUntil = Math.max(Number(state.forceHistoryEndNoticeUntil || 0), Date.now() + 8000);
+        scheduleScrollAffordanceRefresh("pip-closed");
       }
     });
   }
@@ -1604,6 +1627,24 @@
   }
 
 
+  function installModalAffordanceObserver() {
+    if (state.modalAffordanceObserverInstalled) return;
+    state.modalAffordanceObserverInstalled = true;
+    try {
+      const observer = new MutationObserver(mutations => {
+        for (const m of mutations || []) {
+          const nodes = [...Array.from(m.addedNodes || []), ...Array.from(m.removedNodes || [])];
+          if (nodes.some(n => n && n.nodeType === 1 && n.classList && (n.classList.contains("bmwc-modal-backdrop") || n.classList.contains("bmwc-modal-wrap")))) {
+            scheduleScrollAffordanceRefresh("modal-change");
+            break;
+          }
+        }
+      });
+      observer.observe(document.body, {childList: true});
+      state.modalAffordanceObserver = observer;
+    } catch (_) {}
+  }
+
   function makeRoot() {
     if (document.getElementById("bmwc-root")) return;
     ensureGuestNameForConfig();
@@ -1637,8 +1678,13 @@
         </div>
         <div class="bmwc-messages" id="bmwc-messages">
           <div class="bmwc-virtual-spacer bmwc-virtual-top-spacer"></div>
+          <div class="bmwc-history-end bmwc-hidden" id="bmwc-history-end">${t("history.end", "No more messages to display.")}</div>
           <div class="bmwc-virtual-spacer bmwc-virtual-bottom-spacer"></div>
         </div>
+        <button class="bmwc-jump-latest bmwc-hidden" id="bmwc-jump-latest" type="button" title="${t("button.jumpLatest", "Jump to latest")}">
+          <span class="bmwc-jump-latest-icon">↓</span>
+          <span id="bmwc-jump-latest-label">${t("button.jumpLatest", "Jump to latest")}</span>
+        </button>
         <div class="bmwc-form">
           <div class="bmwc-row" id="bmwc-guest-row">
             <input class="bmwc-input" id="bmwc-guest-name" maxlength="16" placeholder="${t("placeholder.guestName", "Guest name")}">
@@ -1673,9 +1719,11 @@
       </div>
     `;
     document.body.appendChild(root);
+    installModalAffordanceObserver();
     installMessageActionDelegation(root);
     applyWebFontsConfig();
     applyFontSizeConfig();
+    applyMediaViewportConfig();
     applyThemeConfig();
 
 
@@ -1686,6 +1734,15 @@
         return;
       }
       sendMessage();
+    });
+    const jumpLatest = document.getElementById("bmwc-jump-latest");
+    if (jumpLatest) jumpLatest.addEventListener("click", () => {
+      const box = document.getElementById("bmwc-messages");
+      state.preventBottomStickUntil = 0;
+      state.autoFollowLatest = true;
+      renderVirtualMessages({stickToBottom: true, preserveScroll: false, allowDuringMedia: true, allowDuringVisibleMedia: true, deferDuringScroll: false, deferDuringMediaLayout: false, allowBottomStickDuringLock: true});
+      if (box) stickToBottomStable(box);
+      refreshScrollAffordances(box);
     });
     const commandBtn = document.getElementById("bmwc-command");
     if (commandBtn) commandBtn.addEventListener("click", () => openCommandModal());
@@ -1757,6 +1814,7 @@
   }
 
   function toggleMin() {
+    protectHistoryEndNotice("toggle-min", 7000);
     state.minimized = !state.minimized;
     localStorage.setItem("bmwc.minimized", state.minimized ? "1" : "0");
 
@@ -1776,7 +1834,12 @@
     if (title) title.textContent = state.minimized ? t("title.minimized", "Chat") : t("title.full", "BlueMap Chat");
     updateFrameSize();
     updatePipButton();
-    if (!state.minimized) scheduleVirtualRender();
+    if (!state.minimized) {
+      scheduleVirtualRender();
+      protectHistoryEndNotice("unminimize", 8000);
+      state.forceHistoryEndNoticeUntil = Math.max(Number(state.forceHistoryEndNoticeUntil || 0), Date.now() + 8000);
+      scheduleScrollAffordanceRefresh("unminimize");
+    }
   }
 
 
@@ -1836,6 +1899,12 @@
     if (uploadBtn) uploadBtn.title = t("button.upload", "Attach");
     const commandBtn = document.getElementById("bmwc-command");
     if (commandBtn) commandBtn.title = t("button.commands", "Commands");
+    const jumpBtn = document.getElementById("bmwc-jump-latest");
+    if (jumpBtn) jumpBtn.title = t("button.jumpLatest", "Jump to latest");
+    const jumpLabel = document.getElementById("bmwc-jump-latest-label");
+    if (jumpLabel) jumpLabel.textContent = t("button.jumpLatest", "Jump to latest");
+    const historyEnd = ensureHistoryEndNotice(document.getElementById("bmwc-messages"));
+    if (historyEnd) historyEnd.textContent = t("history.end", "No more messages to display.");
     const pipBtn = document.getElementById("bmwc-pip");
     if (pipBtn) pipBtn.title = t("button.pip", "PIP");
     const guest = document.getElementById("bmwc-guest-name");
@@ -1862,6 +1931,7 @@
     const uploadBtn = document.getElementById("bmwc-upload");
     const commandBtn = document.getElementById("bmwc-command");
     if (!btn || !status) return;
+    status.classList.remove("bmwc-status-role-ADMIN", "bmwc-status-role-MODERATOR", "bmwc-status-role-USER", "bmwc-status-role-GUEST");
 
     const adminPanelAllowed = !state.config || state.config.allowWebAdminPanel !== false;
     const moderationEnabled = !state.config || state.config.moderationEnabled !== false;
@@ -1879,6 +1949,7 @@
       btn.classList.add("bmwc-login-user", "bmwc-user-role-" + String(state.role || "USER"));
       status.textContent = roleLabel(state.role);
       status.title = state.role || "";
+      status.classList.add("bmwc-status-role-" + String(state.role || "USER"));
       if (guestRow) guestRow.classList.add("bmwc-hidden");
     } else {
       btn.title = t("button.login", "Login");
@@ -1934,6 +2005,232 @@
         loadHistory(true, {viewportFill: true});
       }
     }, 40);
+  }
+
+  function historyEndEligible() {
+    return !state.historyLoading && !state.historyHasMore && state.messages.length > 0;
+  }
+
+  function protectHistoryEndNotice(reason = "", ms = 0) {
+    // The oldest-history notice is a user-scroll toast, not a persistent state
+    // banner. Modal/focus/resize/PIP/delete transitions may refresh layout, but
+    // they must not force the notice to appear or keep it latched.
+    state.historyEndNoticeProtectedUntil = 0;
+    state.historyEndNoticeUiTransitionUntil = 0;
+    state.forceHistoryEndNoticeUntil = 0;
+  }
+
+
+  function updateScrollAffordanceLayout(box) {
+    if (!box) box = document.getElementById("bmwc-messages");
+    const root = document.getElementById("bmwc-root");
+    const panel = root && root.querySelector ? root.querySelector(".bmwc-panel") : null;
+    if (!box || !root || !panel) return;
+    try {
+      const br = box.getBoundingClientRect();
+      const pr = panel.getBoundingClientRect();
+      const top = Math.max(8, Math.round(br.top - pr.top + 8));
+      const bottom = Math.max(8, Math.round(pr.bottom - br.bottom + 12));
+      root.style.setProperty("--bmwc-affordance-top", top + "px");
+      root.style.setProperty("--bmwc-affordance-bottom", bottom + "px");
+    } catch (_) {}
+  }
+
+  function ensureHistoryEndNotice(box) {
+    if (!box) box = document.getElementById("bmwc-messages");
+    const root = document.getElementById("bmwc-root");
+    const panel = root && root.querySelector ? root.querySelector(".bmwc-panel") : null;
+    if (!box || !panel) return null;
+    let notice = document.getElementById("bmwc-history-end");
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.className = "bmwc-history-end bmwc-hidden";
+      notice.id = "bmwc-history-end";
+    }
+    notice.textContent = t("history.end", "No more messages to display.");
+
+    // Keep this as a panel-level overlay, not as a child of the virtualized
+    // message list.  When the notice lived inside .bmwc-messages it competed
+    // with top/bottom spacers and virtual re-renders, so modal/PIP transitions
+    // and scrolling could repeatedly hide/reinsert it.
+    if (notice.parentNode !== panel) {
+      panel.appendChild(notice);
+    }
+    updateScrollAffordanceLayout(box);
+    return notice;
+  }
+
+  function historyEndNoticeThresholdPx(box) {
+    // Tight physical-top check.  This is deliberately much smaller than the
+    // preload threshold so the toast cannot appear while older messages remain
+    // just above the viewport.
+    return Math.max(2, Math.min(8, Math.floor(Number(box && box.clientHeight || 0) * 0.01)));
+  }
+
+  function historyEndNoticeAtTop(box) {
+    return !!box && Number(box.scrollTop || 0) <= historyEndNoticeThresholdPx(box);
+  }
+
+  function hideHistoryEndNoticeToast(clearPending = false) {
+    if (state.historyEndNoticeTimer) {
+      clearTimeout(state.historyEndNoticeTimer);
+      state.historyEndNoticeTimer = null;
+    }
+    state.historyEndNoticeVisibleUntil = 0;
+    state.historyEndNoticeVisible = false;
+    state.historyEndNoticeSticky = false;
+    state.historyEndNoticeStickySince = 0;
+    state.historyEndNoticeProtectedUntil = 0;
+    state.historyEndNoticeUiTransitionUntil = 0;
+    state.forceHistoryEndNoticeUntil = 0;
+    if (clearPending) state.historyEndNoticePendingUserTopUntil = 0;
+    const notice = document.getElementById("bmwc-history-end");
+    if (notice) notice.classList.add("bmwc-hidden");
+  }
+
+  function showHistoryEndNoticeToast(box, reason = "") {
+    if (!box) box = document.getElementById("bmwc-messages");
+    const notice = ensureHistoryEndNotice(box);
+    if (!notice || !box) return;
+    if (state.minimized || guestChatHidden() || !historyEndEligible() || !historyEndNoticeAtTop(box)) return;
+
+    const now = Date.now();
+    // Ignore duplicate callbacks fired in the same frame, but do not latch the
+    // notice across focus changes. A new wheel/touch/key/scrollbar input at the
+    // top edge can show it again after the previous toast has disappeared.
+    if (state.historyEndNoticeVisible && now < Number(state.historyEndNoticeVisibleUntil || 0)) return;
+    if (now - Number(state.historyEndNoticeLastShownAt || 0) < 250) return;
+
+    if (state.historyEndNoticeTimer) clearTimeout(state.historyEndNoticeTimer);
+    state.historyEndNoticeTimer = null;
+    state.historyEndNoticeVisible = true;
+    state.historyEndNoticeSticky = false;
+    state.historyEndNoticeStickySince = 0;
+    state.historyEndNoticeVisibleUntil = now + 2500;
+    state.historyEndNoticeLastShownAt = now;
+    state.historyEndNoticePendingUserTopUntil = 0;
+    notice.classList.remove("bmwc-hidden");
+
+    state.historyEndNoticeTimer = setTimeout(() => {
+      if (Date.now() >= Number(state.historyEndNoticeVisibleUntil || 0)) {
+        hideHistoryEndNoticeToast(false);
+      }
+    }, 2550);
+  }
+
+  function recentHistoryEndUserScrollInput(now = Date.now()) {
+    const lastDirect = Number(state.lastDirectScrollInputAt || 0);
+    const lastNonScrollUi = Number(state.lastNonScrollUiActionAt || 0);
+    if (lastDirect <= 0) return false;
+    // Any UI click/key after the scroll input cancels the user-top intent. This
+    // prevents delete/admin/settings/modal/layout changes from creating a toast.
+    if (lastNonScrollUi > 0 && lastNonScrollUi >= lastDirect - 20) return false;
+    return now - lastDirect <= Math.max(1400, scrollInteractionIdleMs() * 4);
+  }
+
+  function rememberUserTopIntent(box) {
+    if (!box || !recentHistoryEndUserScrollInput()) return;
+    if (Number(box.scrollTop || 0) <= historyPreloadThresholdPx(box)) {
+      state.historyEndNoticePendingUserTopUntil = Date.now() + 5000;
+    }
+  }
+
+  function markHistoryEndTopUserIntent(box, reason = "") {
+    if (!box || state.minimized || guestChatHidden()) return;
+    // This is only called from direct user scroll inputs.  It intentionally
+    // records intent while a focus/resume history refresh is in flight, then
+    // loadHistory() rechecks after the response settles.
+    const nearTop = Number(box.scrollTop || 0) <= historyPreloadThresholdPx(box);
+    if (!nearTop) return;
+    state.historyEndNoticePendingUserTopUntil = Date.now() + 6000;
+    setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, reason || "top-user-input"), 0);
+    setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, reason || "top-user-input"), 80);
+    setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, reason || "top-user-input"), 220);
+  }
+
+  function maybeShowHistoryEndNoticeFromUserScroll(box, reason = "") {
+    if (!box) box = document.getElementById("bmwc-messages");
+    if (!box) return;
+
+    const now = Date.now();
+    const atTop = historyEndNoticeAtTop(box);
+    if (!atTop) {
+      hideHistoryEndNoticeToast(false);
+      return;
+    }
+
+    const fromRecentScroll = recentHistoryEndUserScrollInput(now);
+    const fromPendingTopIntent = Number(state.historyEndNoticePendingUserTopUntil || 0) > now;
+    if (!fromRecentScroll && !fromPendingTopIntent) return;
+
+    if (state.minimized || guestChatHidden()) return;
+    if (!historyEndEligible()) {
+      // While history is still loading or hasMore is still true, keep only the
+      // user intent. The load completion path will call this again and show the
+      // toast only if the final response proves there is no older history.
+      if (fromRecentScroll) state.historyEndNoticePendingUserTopUntil = now + 5000;
+      return;
+    }
+
+    showHistoryEndNoticeToast(box, reason);
+  }
+
+  function updateHistoryEndNotice(box) {
+    if (!box) box = document.getElementById("bmwc-messages");
+    const notice = ensureHistoryEndNotice(box);
+    if (!notice || !box) return;
+    updateScrollAffordanceLayout(box);
+
+    const now = Date.now();
+    const shouldRemainVisible =
+      state.historyEndNoticeVisible &&
+      now < Number(state.historyEndNoticeVisibleUntil || 0) &&
+      historyEndEligible() &&
+      historyEndNoticeAtTop(box) &&
+      !state.minimized &&
+      !guestChatHidden();
+
+    notice.classList.toggle("bmwc-hidden", !shouldRemainVisible);
+    if (!shouldRemainVisible && state.historyEndNoticeVisible) {
+      state.historyEndNoticeVisible = false;
+      state.historyEndNoticeVisibleUntil = 0;
+    }
+  }
+
+
+  function scheduleScrollAffordanceRefresh(reason = "") {
+    const reasonText = String(reason || "").toLowerCase();
+    if (/(modal|admin|pref|setting|pip|minimize|unminimize|resize|restore|focus)/.test(reasonText)) {
+      protectHistoryEndNotice(reasonText, /pip/.test(reasonText) ? 7000 : 5000);
+    }
+    const box = document.getElementById("bmwc-messages");
+    if (box) refreshScrollAffordances(box);
+    setTimeout(() => {
+      const laterBox = document.getElementById("bmwc-messages");
+      if (laterBox) refreshScrollAffordances(laterBox);
+    }, 60);
+    setTimeout(() => {
+      const laterBox = document.getElementById("bmwc-messages");
+      if (laterBox) refreshScrollAffordances(laterBox);
+    }, 220);
+  }
+
+  function updateJumpLatestButton(box) {
+    const button = document.getElementById("bmwc-jump-latest");
+    if (!button || !box) return;
+    updateScrollAffordanceLayout(box);
+    const root = document.getElementById("bmwc-root");
+    const atBottom = isAutoFollowBottom(box);
+    const show = !!root && !state.minimized && !guestChatHidden() && state.messages.length > 0 && !atBottom;
+    button.classList.toggle("bmwc-hidden", !show);
+  }
+
+  function refreshScrollAffordances(box) {
+    if (!box) box = document.getElementById("bmwc-messages");
+    if (!box) return;
+    applyMediaViewportConfig();
+    updateHistoryEndNotice(box);
+    updateJumpLatestButton(box);
   }
 
   function applyBottomStackFiller(box, start, end, shouldStickBottom) {
@@ -2000,6 +2297,16 @@
     state.scrollIdleTimer = setTimeout(flushScrollInteractionWork, scrollInteractionIdleMs());
   }
 
+  function markDirectScrollInput() {
+    state.lastDirectScrollInputAt = Date.now();
+    markScrollInteraction();
+  }
+
+  function markNonScrollUiAction() {
+    state.lastNonScrollUiActionAt = Date.now();
+    state.historyEndNoticePendingUserTopUntil = 0;
+  }
+
   function deferRenderUntilScrollIdle(options = {}) {
     state.pendingScrollRenderOptions = mergeRenderOptions(state.pendingScrollRenderOptions, options);
     markScrollInteraction();
@@ -2022,6 +2329,7 @@
     }
 
     state.lastTopOlderHistoryRequestAt = Date.now();
+    rememberUserTopIntent(box);
 
     // At the physical top of the scroll container additional wheel/touch input
     // does not always produce another scroll event, so the old preload trigger
@@ -2499,6 +2807,7 @@
       bottom.className = "bmwc-virtual-spacer bmwc-virtual-bottom-spacer";
       box.appendChild(bottom);
     }
+    ensureHistoryEndNotice(box);
     return {top, bottom};
   }
 
@@ -2523,9 +2832,10 @@
     const miniActionsHtml = (canPin || canDelete)
       ? `<span class="bmwc-mini-actions">${canPin ? `<button class="bmwc-mini-action" data-pin="${esc(msg.id)}">${t("button.pin", "pin")}</button>` : ""}${canDelete ? `<button class="bmwc-mini-action" data-delete="${esc(msg.id)}">${t("button.delete", "delete")}</button>` : ""}</span>`
       : "";
+    el.classList.toggle("bmwc-has-mini-actions", !!(canPin || canDelete));
     el.innerHTML = `
       <div class="bmwc-meta">
-        <span class="bmwc-sender${originalSender ? " bmwc-sender-has-real" : ""}"${senderAttrs}>${originalSender ? senderNameHtml(shownSender, originalSender, msg.source) : minecraftNameHtml(renderedSender, shouldRenderMinecraftNameColors() && sourceMayRenderMinecraftNameColors(msg.source))}</span> · <span class="bmwc-source-label">${esc(displaySource(msg))}</span> · <span class="bmwc-time" data-time="${esc(msg.time || "")}" title="${esc(timeToggleTitle(msg.time))}" role="button" tabindex="0">${esc(time)}</span>${miniActionsHtml}
+        <span class="bmwc-sender${originalSender ? " bmwc-sender-has-real" : ""}"${senderAttrs}>${originalSender ? senderNameHtml(shownSender, originalSender, msg.source) : minecraftNameHtml(renderedSender, shouldRenderMinecraftNameColors() && sourceMayRenderMinecraftNameColors(msg.source))}</span><span class="bmwc-meta-sep" aria-hidden="true">·</span><span class="bmwc-source-label">${esc(displaySource(msg))}</span><span class="bmwc-meta-sep" aria-hidden="true">·</span><span class="bmwc-time-actions"><span class="bmwc-time" data-time="${esc(msg.time || "")}" title="${esc(timeToggleTitle(msg.time))}" role="button" tabindex="0">${esc(time)}</span>${miniActionsHtml}</span>
       </div>
       <div class="bmwc-text">${messageTextHtml(msg)}</div>
       ${imagePreviews(plainDisplayMessageText(msg), key)}
@@ -2664,10 +2974,25 @@
     const meta = el.querySelector(":scope > .bmwc-meta");
     if (!meta) return;
 
-    meta.querySelectorAll(":scope > .bmwc-mini-actions, :scope > .bmwc-mini-action[data-pin], :scope > .bmwc-mini-action[data-delete]").forEach(btn => btn.remove());
+    meta.querySelectorAll(":scope > .bmwc-mini-actions, :scope > .bmwc-mini-action[data-pin], :scope > .bmwc-mini-action[data-delete], :scope .bmwc-time-actions > .bmwc-mini-actions").forEach(btn => btn.remove());
 
     const actions = messageActionAvailability(msg);
-    if (!actions.canPin && !actions.canDelete) return;
+    const hasActions = !!(actions.canPin || actions.canDelete);
+    el.classList.toggle("bmwc-has-mini-actions", hasActions);
+    if (!hasActions) return;
+
+    let timeActions = meta.querySelector(":scope > .bmwc-time-actions");
+    if (!timeActions) {
+      const timeEl = meta.querySelector(":scope > .bmwc-time");
+      timeActions = document.createElement("span");
+      timeActions.className = "bmwc-time-actions";
+      if (timeEl) {
+        meta.insertBefore(timeActions, timeEl);
+        timeActions.appendChild(timeEl);
+      } else {
+        meta.appendChild(timeActions);
+      }
+    }
 
     const wrap = document.createElement("span");
     wrap.className = "bmwc-mini-actions";
@@ -2688,7 +3013,7 @@
       del.textContent = t("button.delete", "delete");
       wrap.appendChild(del);
     }
-    meta.appendChild(wrap);
+    timeActions.appendChild(wrap);
   }
 
   function messageElementNeedsRebuild(el, msg) {
@@ -3244,7 +3569,7 @@
     const keptActiveMedia = activeMediaMessageElements(box);
     const prevScrollTop = box.scrollTop;
     const explicitlyStickBottom = !!options.stickToBottom;
-    const bottomStickSuppressed = options.forcePreservePosition === true || options.suppressBottomStick === true;
+    const bottomStickSuppressed = options.forcePreservePosition === true || options.suppressBottomStick === true || (Date.now() < Number(state.preventBottomStickUntil || 0) && options.allowBottomStickDuringLock !== true);
     const actuallyNearBottom = bottomStickSuppressed ? false : isAutoFollowBottom(box);
     const mediaLayoutBottomFollow =
       !bottomStickSuppressed &&
@@ -3283,6 +3608,7 @@
       if (bottom) bottom.style.height = "0px";
       state.virtualRenderStart = 0;
       state.virtualRenderEnd = 0;
+      refreshScrollAffordances(box);
       return;
     }
 
@@ -3429,6 +3755,7 @@
     // effectively empty, immediately re-render a wider rescue range instead of
     // waiting for the user to scroll again.
     maybeScheduleBlankRescueRender(box, options);
+    refreshScrollAffordances(box);
   }
 
   function scheduleVirtualRender(options = {}) {
@@ -3495,9 +3822,21 @@
     if (!id) return;
     const box = document.getElementById("bmwc-messages");
     const wasNearBottom = box ? isAutoFollowBottom(box) : !!state.autoFollowLatest;
-    const anchor = box && !wasNearBottom ? captureScrollAnchor(box) : null;
+    const wasAtHistoryEnd = !!box && !state.historyLoading && !state.historyHasMore && state.messages.length > 0 && Number(box.scrollTop || 0) <= historyPreloadThresholdPx(box) + 6;
+    if (wasAtHistoryEnd) state.forceHistoryEndNoticeUntil = Math.max(Number(state.forceHistoryEndNoticeUntil || 0), Date.now() + 1600);
+    const anchor = box && !wasNearBottom && !wasAtHistoryEnd ? captureScrollAnchor(box) : null;
+    const prevTop = box ? Number(box.scrollTop || 0) : 0;
     const prevAutoFollow = !!state.autoFollowLatest;
     const msg = state.messages.find(m => m && String(m.id) === String(id));
+    if (msg && msg.hidden === true) {
+      if (!wasNearBottom) {
+        state.preventBottomStickUntil = Math.max(Number(state.preventBottomStickUntil || 0), Date.now() + 1400);
+        state.autoFollowLatest = false;
+        if (wasAtHistoryEnd && box) setScrollTopPreserved(box, 0, {allowAwayFromBottom: true, reason: "delete-history-end-preserve", suppressRenderMs: 220, suppressUpdateMs: 180});
+        refreshScrollAffordances(box);
+      }
+      return;
+    }
     if (msg) {
       msg.hidden = true;
       msg.message = t("message.deleted", "[deleted]");
@@ -3506,11 +3845,17 @@
     // If we decide bottom-follow after that shrink, a mid-history viewport may
     // suddenly look "near bottom" and get dragged to the latest message. Capture
     // the pre-delete anchor first and force a non-bottom render unless the user
-    // really was already at the bottom before pressing delete.
+    // really was already at the bottom before pressing delete. Keep a short
+    // bottom-stick lock as well, because the optimistic delete and the SSE delete
+    // event can arrive in separate frames and otherwise re-enable auto-follow.
+    if (!wasNearBottom) {
+      state.preventBottomStickUntil = Math.max(Number(state.preventBottomStickUntil || 0), Date.now() + 1400);
+      state.autoFollowLatest = false;
+    }
     renderVirtualMessages({
       stickToBottom: wasNearBottom,
       preserveScroll: !wasNearBottom,
-      anchor: !wasNearBottom ? anchor : null,
+      anchor: !wasNearBottom && !wasAtHistoryEnd ? anchor : null,
       forcePreservePosition: !wasNearBottom,
       suppressBottomStick: !wasNearBottom,
       allowDuringMedia: true,
@@ -3518,8 +3863,19 @@
       deferDuringMediaLayout: false,
       deferDuringScroll: false
     });
-    if (!wasNearBottom) state.autoFollowLatest = false;
-    else state.autoFollowLatest = prevAutoFollow || wasNearBottom;
+    if (!wasNearBottom) {
+      state.autoFollowLatest = false;
+      const afterBox = document.getElementById("bmwc-messages");
+      if (afterBox && wasAtHistoryEnd) {
+        state.forceHistoryEndNoticeUntil = Math.max(Number(state.forceHistoryEndNoticeUntil || 0), Date.now() + 1600);
+        setScrollTopPreserved(afterBox, 0, {allowAwayFromBottom: true, reason: "delete-history-end-preserve", suppressRenderMs: 260, suppressUpdateMs: 180});
+      } else if (afterBox && !anchor) {
+        setScrollTopPreserved(afterBox, prevTop, {allowAwayFromBottom: true, reason: "delete-preserve-scroll", suppressRenderMs: 260, suppressUpdateMs: 180});
+      }
+      refreshScrollAffordances(afterBox);
+    } else {
+      state.autoFollowLatest = prevAutoFollow || wasNearBottom;
+    }
   }
 
   function fontPx(value, fallback) {
@@ -3552,12 +3908,14 @@
       localStorage.setItem("bmwc.userFontSize", String(Math.round(value)));
     }
     applyFontSizeConfig();
+    applyMediaViewportConfig();
   }
 
   function resetUserFontSize() {
     state.liveUserFontSize = null;
     localStorage.removeItem("bmwc.userFontSize");
     applyFontSizeConfig();
+    applyMediaViewportConfig();
   }
 
   function setUserFontFamily(value) {
@@ -3688,6 +4046,21 @@
     style.textContent = rules.join("\n");
   }
 
+
+  function applyMediaViewportConfig() {
+    const root = document.getElementById("bmwc-root");
+    if (!root) return;
+    const configured = Number(state.config && state.config.imagePreviewMaxHeight);
+    const box = document.getElementById("bmwc-messages");
+    const viewportHeight = Math.max(160, Number(box && box.clientHeight ? box.clientHeight : window.innerHeight || 720));
+    const viewportWidth = Math.max(180, Number(box && box.clientWidth ? box.clientWidth : window.innerWidth || 480));
+    const viewportCap = Math.max(160, Math.floor(viewportHeight - 72));
+    const configuredPx = Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : viewportCap;
+    const px = Math.max(120, Math.min(configuredPx, viewportCap));
+    root.style.setProperty("--bmwc-media-viewport-max-height", px + "px");
+    root.style.setProperty("--bmwc-media-viewport-max-width", Math.floor(viewportWidth) + "px");
+  }
+
   function applyFontSizeConfig() {
     const root = document.getElementById("bmwc-root");
     if (!root || !state.config) return;
@@ -3720,6 +4093,37 @@
     if (value === "high_contrast" || value === "highcontrast" || value === "contrast") return "high-contrast";
     if (value === "dark" || value === "light" || value === "system" || value === "high-contrast") return value;
     return "system";
+  }
+
+  function savedUserTheme() {
+    return normalizedTheme(localStorage.getItem("bmwc.userTheme") || "");
+  }
+
+  function resetVisualUserPreferencesForTheme() {
+    state.liveUserOpacity = null;
+    localStorage.removeItem("bmwc.userOpacity");
+    localStorage.removeItem("bmwc.userFontSize");
+    localStorage.removeItem("bmwc.userFontFamily");
+    localStorage.removeItem("bmwc.userTextColor");
+    localStorage.removeItem("bmwc.userUiTextColor");
+    localStorage.removeItem("bmwc.userTextShadowMode");
+    localStorage.removeItem("bmwc.userTextShadowCustom");
+    localStorage.removeItem("bmwc.userBackgroundColor");
+    localStorage.removeItem("bmwc.userInputBackgroundColor");
+  }
+
+  function setUserTheme(value) {
+    const theme = normalizedTheme(value || "");
+    if (theme) localStorage.setItem("bmwc.userTheme", theme);
+    else localStorage.removeItem("bmwc.userTheme");
+    resetVisualUserPreferencesForTheme();
+    applyFontSizeConfig();
+    applyThemeConfig();
+    refreshRenderedMessagesForLocale();
+    scheduleVirtualRender({preserveScroll: true, stickToBottom: false, allowDuringMedia: true, deferDuringScroll: false, deferDuringMediaLayout: false});
+    if (state.prefsModalOpen) {
+      openUserPreferencesModal(true);
+    }
   }
 
   function themeFromText(value) {
@@ -3770,6 +4174,8 @@
 
   function effectiveTheme() {
     const c = state.config || {};
+    const userTheme = (!c || c.uiUserPreferencesControl !== false) ? savedUserTheme() : "";
+    if (userTheme) return userTheme;
     if (c.uiSyncBlueMapTheme) {
       const bm = detectBlueMapTheme();
       if (bm) return bm;
@@ -3829,6 +4235,76 @@
     return normalizeHexColor(localStorage.getItem("bmwc.userUiTextColor") || "");
   }
 
+  function normalizeTextShadowMode(value) {
+    value = String(value || "").trim().toLowerCase();
+    if (["none", "auto", "dark", "light", "custom"].includes(value)) return value;
+    return "auto";
+  }
+
+  function sanitizeTextShadow(value) {
+    value = String(value || "").trim();
+    if (!value) return "";
+    if (value.length > 120) value = value.slice(0, 120);
+    if (/url\s*\(/i.test(value)) return "";
+    if (!/^[#a-zA-Z0-9(),.%\s+\-]*$/.test(value)) return "";
+    return value;
+  }
+
+  function clampShadowNumber(value, min, max, fallback) {
+    value = Number(value);
+    if (!Number.isFinite(value)) value = fallback;
+    value = Math.max(min, Math.min(max, value));
+    return Math.round(value);
+  }
+
+  function hexFromRgb(r, g, b) {
+    const toHex = n => Math.max(0, Math.min(255, Math.round(Number(n) || 0))).toString(16).padStart(2, "0");
+    return ("#" + toHex(r) + toHex(g) + toHex(b)).toLowerCase();
+  }
+
+  function rgbFromHex(hex) {
+    hex = normalizeHexColor(hex);
+    if (!hex) return {r: 0, g: 0, b: 0};
+    const n = parseInt(hex.slice(1), 16);
+    return {r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255};
+  }
+
+  function parseTextShadowParts(value) {
+    value = sanitizeTextShadow(value) || "0 1px 2px rgba(0, 0, 0, 0.85)";
+    const parts = {x: 0, y: 1, blur: 2, color: "#000000", opacity: 85};
+    const rgba = value.match(/rgba?\s*\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)(?:\s*,\s*([0-9.]+)\s*)?\)/i);
+    if (rgba) {
+      parts.color = hexFromRgb(rgba[1], rgba[2], rgba[3]);
+      parts.opacity = clampShadowNumber((rgba[4] == null ? 1 : Number(rgba[4])) * 100, 0, 100, 85);
+    } else {
+      const hex = value.match(/#[0-9a-fA-F]{3,6}/);
+      if (hex) parts.color = normalizeHexColor(hex[0]) || parts.color;
+    }
+    const numeric = value.replace(/rgba?\s*\([^)]*\)/ig, " ").replace(/#[0-9a-fA-F]{3,6}/g, " ").match(/-?\d+(?:\.\d+)?/g) || [];
+    if (numeric.length >= 1) parts.x = clampShadowNumber(numeric[0], -12, 12, parts.x);
+    if (numeric.length >= 2) parts.y = clampShadowNumber(numeric[1], -12, 12, parts.y);
+    if (numeric.length >= 3) parts.blur = clampShadowNumber(numeric[2], 0, 24, parts.blur);
+    return parts;
+  }
+
+  function buildTextShadowFromParts(parts) {
+    parts = parts || {};
+    const x = clampShadowNumber(parts.x, -12, 12, 0);
+    const y = clampShadowNumber(parts.y, -12, 12, 1);
+    const blur = clampShadowNumber(parts.blur, 0, 24, 2);
+    const opacity = clampShadowNumber(parts.opacity, 0, 100, 85) / 100;
+    const rgb = rgbFromHex(parts.color || "#000000");
+    return `${x}px ${y}px ${blur}px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")})`;
+  }
+
+  function savedUserTextShadowMode() {
+    return normalizeTextShadowMode(localStorage.getItem("bmwc.userTextShadowMode") || "");
+  }
+
+  function savedUserTextShadowCustom() {
+    return sanitizeTextShadow(localStorage.getItem("bmwc.userTextShadowCustom") || "");
+  }
+
   function savedUserBackgroundColor() {
     return normalizeHexColor(localStorage.getItem("bmwc.userBackgroundColor") || "");
   }
@@ -3848,6 +4324,19 @@
     value = normalizeHexColor(value);
     if (value) localStorage.setItem("bmwc.userUiTextColor", value);
     else localStorage.removeItem("bmwc.userUiTextColor");
+    applyThemeConfig();
+  }
+
+  function setUserTextShadowMode(value) {
+    value = normalizeTextShadowMode(value);
+    localStorage.setItem("bmwc.userTextShadowMode", value);
+    applyThemeConfig();
+  }
+
+  function setUserTextShadowCustom(value) {
+    value = sanitizeTextShadow(value);
+    if (value) localStorage.setItem("bmwc.userTextShadowCustom", value);
+    else localStorage.removeItem("bmwc.userTextShadowCustom");
     applyThemeConfig();
   }
 
@@ -3872,6 +4361,16 @@
 
   function resetUserUiTextColor() {
     localStorage.removeItem("bmwc.userUiTextColor");
+    applyThemeConfig();
+  }
+
+  function resetUserTextShadowMode() {
+    localStorage.removeItem("bmwc.userTextShadowMode");
+    applyThemeConfig();
+  }
+
+  function resetUserTextShadowCustom() {
+    localStorage.removeItem("bmwc.userTextShadowCustom");
     applyThemeConfig();
   }
 
@@ -3923,11 +4422,54 @@
     return savedUserInputBackgroundColor() || normalizeHexColor(state.config && state.config.uiInputBackgroundColor) || fallbackInputBackgroundColorForTheme();
   }
 
+  function colorBrightness(hex) {
+    hex = normalizeHexColor(hex);
+    if (!hex) return 255;
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16) & 255;
+    const g = (n >> 8) & 255;
+    const b = n & 255;
+    return (r * 299 + g * 587 + b * 114) / 1000;
+  }
+
+  function textShadowCssForMode(mode, custom, sampleColor) {
+    mode = normalizeTextShadowMode(mode);
+    custom = sanitizeTextShadow(custom);
+    if (mode === "none") return "none";
+    if (mode === "custom") return custom || "0 1px 2px rgba(0, 0, 0, 0.85)";
+    if (mode === "light") return "0 1px 2px rgba(255, 255, 255, 0.85)";
+    if (mode === "dark") return "0 1px 2px rgba(0, 0, 0, 0.85)";
+    // Auto shadow should not make the light theme fuzzy. Dark theme keeps the
+    // original shadowed look; light theme uses crisp text unless the user
+    // explicitly selects a shadow preset.
+    if (effectiveTheme() === "light") return "none";
+    const sample = normalizeHexColor(sampleColor) || fallbackTextColorForTheme();
+    return colorBrightness(sample) >= 150 ? "0 1px 2px rgba(0, 0, 0, 0.85)" : "0 1px 2px rgba(255, 255, 255, 0.85)";
+  }
+
+  function effectiveUserTextShadowMode() {
+    const prefsEnabled = !state.config || state.config.uiUserPreferencesControl !== false;
+    return normalizeTextShadowMode((prefsEnabled ? savedUserTextShadowMode() : "") || (state.config && state.config.uiTextShadowMode) || "auto");
+  }
+
+  function effectiveUserTextShadowCustom() {
+    const prefsEnabled = !state.config || state.config.uiUserPreferencesControl !== false;
+    return sanitizeTextShadow((prefsEnabled ? savedUserTextShadowCustom() : "") || (state.config && state.config.uiTextShadowCustom) || "0 1px 2px rgba(0, 0, 0, 0.85)");
+  }
+
+  function effectiveUserTextShadowCss() {
+    return textShadowCssForMode(effectiveUserTextShadowMode(), effectiveUserTextShadowCustom(), effectiveUserTextColor() || fallbackTextColorForTheme());
+  }
+
   function applyUserColorOverrides(root) {
     if (!root || !state.config) return;
     const prefsEnabled = state.config.uiUserPreferencesControl !== false;
     const text = (prefsEnabled ? savedUserTextColor() : "") || normalizeHexColor(state.config && state.config.uiTextColor);
     const uiText = (prefsEnabled ? savedUserUiTextColor() : "") || normalizeHexColor(state.config && state.config.uiUiTextColor);
+    const shadowMode = (prefsEnabled ? savedUserTextShadowMode() : "") || (state.config && state.config.uiTextShadowMode) || "auto";
+    const shadowCustom = (prefsEnabled ? savedUserTextShadowCustom() : "") || (state.config && state.config.uiTextShadowCustom) || "0 1px 2px rgba(0, 0, 0, 0.85)";
+    const shadowCss = textShadowCssForMode(shadowMode, shadowCustom, text || fallbackTextColorForTheme());
+    const uiShadowCss = textShadowCssForMode(shadowMode, shadowCustom, uiText || text || fallbackUiTextColorForTheme());
     const bg = prefsEnabled ? savedUserBackgroundColor() : "";
     const inputBg = (prefsEnabled ? savedUserInputBackgroundColor() : "") || normalizeHexColor(state.config && state.config.uiInputBackgroundColor);
     if (text) {
@@ -3937,10 +4479,12 @@
     }
     if (uiText) {
       root.style.setProperty("--bmwc-ui-color", uiText);
+      root.style.setProperty("--bmwc-ui-text-color", uiText);
       root.style.setProperty("--bmwc-button-text", uiText);
       root.style.setProperty("--bmwc-muted-color", uiText);
     } else {
       root.style.removeProperty("--bmwc-ui-color");
+      root.style.removeProperty("--bmwc-ui-text-color");
       root.style.removeProperty("--bmwc-button-text");
       root.style.removeProperty("--bmwc-muted-color");
     }
@@ -3954,6 +4498,8 @@
       root.style.removeProperty("--bmwc-panel-bg-rgb");
       root.style.removeProperty("--bmwc-modal-bg-rgb");
     }
+    root.style.setProperty("--bmwc-text-shadow", shadowCss || "none");
+    root.style.setProperty("--bmwc-ui-text-shadow", uiShadowCss || shadowCss || "none");
     if (inputBg) {
       root.style.setProperty("--bmwc-input-bg", inputBg);
     } else {
@@ -3999,6 +4545,7 @@
       applyWindowSizeConfig();
       applyWebFontsConfig();
       applyFontSizeConfig();
+    applyMediaViewportConfig();
       applyThemeConfig();
       updatePipButton();
       updateGuestVisibility();
@@ -4114,9 +4661,22 @@
         }
       };
 
-      box.addEventListener("wheel", markScrollInteraction, {passive: true});
       box.addEventListener("wheel", (ev) => {
-        if (ev.deltaY < 0) requestOlderHistoryFromTopInput("wheel");
+        markDirectScrollInput();
+        rememberUserTopIntent(box);
+        if (ev.deltaY < 0) {
+          markHistoryEndTopUserIntent(box, "wheel-top");
+          requestOlderHistoryFromTopInput("wheel");
+        }
+        setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "wheel"), 0);
+      }, {passive: true});
+      box.addEventListener("keydown", (ev) => {
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(ev.key)) {
+          markDirectScrollInput();
+          rememberUserTopIntent(box);
+          if (["ArrowUp", "PageUp", "Home"].includes(ev.key)) markHistoryEndTopUserIntent(box, "key-top");
+          setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "key"), 0);
+        }
       }, {passive: true});
       let historyTouchStartY = null;
       box.addEventListener("touchstart", (ev) => {
@@ -4124,9 +4684,12 @@
         if (!isInteractiveScrollTarget(ev.target)) beginTouchScrollInteraction();
       }, {passive: true});
       box.addEventListener("touchmove", (ev) => {
-        markScrollInteraction();
+        markDirectScrollInput();
+        rememberUserTopIntent(box);
+        setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "touch"), 0);
         const y = ev.touches && ev.touches[0] ? ev.touches[0].clientY : null;
         if (historyTouchStartY != null && y != null && y - historyTouchStartY > 18) {
+          markHistoryEndTopUserIntent(box, "touch-top");
           requestOlderHistoryFromTopInput("touch");
         }
       }, {passive: true});
@@ -4139,7 +4702,8 @@
         const nearHorizontalScrollbar = ev.clientY >= rect.bottom - 18;
         if (nearVerticalScrollbar || nearHorizontalScrollbar) {
           state.scrollbarDragActive = true;
-          markScrollInteraction();
+          markDirectScrollInput();
+          markHistoryEndTopUserIntent(box, "scrollbar-down");
         }
       }, {passive: true});
       window.addEventListener("pointerup", (ev) => {
@@ -4147,34 +4711,63 @@
         if (!state.scrollbarDragActive) return;
         state.scrollbarDragActive = false;
         markScrollInteraction();
+        markHistoryEndTopUserIntent(box, "scrollbar");
+        setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "scrollbar"), 0);
       }, {capture: true, passive: true});
       window.addEventListener("pointercancel", (ev) => {
         if (ev.pointerType === "touch") endTouchScrollInteraction();
         if (!state.scrollbarDragActive) return;
         state.scrollbarDragActive = false;
         markScrollInteraction();
+        setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "scrollbar-cancel"), 0);
       }, {capture: true, passive: true});
       window.addEventListener("blur", () => {
         endTouchScrollInteraction();
         if (!state.scrollbarDragActive) return;
         state.scrollbarDragActive = false;
         markScrollInteraction();
+        setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "scrollbar-blur"), 0);
       });
     };
+    const installNonScrollUiActionEvents = () => {
+      const root = document.getElementById("bmwc-root");
+      if (!root || root.dataset.nonScrollUiActionInstalled === "1") return;
+      root.dataset.nonScrollUiActionInstalled = "1";
+      const markIfUiControl = (ev) => {
+        const target = ev && ev.target;
+        try {
+          if (target && target.closest && target.closest(
+            "button, input, textarea, select, a, [data-delete], [data-pin], [data-unpin], [data-open-pins], " +
+            ".bmwc-modal, .bmwc-modal-backdrop, .bmwc-login, .bmwc-admin-modal, .bmwc-preferences-modal, " +
+            ".bmwc-media-card, .bmwc-youtube-card"
+          )) markNonScrollUiAction();
+        } catch (_) {}
+      };
+      root.addEventListener("pointerdown", markIfUiControl, true);
+      root.addEventListener("click", markIfUiControl, true);
+      root.addEventListener("keydown", markIfUiControl, true);
+    };
+
     installScrollInteractionEvents();
+    installNonScrollUiActionEvents();
 
     box.addEventListener("scroll", () => {
       if (state.minimized || guestChatHidden()) return;
       const programmaticScroll = Date.now() < Number(state.suppressScrollRenderUntil || 0);
       const keepBottom = isAutoFollowBottom(box);
       const shouldLoadOlder = box.scrollTop <= historyPreloadThresholdPx(box);
+      refreshScrollAffordances(box);
+      if (!programmaticScroll) {
+        if (shouldLoadOlder) markHistoryEndTopUserIntent(box, "scroll-top");
+        maybeShowHistoryEndNoticeFromUserScroll(box, "scroll");
+      }
 
       if (!state.suppressAutoFollowUpdate && !programmaticScroll) {
         state.lastUserScrollAt = Date.now();
-        state.autoFollowLatest = keepBottom;
+        state.autoFollowLatest = keepBottom && Date.now() >= Number(state.preventBottomStickUntil || 0);
         markScrollInteraction();
       } else {
-        state.autoFollowLatest = keepBottom;
+        state.autoFollowLatest = keepBottom && Date.now() >= Number(state.preventBottomStickUntil || 0);
       }
 
       // Programmatic bottom corrections can emit scroll events for several
@@ -4255,6 +4848,7 @@
         if (!older && state.messages.length > 0 && latestHistoryPageUnchanged(data.messages)) {
           state.historyHasMore = nextHasMore;
           state.historyOldestId = nextOldestId;
+          refreshScrollAffordances(box);
           scheduleHistoryViewportFill("unchanged-history");
           return;
         }
@@ -4320,6 +4914,12 @@
         state.historyLoading = false;
         state.historyLoadingSince = 0;
         if (older) markOlderHistorySettling();
+        const finalBox = document.getElementById("bmwc-messages");
+        const hasPendingHistoryEndTopIntent = Number(state.historyEndNoticePendingUserTopUntil || 0) > Date.now();
+        if (finalBox && (older || hasPendingHistoryEndTopIntent)) {
+          setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(finalBox, older ? "history-loaded" : "history-refreshed"), 0);
+          setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(finalBox, older ? "history-loaded-late" : "history-refreshed-late"), 120);
+        }
       }
     }
   }
@@ -4515,12 +5115,27 @@
     return exts.map(e => "." + String(e).replace(/^\./, "").trim()).filter(Boolean).join(",");
   }
 
-  function appendToMessage(text) {
+  function normalizeInsertedMediaLinks(text) {
+    const parts = String(text || "")
+      .split(/\s+/)
+      .map(part => part.trim())
+      .filter(Boolean);
+    return parts.length ? parts.join(" ") + " " : "";
+  }
+
+  function appendToMessage(text, options = {}) {
     const input = document.getElementById("bmwc-message");
     if (!input) return;
-    const current = input.value.trim();
-    input.value = current ? current + "\n" + text : text;
+    const inserted = options.mediaLinks ? normalizeInsertedMediaLinks(text) : String(text || "");
+    if (!inserted) return;
+
+    const current = input.value || "";
+    const needsSeparator = current && !/\s$/.test(current);
+    input.value = current + (needsSeparator ? " " : "") + inserted;
     input.focus();
+    try {
+      input.selectionStart = input.selectionEnd = input.value.length;
+    } catch (_) {}
   }
 
   function extensionFromMime(type) {
@@ -4908,13 +5523,13 @@
 
     if (uploaded.length) {
       forceLatestChatView("upload");
-      const text = uploaded.join("\n");
+      const text = normalizeInsertedMediaLinks(uploaded.join(" "));
       const mode = String((state.config && state.config.uploadClipboardSendMode) || "insert").toLowerCase();
       if (source === "clipboard" && mode === "send") {
         const ok = await sendMessageText(text, null, {forceLatest: true});
-        if (!ok) appendToMessage(text);
+        if (!ok) appendToMessage(text, {mediaLinks: true});
       } else {
-        appendToMessage(text);
+        appendToMessage(text, {mediaLinks: true});
       }
       forceLatestChatView("upload-complete");
       hideUploadProgressSoon(t("upload.complete", "Upload complete."));
@@ -5574,8 +6189,9 @@
         <button class="bmwc-button" id="bmwc-admin-close">${t("button.close", "Close")}</button>
       </div>
     `;
+    protectHistoryEndNotice("admin-open", 6000);
     document.body.appendChild(wrap);
-    wrap.querySelector("#bmwc-admin-close").onclick = () => wrap.remove();
+    wrap.querySelector("#bmwc-admin-close").onclick = () => { protectHistoryEndNotice("admin-close", 6000); wrap.remove(); scheduleScrollAffordanceRefresh("admin-close"); };
     wrap.querySelectorAll("[data-panel]").forEach(btn => {
       btn.onclick = () => loadAdminPanel(wrap, btn.dataset.panel);
     });
@@ -5926,6 +6542,13 @@
     return {
       labels: {
         title: t("preferences.title", "Chat settings"),
+        theme: t("preferences.theme", "Theme"),
+        themeDefault: t("preferences.themeDefault", "Default"),
+        themeSystem: t("preferences.themeSystem", "System"),
+        themeDark: t("preferences.themeDark", "Dark"),
+        themeLight: t("preferences.themeLight", "Light"),
+        themeHighContrast: t("preferences.themeHighContrast", "High contrast"),
+        themeResetNote: t("preferences.themeResetNote", "Changing the theme resets visual chat settings to the theme defaults."),
         opacity: t("opacity.title", "Opacity"),
         fontSize: t("preferences.fontSize", "Font size"),
         fontFamily: t("preferences.fontFamily", "Font"),
@@ -5941,6 +6564,20 @@
         fontUnknown: t("preferences.fontUnknown", "Could not test this font in this browser."),
         textColor: t("preferences.textColor", "Message text color"),
         uiTextColor: t("preferences.uiTextColor", "UI text color"),
+        textShadow: t("preferences.textShadow", "Text shadow"),
+        textShadowNone: t("preferences.textShadowNone", "None"),
+        textShadowAuto: t("preferences.textShadowAuto", "Auto"),
+        textShadowDark: t("preferences.textShadowDark", "Dark shadow"),
+        textShadowLight: t("preferences.textShadowLight", "Light shadow"),
+        textShadowCustom: t("preferences.textShadowCustom", "Custom"),
+        textShadowCustomValue: t("preferences.textShadowCustomValue", "Custom shadow"),
+        textShadowCustomColor: t("preferences.textShadowCustomColor", "Shadow color"),
+        textShadowCustomX: t("preferences.textShadowCustomX", "X offset"),
+        textShadowCustomY: t("preferences.textShadowCustomY", "Y offset"),
+        textShadowCustomBlur: t("preferences.textShadowCustomBlur", "Blur"),
+        textShadowCustomOpacity: t("preferences.textShadowCustomOpacity", "Opacity"),
+        textShadowCustomPreview: t("preferences.textShadowCustomPreview", "Shadow preview"),
+        textShadowCustomPlaceholder: t("preferences.textShadowCustomPlaceholder", "0 1px 2px rgba(0, 0, 0, 0.85)"),
         backgroundColor: t("preferences.backgroundColor", "Background color"),
         inputBackgroundColor: t("preferences.inputBackgroundColor", "Input background color"),
         language: t("preferences.language", "Language"),
@@ -5959,9 +6596,19 @@
       fontFamily: savedUserFontFamily(),
       textColor: effectiveUserTextColor(),
       uiTextColor: effectiveUserUiTextColor(),
+      textShadowMode: effectiveUserTextShadowMode(),
+      textShadowCustom: effectiveUserTextShadowCustom(),
       backgroundColor: effectiveUserBackgroundColor(),
       inputBackgroundColor: effectiveUserInputBackgroundColor(),
       fontOptions,
+      theme: savedUserTheme(),
+      themeOptions: [
+        {value: "", label: t("preferences.themeDefault", "Default")},
+        {value: "system", label: t("preferences.themeSystem", "System")},
+        {value: "dark", label: t("preferences.themeDark", "Dark")},
+        {value: "light", label: t("preferences.themeLight", "Light")},
+        {value: "high-contrast", label: t("preferences.themeHighContrast", "High contrast")}
+      ],
       language: savedUserLanguage(),
       languageOptions: [""].concat((state.availableLanguages && state.availableLanguages.length ? state.availableLanguages : ["ko-KR", "en-US", "ja-JP", "zh-CN"]).filter(Boolean)).map(code => ({value: code, label: languageLabel(code)}))
     };
@@ -5985,6 +6632,10 @@
           <h3>${esc(labels.title || "Chat settings")}</h3>
           <button class="bmwc-button" id="bmwc-prefs-close">${esc(labels.close || "Close")}</button>
         </div>
+
+        <label class="bmwc-pref-label"><span>${esc(labels.theme || "Theme")}</span></label>
+        <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-theme">${optionListHtml(payload.themeOptions, payload.theme)}</select>
+        <p class="bmwc-pref-font-help">${esc(labels.themeResetNote || "Changing the theme resets visual chat settings to the theme defaults.")}</p>
 
         <label class="bmwc-pref-label"><span>${esc(labels.opacity || "Opacity")}</span><strong id="bmwc-prefs-opacity-value">${Math.round(payload.opacityPercent || 100)}%</strong></label>
         <input class="bmwc-pref-range" id="bmwc-prefs-opacity" type="range" min="10" max="100" step="1" value="${Math.round(payload.opacityPercent || 100)}">
@@ -6010,6 +6661,27 @@
         <label class="bmwc-pref-label"><span>${esc(labels.backgroundColor || "Background color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-background-color" type="color" value="${esc(payload.backgroundColor || "#121216")}"></label>
         <label class="bmwc-pref-label"><span>${esc(labels.inputBackgroundColor || "Input background color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-input-background-color" type="color" value="${esc(payload.inputBackgroundColor || "#000000")}"></label>
 
+        <label class="bmwc-pref-label"><span>${esc(labels.textShadow || "Text shadow")}</span></label>
+        <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-text-shadow-mode">
+          <option value="none" ${payload.textShadowMode === "none" ? "selected" : ""}>${esc(labels.textShadowNone || "None")}</option>
+          <option value="auto" ${payload.textShadowMode === "auto" ? "selected" : ""}>${esc(labels.textShadowAuto || "Auto")}</option>
+          <option value="dark" ${payload.textShadowMode === "dark" ? "selected" : ""}>${esc(labels.textShadowDark || "Dark shadow")}</option>
+          <option value="light" ${payload.textShadowMode === "light" ? "selected" : ""}>${esc(labels.textShadowLight || "Light shadow")}</option>
+          <option value="custom" ${payload.textShadowMode === "custom" ? "selected" : ""}>${esc(labels.textShadowCustom || "Custom")}</option>
+        </select>
+        <div class="bmwc-shadow-custom-panel" id="bmwc-prefs-text-shadow-custom-panel">
+          <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomColor || "Shadow color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-text-shadow-color" type="color"></label>
+          <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomX || "X offset")}</span><strong id="bmwc-prefs-text-shadow-x-value">0px</strong></label>
+          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-x" type="range" min="-12" max="12" step="1">
+          <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomY || "Y offset")}</span><strong id="bmwc-prefs-text-shadow-y-value">1px</strong></label>
+          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-y" type="range" min="-12" max="12" step="1">
+          <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomBlur || "Blur")}</span><strong id="bmwc-prefs-text-shadow-blur-value">2px</strong></label>
+          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-blur" type="range" min="0" max="24" step="1">
+          <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomOpacity || "Opacity")}</span><strong id="bmwc-prefs-text-shadow-opacity-value">85%</strong></label>
+          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-opacity" type="range" min="0" max="100" step="1">
+          <div class="bmwc-shadow-preview" id="bmwc-prefs-text-shadow-preview">${esc(labels.textShadowCustomPreview || "Shadow preview")}</div>
+        </div>
+
         <label class="bmwc-pref-label"><span>${esc(labels.language || "Language")}</span></label>
         <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-language">${optionListHtml(payload.languageOptions, payload.language)}</select>
 
@@ -6022,6 +6694,7 @@
     document.body.appendChild(wrap);
     makeModalDraggable(wrap, "bmwc.localUserPrefsModalPos");
 
+    const themeSelect = wrap.querySelector("#bmwc-prefs-theme");
     const opacityInput = wrap.querySelector("#bmwc-prefs-opacity");
     const opacityValue = wrap.querySelector("#bmwc-prefs-opacity-value");
     const sizeInput = wrap.querySelector("#bmwc-prefs-font-size");
@@ -6033,6 +6706,18 @@
     const familyStatus = wrap.querySelector("#bmwc-prefs-font-family-status");
     const textColorInput = wrap.querySelector("#bmwc-prefs-text-color");
     const uiTextColorInput = wrap.querySelector("#bmwc-prefs-ui-text-color");
+    const textShadowModeInput = wrap.querySelector("#bmwc-prefs-text-shadow-mode");
+    const textShadowCustomPanel = wrap.querySelector("#bmwc-prefs-text-shadow-custom-panel");
+    const textShadowColorInput = wrap.querySelector("#bmwc-prefs-text-shadow-color");
+    const textShadowXInput = wrap.querySelector("#bmwc-prefs-text-shadow-x");
+    const textShadowYInput = wrap.querySelector("#bmwc-prefs-text-shadow-y");
+    const textShadowBlurInput = wrap.querySelector("#bmwc-prefs-text-shadow-blur");
+    const textShadowOpacityInput = wrap.querySelector("#bmwc-prefs-text-shadow-opacity");
+    const textShadowXValue = wrap.querySelector("#bmwc-prefs-text-shadow-x-value");
+    const textShadowYValue = wrap.querySelector("#bmwc-prefs-text-shadow-y-value");
+    const textShadowBlurValue = wrap.querySelector("#bmwc-prefs-text-shadow-blur-value");
+    const textShadowOpacityValue = wrap.querySelector("#bmwc-prefs-text-shadow-opacity-value");
+    const textShadowPreview = wrap.querySelector("#bmwc-prefs-text-shadow-preview");
     const backgroundColorInput = wrap.querySelector("#bmwc-prefs-background-color");
     const inputBackgroundColorInput = wrap.querySelector("#bmwc-prefs-input-background-color");
     const languageSelect = wrap.querySelector("#bmwc-prefs-language");
@@ -6040,6 +6725,8 @@
     const close = () => { wrap.remove(); state.prefsModalOpen = false; };
     wrap.querySelector("#bmwc-prefs-close").onclick = close;
     wrap.addEventListener("click", e => { if (e.target === wrap) close(); });
+
+    if (themeSelect) themeSelect.addEventListener("change", () => setUserTheme(themeSelect.value));
 
     opacityInput.addEventListener("input", () => {
       const v = Math.max(10, Math.min(100, Number(opacityInput.value) || payload.defaultOpacityPercent || 100));
@@ -6092,6 +6779,47 @@
     });
     textColorInput.addEventListener("input", () => setUserTextColor(textColorInput.value));
     uiTextColorInput.addEventListener("input", () => setUserUiTextColor(uiTextColorInput.value));
+    const readShadowParts = () => ({
+      color: textShadowColorInput ? textShadowColorInput.value : "#000000",
+      x: textShadowXInput ? Number(textShadowXInput.value) : 0,
+      y: textShadowYInput ? Number(textShadowYInput.value) : 1,
+      blur: textShadowBlurInput ? Number(textShadowBlurInput.value) : 2,
+      opacity: textShadowOpacityInput ? Number(textShadowOpacityInput.value) : 85
+    });
+    const syncShadowControls = (parts = parseTextShadowParts(payload.textShadowCustom)) => {
+      if (textShadowColorInput) textShadowColorInput.value = parts.color;
+      if (textShadowXInput) textShadowXInput.value = String(parts.x);
+      if (textShadowYInput) textShadowYInput.value = String(parts.y);
+      if (textShadowBlurInput) textShadowBlurInput.value = String(parts.blur);
+      if (textShadowOpacityInput) textShadowOpacityInput.value = String(parts.opacity);
+      if (textShadowXValue) textShadowXValue.textContent = parts.x + "px";
+      if (textShadowYValue) textShadowYValue.textContent = parts.y + "px";
+      if (textShadowBlurValue) textShadowBlurValue.textContent = parts.blur + "px";
+      if (textShadowOpacityValue) textShadowOpacityValue.textContent = parts.opacity + "%";
+      const css = buildTextShadowFromParts(parts);
+      if (textShadowPreview) textShadowPreview.style.textShadow = css;
+    };
+    const updateShadowCustomFromControls = () => {
+      const parts = readShadowParts();
+      syncShadowControls(parts);
+      if (textShadowModeInput && textShadowModeInput.value !== "custom") {
+        textShadowModeInput.value = "custom";
+        setUserTextShadowMode("custom");
+      }
+      setUserTextShadowCustom(buildTextShadowFromParts(parts));
+    };
+    const updateShadowPanelVisibility = () => {
+      if (textShadowCustomPanel) textShadowCustomPanel.classList.toggle("bmwc-hidden", !textShadowModeInput || textShadowModeInput.value !== "custom");
+    };
+    syncShadowControls(parseTextShadowParts(payload.textShadowCustom));
+    updateShadowPanelVisibility();
+    if (textShadowModeInput) textShadowModeInput.addEventListener("change", () => {
+      setUserTextShadowMode(textShadowModeInput.value);
+      updateShadowPanelVisibility();
+    });
+    [textShadowColorInput, textShadowXInput, textShadowYInput, textShadowBlurInput, textShadowOpacityInput].forEach(input => {
+      if (input) input.addEventListener("input", updateShadowCustomFromControls);
+    });
     backgroundColorInput.addEventListener("input", () => setUserBackgroundColor(backgroundColorInput.value));
     inputBackgroundColorInput.addEventListener("input", () => setUserInputBackgroundColor(inputBackgroundColorInput.value));
     languageSelect.addEventListener("change", () => setUserLanguage(languageSelect.value));
@@ -6103,8 +6831,15 @@
       if (familySelect) familySelect.value = "";
       if (familyCustomInput) familyCustomInput.value = "";
       resetUserTextColor();
+      resetUserUiTextColor();
+      resetUserTextShadowMode();
+      resetUserTextShadowCustom();
+      if (textShadowModeInput) textShadowModeInput.value = payload.textShadowMode || "auto";
+      syncShadowControls(parseTextShadowParts(payload.textShadowCustom));
+      updateShadowPanelVisibility();
       resetUserBackgroundColor();
       resetUserInputBackgroundColor();
+      localStorage.removeItem("bmwc.userTheme");
       resetUserLanguage();
       wrap.remove();
       state.prefsModalOpen = false;
