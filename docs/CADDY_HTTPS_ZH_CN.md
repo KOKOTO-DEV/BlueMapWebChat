@@ -93,13 +93,19 @@ http:
 standalone-web:
   enabled: true
   path: "/chat"
+  # 可选。可以与 web-addon.api-base-url 使用相同值。
   api-base-url: "/bmwc/api"
 
 web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
-  public-base-url: "/bmwc/api/uploads"
+  # 推荐留空。需要时也可使用 "/bmwc/api" 或 "/bmwc/api/uploads"。
+  public-base-url: ""
+
+emoji:
+  # 推荐留空。需要时也可使用 "/bmwc/api" 或 "/bmwc/api/emojis"。
+  public-base-url: ""
 
 ui:
   image-preview-max-height: 720
@@ -125,8 +131,8 @@ ui:
 3. 安装 Caddy。
 4. 放置 Caddyfile 并 reload Caddy。
 5. 将 `web-addon.api-base-url` 设为 `/bmwc/api`。
-6. 如果要通过 `https://map.example.com/bmwc/chat` 打开独立页面，也将 `standalone-web.api-base-url` 设为 `/bmwc/api`。
-7. 如果启用上传，将 `upload.public-base-url` 设为 `/bmwc/api/uploads`。
+6. 通过 `https://map.example.com/bmwc/chat` 打开独立页面时，`standalone-web.api-base-url` 可以留空，也可以设置为与 `web-addon.api-base-url` 相同的 `/bmwc/api`。
+7. 上传/表情公开 URL 通常留空。如需旧式显式配置，`upload.public-base-url` 可使用 `/bmwc/api` 或 `/bmwc/api/uploads`，`emoji.public-base-url` 可使用 `/bmwc/api` 或 `/bmwc/api/emojis`。
 8. 执行 `/bmchat reload` 或重启服务器以重新生成 Web addon 文件。
 9. 如果 BlueMap 未自动刷新 Web 资源，请执行 `/bluemap reload`。
 10. 在浏览器中打开 `https://map.example.com/` 或 `https://map.example.com/bmwc/chat`。
@@ -138,3 +144,7 @@ ui:
 ## nginx 替代方案
 
 如果使用 nginx，请参考 `docs/NGINX_HTTPS_ZH_CN.md` 和 `examples/nginx/bluemapwebchat.conf`。
+
+### URL 设置解析规则
+
+`web-addon.api-base-url` 是 HTTPS 公开 API 路径的基准。除非需要兼容覆盖，`standalone-web.api-base-url`、`upload.public-base-url`、`emoji.public-base-url` 通常留空。standalone 留空会使用 `web-addon.api-base-url`；upload/emoji 留空会分别追加 `/uploads` 和 `/emojis`。`/bmwc/api` 这类绝对浏览器路径会原样使用。不带前导 `/` 的相对值会在 `http.cors-origin` 为实际 origin 时基于该 origin 解析。完整 `https://...` URL 原样使用。

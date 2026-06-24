@@ -97,13 +97,19 @@ http:
 standalone-web:
   enabled: true
   path: "/chat"
+  # Optional. Same value as web-addon.api-base-url is valid.
   api-base-url: "/bmwc/api"
 
 web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
-  public-base-url: "/bmwc/api/uploads"
+  # Recommended: keep empty. If needed, "/bmwc/api" or "/bmwc/api/uploads" also works.
+  public-base-url: ""
+
+emoji:
+  # Recommended: keep empty. If needed, "/bmwc/api" or "/bmwc/api/emojis" also works.
+  public-base-url: ""
 
 ui:
   image-preview-max-height: 720
@@ -133,8 +139,8 @@ Internally, Caddy connects to `127.0.0.1:8100` and `127.0.0.1:8899`.
 3. Install Caddy.
 4. Copy and reload the Caddyfile.
 5. Set `web-addon.api-base-url` to `/bmwc/api`.
-6. Set `standalone-web.api-base-url` to `/bmwc/api` if you want the standalone page at `https://map.example.com/bmwc/chat`.
-7. Set `upload.public-base-url` to `/bmwc/api/uploads` when uploads are enabled.
+6. For `https://map.example.com/bmwc/chat`, `standalone-web.api-base-url` may be left empty or set to the same `/bmwc/api` value as `web-addon.api-base-url`.
+7. Leave `upload.public-base-url` and `emoji.public-base-url` empty unless you intentionally serve them from a separate public path. Legacy explicit values such as `/bmwc/api/uploads` and `/bmwc/api/emojis` are also accepted.
 8. Run `/bmchat reload` or restart the server so the web addon files are regenerated.
 9. Run `/bluemap reload` if BlueMap does not reload web assets automatically.
 10. Open `https://map.example.com/` or `https://map.example.com/bmwc/chat` in the browser.
@@ -148,3 +154,7 @@ For public servers, serve both BlueMap and BlueMapWebChat under the same HTTPS o
 ## nginx alternative
 
 If you use nginx instead of Caddy, see `docs/NGINX_HTTPS_EN.md` and `examples/nginx/bluemapwebchat.conf`.
+
+### URL setting resolution
+
+`web-addon.api-base-url` is the primary HTTPS public API path. Leave `standalone-web.api-base-url`, `upload.public-base-url`, and `emoji.public-base-url` empty unless you need a compatibility override. Empty standalone follows `web-addon.api-base-url`; empty upload/emoji append `/uploads` and `/emojis`. Absolute browser paths such as `/bmwc/api` are used as-is. Relative values without a leading `/` are resolved against `http.cors-origin` when it is a real origin. Full `https://...` URLs are used as-is.

@@ -24,6 +24,8 @@ standalone-web:
   api-base-url: ""
 ```
 
+`standalone-web.api-base-url` can remain empty for auto-detection. If the standalone page shares the same reverse-proxied API route as the BlueMap addon, it can also be set to the same value as `web-addon.api-base-url`, for example `/bmwc/api`.
+
 Direct HTTP URL:
 
 ```text
@@ -54,3 +56,7 @@ web-addon:
 ## Transparency limitation
 
 Standalone browser windows and Document Picture-in-Picture windows cannot be made true OS-level transparent windows through normal web APIs. CSS can make the chat panel itself translucent, but the browser/PIP window background and desktop pass-through transparency are controlled by the browser or operating system.
+
+### URL setting resolution
+
+`web-addon.api-base-url` is the primary HTTPS public API path. Leave `standalone-web.api-base-url`, `upload.public-base-url`, and `emoji.public-base-url` empty unless you need a compatibility override. Empty standalone follows `web-addon.api-base-url`; empty upload/emoji append `/uploads` and `/emojis`. Absolute browser paths such as `/bmwc/api` are used as-is. Relative values without a leading `/` are resolved against `http.cors-origin` when it is a real origin. Full `https://...` URLs are used as-is.

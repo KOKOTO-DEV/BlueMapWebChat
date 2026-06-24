@@ -8,9 +8,11 @@ web:
     reconnecting: 재연결 중...
     loggedIn: 로그인됨
   button:
+    emoji: "이모티콘"
     admin: 관리
     login: 로그인
     upload: 첨부
+    resizeEmojiPanel: '드래그해서 이모티콘 선택창 크기 조절'
     resize: 크기 조절
     send: 전송
     reset: 초기화
@@ -26,6 +28,7 @@ web:
     revoke: 세션 해제
     delete: 삭제
     cancel: 취소
+    reply: "답글"
     pin: 고정
     moderationActionsEnable: 고정 / 삭제 활성화
     moderationActionsDisable: 고정 / 삭제 비활성화
@@ -34,6 +37,15 @@ web:
     pip: PIP
     run: 실행
     jumpLatest: 최신 메시지로 이동
+    createPack: '폴더 생성'
+    uploadEmoji: '업로드'
+    deselectAll: '전체 선택 해제'
+    selectAll: '전체 선택'
+    deleteSelected: '선택 삭제'
+    deletePack: '폴더 삭제'
+    change: '변경'
+    rename: '변경'
+    renamePack: '폴더 이름 변경'
   placeholder:
     guestName: 게스트 이름
     captchaAnswer: 답
@@ -44,9 +56,18 @@ web:
     muteTarget: 게스트 이름 또는 IP
     minutes: 분
     reason: 사유
+    emojiPack: '새 팩/폴더 이름'
+  reply:
+    composing: "{sender}에게 답글"
+    jump: "답글 대상 메시지로 이동"
+    notFound: "참조한 메시지를 찾을 수 없습니다."
   message:
     deleted: '[삭제됨]'
+  emoji:
+    empty: "설정된 이모티콘이 없습니다."
+    emptyPack: '이모지 없음'
   alert:
+    emojiTooMany: "이모티콘은 한 메시지에 {max}개까지만 사용할 수 있습니다."
     rateLimited: 전송이 너무 빠릅니다. 잠시 후 다시 보내주세요.
     sendFailed: '전송 실패: {error}'
     serverUnavailable: 채팅 서버에 연결할 수 없습니다.
@@ -64,6 +85,16 @@ web:
     saveFailed: '저장 실패: {error}'
     pinFailed: '고정 실패: {error}'
     unpinFailed: '고정 해제 실패: {error}'
+    emojiPackNameRequired: '폴더 이름을 입력하세요.'
+    emojiFileRequired: '이모지 파일을 선택하세요.'
+    confirmDeleteEmoji: '이 이모지를 삭제할까요?'
+    emojiSelectRequired: '삭제할 이모지를 선택하세요.'
+    confirmDeleteSelectedEmoji: '선택한 이모지 {count}개를 삭제할까요?'
+    confirmDeleteEmojiPack: '{pack} 폴더와 안의 이모지를 모두 삭제할까요?'
+    emojiRenameNameRequired: '새 이름을 입력하세요.'
+    confirmRenameEmoji: '이 이모지 이름을 {name}(으)로 바꿀까요? 기존 이름을 사용한 이모지 토큰은 더 이상 일치하지 않습니다.'
+    confirmRenameEmojiPack: '{pack} 폴더 이름을 {name}(으)로 바꿀까요? 이 폴더 안의 이모지 토큰이 변경됩니다.'
+    renameFailed: '이름 변경 실패: {error}'
   admin:
     title: BlueMap 채팅 관리
     summary: 요약
@@ -82,6 +113,22 @@ web:
     currentMutes: 현재 차단 목록
     expires: 만료
     never: 없음
+    emojis: '이모지'
+    emojiTitle: '커스텀 이모지'
+    emojiCurrent: '현재 이모지'
+    emojiLimits: '파일당 {file} KB / 전체 {total} MB'
+    emojiFileLimit: '파일당 {file}'
+    emojiStorageUsage: '이모지 용량 {current} / {total}'
+    emojiStorageCurrent: '이모지 용량 {current}'
+    emojiStorageLimit: '이모지 최대 용량 {total}'
+    unlimited: '무제한'
+    emojiFolderSelect: '이모지 폴더'
+    emojiPackCount: '이모지 {count}개'
+    emojiNoFileSelected: '선택된 파일 없음'
+  prompt:
+    createEmojiPack: '새 폴더 이름'
+    renameEmoji: '새 이모지 이름'
+    renameEmojiPack: '새 폴더 이름'
   login:
     title: BlueMap 채팅 로그인
     tabLogin: 로그인
@@ -172,8 +219,15 @@ web:
   media:
     videoUnavailable: 영상 미리보기를 사용할 수 없습니다
     audioUnavailable: 오디오 미리보기를 사용할 수 없습니다
+    imageUnavailable: 이미지 미리보기를 사용할 수 없습니다
     youtube: YouTube
     youtubeTitle: YouTube 영상
+    youtubeShorts: YouTube Shorts
+    youtubeShortsTitle: YouTube Shorts
+    loadTikTok: ▶ TikTok
+    loadXPost: ▶ X 게시물
+    openTikTok: TikTok에서 열기
+    tiktok: TikTok
     loadVideo: ▶ 영상
     loadAudio: ▶ 오디오
   error:
@@ -192,6 +246,8 @@ web:
     upload_disabled: 파일 업로드가 비활성화되어 있습니다
     multipart_required: 업로드 요청 형식이 올바르지 않습니다
     file_too_large: 파일이 너무 큽니다
+    total_size_exceeded: 이모지 전체 용량 제한을 초과했습니다
+    total_size_exceededWithUsage: '이모지 전체 용량 제한을 초과했습니다. 현재 {current}, 선택 파일 {file}, 최대 {max}.'
     file_missing: 업로드된 파일이 없습니다
     upload_permission_denied: 파일 업로드 권한이 없습니다
     extension_not_allowed: 허용되지 않은 파일 형식입니다
@@ -232,6 +288,7 @@ web:
     web-login: 🌐 {name}님이 웹 채팅에 로그인했습니다.
     web-logout: 🌐 {name}님이 웹 채팅에서 로그아웃했습니다.
   sender:
+    unknown: "알 수 없음"
     server: 서버
     discord: Discord
     originalId: '원래 ID: {name}'
@@ -302,7 +359,12 @@ web:
     tooLong: 명령어가 너무 깁니다. 최대 {max}자입니다.
     maxLengthHint: 최대 {max}자
   system:
-    command-executed: '웹 명령어 실행됨: {label}'
+    command-executed: '{executor}님이 웹 명령어 실행: {label}'
+    command-executed-by: '{executor}님이 웹 명령어 실행: {label}'
     note: 서버 이벤트와 웹 명령어 결과 같은 시스템 메시지는 i18n 키가 있으면 웹 UI에서 번역됩니다. config.yml의 사용자 지정 announcement 문구는 fallback 문구로 유지됩니다.
   history:
     end: 더 이상 표시할 메시지가 없습니다.
+    loading: "이전 메시지 로딩 중.\n잠시만 기다려 주세요."
+    failed: "불러오기 실패.\n잠시 뒤 다시 시도해 주세요."
+    timeout: "응답 지연 중.\n잠시 뒤 다시 시도해 주세요."
+    offline: "연결 끊김.\n네트워크를 확인해 주세요."

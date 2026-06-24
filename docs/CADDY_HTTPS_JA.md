@@ -93,13 +93,19 @@ http:
 standalone-web:
   enabled: true
   path: "/chat"
+  # 任意です。web-addon.api-base-url と同じ値で構いません。
   api-base-url: "/bmwc/api"
 
 web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
-  public-base-url: "/bmwc/api/uploads"
+  # 推奨は空です。必要なら "/bmwc/api" または "/bmwc/api/uploads" も使えます。
+  public-base-url: ""
+
+emoji:
+  # 推奨は空です。必要なら "/bmwc/api" または "/bmwc/api/emojis" も使えます。
+  public-base-url: ""
 
 ui:
   image-preview-max-height: 720
@@ -125,8 +131,8 @@ Caddy と Minecraft が同じホストにある場合、BlueMapWebChat API は `
 3. Caddy をインストールします。
 4. Caddyfile を配置し、Caddy を reload します。
 5. `web-addon.api-base-url` を `/bmwc/api` に設定します。
-6. スタンドアロンページを `https://map.example.com/bmwc/chat` で開く場合は、`standalone-web.api-base-url` も `/bmwc/api` に設定します。
-7. アップロードを使う場合は `upload.public-base-url` を `/bmwc/api/uploads` に設定します。
+6. スタンドアロンページを `https://map.example.com/bmwc/chat` で開く場合、`standalone-web.api-base-url` は空のままでも、`web-addon.api-base-url` と同じ `/bmwc/api` を指定しても構いません。
+7. アップロード/絵文字の公開 URL は通常空にします。従来の明示設定が必要な場合、`upload.public-base-url` は `/bmwc/api` または `/bmwc/api/uploads`、`emoji.public-base-url` は `/bmwc/api` または `/bmwc/api/emojis` を使用できます。
 8. `/bmchat reload` またはサーバー再起動で Web addon ファイルを再生成します。
 9. BlueMap が自動で Web アセットを更新しない場合は `/bluemap reload` を実行します。
 10. ブラウザーで `https://map.example.com/` または `https://map.example.com/bmwc/chat` を開きます。
@@ -138,3 +144,7 @@ BlueMap ページを HTTP のまま配信し、チャット API だけ HTTPS に
 ## nginx を使う場合
 
 nginx を使う場合は `docs/NGINX_HTTPS_JA.md` と `examples/nginx/bluemapwebchat.conf` を参照してください。
+
+### URL 設定の解決規則
+
+`web-addon.api-base-url` が HTTPS 公開 API 経路の基準です。`standalone-web.api-base-url`、`upload.public-base-url`、`emoji.public-base-url` は互換目的がなければ空のままにします。standalone の空値は `web-addon.api-base-url` を使い、upload/emoji の空値は `/uploads` と `/emojis` を追加します。`/bmwc/api` のような絶対ブラウザパスはそのまま使います。先頭 `/` のない相対値は `http.cors-origin` が実際の origin のときその origin に対して解決されます。`https://...` の完全 URL はそのまま使います。

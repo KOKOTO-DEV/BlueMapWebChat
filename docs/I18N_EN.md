@@ -39,6 +39,7 @@ Language files cover most web UI strings:
 * account and user preference modals
 * admin/moderator panel, including the pin/delete action toggle
 * upload progress/cancel/error labels
+* media preview and social embed labels
 * PIP unsupported/open-failed messages
 * command panel and command responses
 * pinned message UI

@@ -24,6 +24,8 @@ standalone-web:
   api-base-url: ""
 ```
 
+`standalone-web.api-base-url` は自動検出のため空のままにできます。standalone ページが BlueMap アドオンと同じリバースプロキシ API 経路を共有する場合、`web-addon.api-base-url` と同じ値、例: `/bmwc/api` を指定できます。
+
 直接 HTTP URL:
 
 ```text
@@ -54,3 +56,7 @@ web-addon:
 ## 透過ウィンドウの制限
 
 standalone のブラウザーウィンドウや Document Picture-in-Picture ウィンドウは、通常の Web API だけでは OS レベルの真の透過ウィンドウにはできません。CSS でチャットパネル自体を半透明にすることはできますが、ブラウザー/PIP ウィンドウ背景やデスクトップ透過はブラウザーまたは OS 側の制御になります。
+
+### URL 設定の解決規則
+
+`web-addon.api-base-url` が HTTPS 公開 API 経路の基準です。`standalone-web.api-base-url`、`upload.public-base-url`、`emoji.public-base-url` は互換目的がなければ空のままにします。standalone の空値は `web-addon.api-base-url` を使い、upload/emoji の空値は `/uploads` と `/emojis` を追加します。`/bmwc/api` のような絶対ブラウザパスはそのまま使います。先頭 `/` のない相対値は `http.cors-origin` が実際の origin のときその origin に対して解決されます。`https://...` の完全 URL はそのまま使います。

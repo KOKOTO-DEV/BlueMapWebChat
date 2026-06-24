@@ -1,20 +1,42 @@
-# BlueMapWebChat 3.1.0 configuration
-# Default profile: guest-enabled direct HTTP.
-# - Minecraft plugin serves its own API on http://<server-host>:8899/api
-# - Standalone web UI is available at http://<server-host>:8899/chat
-# - BlueMap can also load the web addon from addons/bluemap-web-chat
-# - Guest chat is enabled, with captcha + rate limits to reduce spam.
+# BlueMapWebChat 4.0.0 configuration
 #
-# HTTPS / reverse proxy note:
-# - Put Caddy/Nginx in front of the API and keep this plugin bound to localhost.
-# - Change http.host to "127.0.0.1".
-# - If the proxy exposes the API on the same domain as BlueMap, set
-#   web-addon.api-base-url to a same-origin path such as "/bmwc/api".
-# - The same /bmwc/* reverse proxy path can also expose standalone mode as
-#   https://<domain>/bmwc/chat while the plugin still sees /chat internally.
-# - If uploads are also proxied under that path, set upload.public-base-url to
-#   "/bmwc/api/uploads". A leading slash is kept as a
-#   same-origin browser path instead of being expanded to http://host/... .
+# URL / HTTP / HTTPS quick guide
+# ───────────────────────
+# 1) Direct HTTP, no proxy
+#    - Leave http.host as 0.0.0.0.
+#    - Open the plugin API directly: http://<server-host>:8899/api
+#    - Standalone page, when enabled: http://<server-host>:8899/chat
+#    - Leave web-addon.api-base-url and standalone-web.api-base-url empty.
+#
+# 2) HTTPS with Caddy/Nginx on the same domain as BlueMap
+#    - Set http.host to 127.0.0.1 so the plugin listens locally.
+#    - Proxy your public path, for example /bmwc/api, to http://127.0.0.1:8899/api.
+#    - Set web-addon.api-base-url to the public API path, for example /bmwc/api.
+#    - If standalone is served as /bmwc/chat and web-addon.api-base-url is
+#      already /bmwc/api, standalone-web.api-base-url can stay empty or use
+#      the same /bmwc/api value. Both forms are supported.
+#
+# 3) HTTPS with a separate API domain
+#    - Set web-addon.api-base-url to the full public API URL, for example
+#      https://api.example.com/bmwc/api.
+#    - Set http.cors-origin to the public BlueMap/chat origin, for example
+#      https://map.example.com. Do not keep "*" when using credentials/cookies through a proxy.
+#
+# URL setting rule of thumb:
+# - web-addon.api-base-url is the public API base used by the BlueMap embedded chat.
+# - standalone-web.api-base-url normally stays empty when it uses the same
+#   public API path as web-addon.api-base-url. It may also be set explicitly
+#   to the same value, for example "/bmwc/api".
+# - upload.public-base-url and emoji.public-base-url are compatibility overrides.
+#   Recommended setting is empty so they follow the active API base automatically.
+#   In HTTPS reverse-proxy setups, this requires web-addon.api-base-url or
+#   standalone-web.api-base-url to point at the public API path.
+#   Legacy explicit settings are also supported:
+#     upload.public-base-url: "/bmwc/api/uploads"
+#     emoji.public-base-url: "/bmwc/api/emojis"
+#   You may also set them to the shared API base, e.g. "/bmwc/api"; the
+#   plugin appends /uploads or /emojis automatically. Use another URL only
+#   when files are intentionally served separately.
 
 http:
   # Direct HTTP default. Use "127.0.0.1" when reverse-proxying with HTTPS.
@@ -36,23 +58,15 @@ http:
   # Use temporarily when checking reverse proxy/trusted-proxies behavior.
   log-client-ip-resolution: false
 
-standalone-web:
-  # Serve a direct chat page from the plugin HTTP server.
-  # Disabled by default so the plugin behaves as a BlueMap web addon unless you explicitly enable it.
-  # Set true to open http://<server-host>:8899/chat or a proxied URL such as https://<domain>/bmwc/chat.
-  enabled: false
-  path: "/chat"
-  # Empty = auto. Direct HTTP uses location.origin + http.path-prefix.
-  # HTTPS reverse proxy can reuse web-addon.api-base-url when that is set.
-  # Explicit reverse proxy example: "/bmwc/api"
-  api-base-url: ""
-
 web-addon:
   auto-install: true
   auto-patch-webapp-conf: true
+  # Public API base used by the BlueMap embedded addon.
   # Empty = direct HTTP auto URL: http://<browser-host>:8899/api
-  # HTTPS same-domain proxy example: "/bmwc/api"
-  # HTTPS separate API domain example: "https://api.example.com/bmwc/api"
+  # Same-domain HTTPS proxy example: "/bmwc/api"
+  # Separate API domain example: "https://api.example.com/bmwc/api"
+  # Media uploads and emoji URLs follow this value when their own compatibility
+  # public-base-url settings are empty. Standalone may use this same value too.
   api-base-url: ""
 
   # Advanced path overrides. Normally leave these as-is; the plugin also tries
@@ -60,6 +74,26 @@ web-addon:
   bluemap-web-root: "bluemap/web"
   bluemap-webapp-conf: "plugins/BlueMap/webapp.conf"
   addon-path: "addons/bluemap-web-chat"
+
+
+standalone-web:
+  # Serve a standalone chat page from the plugin HTTP server.
+  # Direct HTTP example: http://<server-host>:8899/chat
+  # Same-domain HTTPS proxy example: https://<domain>/bmwc/chat
+  enabled: false
+  path: "/chat"
+  # API base used by the standalone page.
+  # Empty = auto.
+  # - Direct HTTP: current origin + http.path-prefix, e.g. http://host:8899/api.
+  # - HTTPS reverse proxy: follows web-addon.api-base-url when it is set.
+  #   Example: web-addon.api-base-url: "/bmwc/api" makes /bmwc/chat use /bmwc/api.
+  # - If web-addon.api-base-url is empty, /bmwc/chat can still infer /bmwc/api.
+  # Explicit values are supported for compatibility:
+  # - Absolute browser path: "/bmwc/api" is used as-is.
+  # - Relative path: "bmwc/api" becomes http.cors-origin + "/bmwc/api" when
+  #   http.cors-origin is a real origin; otherwise it becomes "/bmwc/api".
+  # - Full URL: "https://map.example.com/bmwc/api" is used as-is.
+  api-base-url: ""
 
 chat:
   history-size: 1000
@@ -377,9 +411,16 @@ upload:
   max-file-size-mb: 20
   max-files-per-message: 3
   directory: "uploads"
-  # Empty = direct HTTP: http://<browser-host>:8899/api/uploads/...
-  # HTTPS same-domain proxy example: "/bmwc/api/uploads"
-  # HTTPS separate API domain example: "https://api.example.com/bmwc/api/uploads"
+  # Public URL base for uploaded files.
+  # Recommended: keep empty. Empty means active public API base + /uploads.
+  # - Direct HTTP with all URL fields empty: http://host:8899/api/uploads
+  # - HTTPS reverse proxy with web-addon.api-base-url: "/bmwc/api": /bmwc/api/uploads
+  # Explicit values are supported for compatibility:
+  # - Absolute browser path: "/bmwc/api/uploads" is used as-is.
+  # - API base path: "/bmwc/api" appends /uploads automatically.
+  # - Relative path: "bmwc/api/uploads" becomes http.cors-origin + "/bmwc/api/uploads"
+  #   when http.cors-origin is a real origin; otherwise it becomes "/bmwc/api/uploads".
+  # - Full URL: "https://map.example.com/bmwc/api/uploads" is used as-is.
   public-base-url: ""
   retention-days: 5
   allowed-extensions:
@@ -413,6 +454,24 @@ preview:
   youtube-autoplay-on-open: false
   # 0 = unlimited YouTube embeds per message. Use youtube-embed-enabled: false to disable.
   youtube-max-embeds-per-message: 1
+  # Social post embeds.
+  # - YouTube Shorts are handled by the normal YouTube preview, use a vertical player, and loop.
+  # - TikTok uses the official player/v1 iframe with description/music info hidden to avoid inner scrollbars.
+  # - X/Twitter uses the official widgets.js renderer.
+  # TikTok and X/Twitter are off by default because they load third-party content in users' browsers.
+  social-embeds:
+    enabled: true
+    click-to-load: true
+    # 0 = unlimited social embeds per message.
+    max-embeds-per-message: 2
+    tiktok:
+      enabled: false
+    x:
+      enabled: false
+      theme: "auto"
+      dnt: true
+      hide-media: false
+      hide-thread: true
 
   # External media cache is mainly used for expiring Discord CDN attachment URLs.
   external-media-cache-enabled: true
@@ -438,6 +497,125 @@ web-fonts:
 
 # Pinned messages are stored separately from normal chat history.
 # They are shown in a compact top bar and opened in a popup.
+
+emoji:
+  # Server-managed custom emojis. Put single files in plugins/BlueMapWebChat/emojis,
+  # or put files in subfolders to create packs. Supported image files can include GIFs.
+  enabled: true
+  show-button: true
+  directory: "emojis"
+  # Public URL base for custom emoji files.
+  # Recommended: keep empty. Empty means active public API base + /emojis.
+  # - Direct HTTP with all URL fields empty: http://host:8899/api/emojis
+  # - HTTPS reverse proxy with web-addon.api-base-url: "/bmwc/api": /bmwc/api/emojis
+  # Explicit values are supported for compatibility:
+  # - Absolute browser path: "/bmwc/api/emojis" is used as-is.
+  # - API base path: "/bmwc/api" appends /emojis automatically.
+  # - Relative path: "bmwc/api/emojis" becomes http.cors-origin + "/bmwc/api/emojis"
+  #   when http.cors-origin is a real origin; otherwise it becomes "/bmwc/api/emojis".
+  # - Full URL: "https://map.example.com/bmwc/api/emojis" is used as-is.
+  public-base-url: ""
+  # Per-emoji file size limit. Files larger than this are not listed or served.
+  max-file-size-kb: 512
+  # Total emoji storage limit. Uploads beyond this limit are rejected.
+  # The public emoji catalog also stops listing files beyond this limit.
+  # 0 = unlimited total size.
+  max-total-size-mb: 64
+  # Show current emoji storage usage in the admin emoji manager.
+  show-storage-usage: true
+  # Show the maximum total emoji storage limit in the admin emoji manager.
+  show-storage-limit: true
+  # Display size in web chat messages. GIFs keep animation in the browser.
+  # Allowed range: 16-1024. Very large values may make chat rows extremely tall.
+  render-size-px: 32
+  # Display size inside the emoji picker. This does not change message rendering size.
+  # Allowed range: 24-1024. The picker minimum height follows this size.
+  picker-size-px: 44
+  # 0 = unlimited. Positive value limits how many custom emoji tokens can be sent in one message.
+  message-token-limit: 12
+  # Token inserted by the emoji picker.
+  # short  = :pack/name:
+  # legacy = :emoji:pack/name:
+  # Both formats are accepted when rendering/parsing messages.
+  token-format: "short"
+  allowed-extensions:
+    - png
+    - jpg
+    - jpeg
+    - gif
+    - webp
+  # Relays custom emoji tokens to Minecraft chat.
+  # Web message: :pack/name: (legacy :emoji:pack/name: is also accepted)
+  game-link:
+    enabled: true
+    # link             = :pack/name: https://example.com/bmwc/api/e/1a2b3c4d
+    # label            = :pack/name:
+    # imageemojis      = send ImageEmojis template text or replace with a symbol, depending on imageemojis.output
+    # imageemojis-link = ImageEmojis output + short image link
+    mode: "link"
+    # Public API base used for the in-game short links.
+    # Leave empty to infer from web-addon.api-base-url, standalone-web.api-base-url,
+    # or http.cors-origin + http.path-prefix.
+    # For HTTPS reverse proxy, setting this explicitly is recommended, for example:
+    # public-api-base-url: "https://map.example.com/bmwc/api"
+    public-api-base-url: ""
+    label-format: ":{id}:"
+    # 0 = unlimited. Prevents very long in-game lines when many emoji are sent.
+    max-links-per-message: 4
+    imageemojis:
+      # How BM Web Chat relays known web emoji tokens to ImageEmojis.
+      # template = send template-format and let ImageEmojis replace it where it can
+      # symbol   = read emojis.zip and send the actual generated font symbol
+      # auto     = use symbol when found, otherwise fall back to template-format
+      output: "template"
+      # Template text sent to ImageEmojis when output is template/auto.
+      # Default keeps BM Web Chat's full pack/name id, for example :pack/name:.
+      # Use ":{name}:" only if your ImageEmojis aliases are flat names.
+      template-format: ":{id}:"
+      # Path to ImageEmojis' generated resource pack ZIP.
+      # Relative paths are resolved from this plugin's data folder.
+      # If the ImageEmojis plugin is loaded, BM Web Chat first reads the live
+      # ImageEmojis emoji repository via reflection and uses this ZIP only as fallback.
+      # Used for converting actual ImageEmojis symbols back to web emojis.
+      resource-pack-zip: "../ImageEmojis/emojis.zip"
+      # When mode is imageemojis and the emoji cannot be represented by ImageEmojis,
+      # append BM Web Chat's short image link. Known PNG/template emojis are not linked
+      # just because the symbol lookup missed, so ImageEmojis template conversion is not broken by a URL.
+      fallback-to-link: false
+      # If a line contains both an ImageEmojis template and a URL, BM Web Chat first
+      # tries to replace the emoji template with ImageEmojis' actual generated symbol,
+      # then applies the clickable URL component. This keeps URLs clickable when the
+      # symbol mapping is available. If conversion is not available, the plain-broadcast
+      # fallback below can still let ImageEmojis process the template.
+      clickable-urls-after-conversion: true
+      # If a line still contains an ImageEmojis template and a URL after the conversion
+      # attempt above, send it as a plain broadcast instead of BM Web Chat's clickable-URL
+      # component. Some emoji plugins only rewrite plain broadcast/chat text and cannot
+      # see tokens inside custom Bungee components with click events.
+      plain-broadcast-with-urls: true
+      # If ImageEmojis uses flat aliases such as :name: but BM Web Chat stores emojis as
+      # :pack/name:, set the pack that should win for ambiguous :name: aliases.
+      # Example: "default" or "global"
+      default-pack: ""
+      # Explicit ImageEmojis alias -> BM Web Chat emoji id overrides.
+      # Use this when multiple packs contain the same file name, or when an ImageEmojis
+      # alias differs from the BM Web Chat file name.
+      aliases: {}
+      # Unsafe compatibility fallback. When true, BM Web Chat guesses glyphs using
+      # ImageEmojis' filename hash algorithm. Leave false unless you cannot read
+      # ImageEmojis at runtime or from emojis.zip; guesses may collide and show a wrong emoji.
+      generated-symbol-fallback: false
+      # In imageemojis/imageemojis-link mode, GIF/JPG/JPEG/WEBP emoji originals
+      # automatically get same-folder PNG sidecars for ImageEmojis.
+      # Example: emojis/default/wave.gif + emojis/default/wave.png
+
+reply:
+  # Prefix added to the message text when a web/guest message is a reply and is relayed to Minecraft chat.
+  # Placeholders: {sender}, {preview}, {id}
+  game-prefix:
+    enabled: true
+    text: "[Reply] "
+
 pinned:
   enabled: true
   # 0 = unlimited pins.

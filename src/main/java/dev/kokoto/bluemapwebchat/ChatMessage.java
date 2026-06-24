@@ -14,6 +14,9 @@ public class ChatMessage {
     public String message;
     public String i18nKey;
     public String i18nArgs;
+    public String replyToId;
+    public String replyToSender;
+    public String replyToPreview;
     public boolean hidden;
 
     public ChatMessage(long time, String source, String sender, String role, String message) {
@@ -34,6 +37,13 @@ public class ChatMessage {
     public ChatMessage withI18n(String key, String argsJson) {
         this.i18nKey = key == null ? "" : key;
         this.i18nArgs = argsJson == null ? "" : argsJson;
+        return this;
+    }
+
+    public ChatMessage withReply(String replyToId, String replyToSender, String replyToPreview) {
+        this.replyToId = replyToId == null ? "" : replyToId;
+        this.replyToSender = replyToSender == null ? "" : replyToSender;
+        this.replyToPreview = replyToPreview == null ? "" : replyToPreview;
         return this;
     }
 
@@ -61,6 +71,9 @@ public class ChatMessage {
         m.put("hidden", hidden);
         if (i18nKey != null && !i18nKey.isBlank()) m.put("i18nKey", i18nKey);
         if (i18nArgs != null && !i18nArgs.isBlank()) m.put("i18nArgs", i18nArgs);
+        if (replyToId != null && !replyToId.isBlank()) m.put("replyToId", replyToId);
+        if (replyToSender != null && !replyToSender.isBlank()) m.put("replyToSender", replyToSender);
+        if (replyToPreview != null && !replyToPreview.isBlank()) m.put("replyToPreview", replyToPreview);
         return m;
     }
 
@@ -77,6 +90,9 @@ public class ChatMessage {
         if (id != null && !id.isBlank()) msg.id = id;
         msg.i18nKey = value(m.get("i18nKey"), "");
         msg.i18nArgs = value(m.get("i18nArgs"), "");
+        msg.replyToId = value(m.get("replyToId"), "");
+        msg.replyToSender = value(m.get("replyToSender"), "");
+        msg.replyToPreview = value(m.get("replyToPreview"), "");
         msg.hidden = Boolean.parseBoolean(value(m.get("hidden"), "false"));
         return msg;
     }

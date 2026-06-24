@@ -39,15 +39,39 @@ http:
 
 standalone-web:
   enabled: true
-  api-base-url: "/bmwc/api"
+  # 권장값은 빈 값입니다. web-addon.api-base-url을 따라갑니다.
+  # 같은 공개 API 경로를 명시하려면 "/bmwc/api"를 넣어도 됩니다.
+  api-base-url: ""
 
 web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
-  public-base-url: "/bmwc/api/uploads"
+  # 권장값은 빈 값입니다. 업로드 URL은 활성 API base를 자동으로 따라갑니다.
+  # 기존 명시값도 동작합니다: "/bmwc/api" 또는 "/bmwc/api/uploads"
+  public-base-url: ""
+
+emoji:
+  # 권장값은 빈 값입니다. 이모지 URL은 활성 API base를 자동으로 따라갑니다.
+  # 기존 명시값도 동작합니다: "/bmwc/api" 또는 "/bmwc/api/emojis"
+  public-base-url: ""
 ```
 
+### 공개 URL 옵션 규칙
+
+- `http.path-prefix`는 플러그인 내부 HTTP API 경로입니다. 기본값 `/api`는 그대로 둡니다.
+- `web-addon.api-base-url`은 BlueMap 내장 채팅이 사용할 공개 API base입니다. HTTPS 리버스 프록시에서는 보통 `/bmwc/api`로 설정합니다.
+- `standalone-web.api-base-url`은 보통 비워둡니다. 비워두면 `web-addon.api-base-url`을 재사용합니다. 예: `/bmwc/chat`은 `/bmwc/api`를 사용합니다. 필요하면 `/bmwc/api`처럼 같은 값을 명시해도 됩니다.
+- `upload.public-base-url`은 보통 비워둡니다. 비워두면 활성 API base에 `/uploads`를 붙입니다. 예: `/bmwc/api/uploads`.
+- `emoji.public-base-url`은 보통 비워둡니다. 비워두면 활성 API base에 `/emojis`를 붙입니다. 예: `/bmwc/api/emojis`.
+- 명시값도 허용됩니다. `/bmwc/api`를 넣으면 upload는 `/uploads`, emoji는 `/emojis`를 자동으로 붙이고, `/bmwc/api/uploads`, `/bmwc/api/emojis`를 넣으면 그대로 사용합니다.
+- 선행 `/`가 없는 상대값, 예: `bmwc/api`, `bmwc/api/uploads`, `bmwc/api/emojis`는 `http.cors-origin`이 실제 origin일 때 그 origin을 앞에 붙입니다. `cors-origin: "*"`이면 같은 origin 절대경로처럼 `/bmwc/api...`로 처리합니다.
+- `https://map.example.com/bmwc/api` 같은 전체 URL은 그대로 사용합니다.
+
+
+### 이모지 용량 표시
+
+`emoji.max-total-size-mb`는 커스텀 이모지 전체 용량을 제한합니다. 제한을 초과하면 관리자 업로드 화면에서 경고가 표시됩니다. `emoji.show-storage-usage`는 현재 이모지 용량 표시 여부, `emoji.show-storage-limit`는 전체 용량 제한 표시 여부를 제어합니다.
 
 ## UI 타임존
 
@@ -69,6 +93,7 @@ upload:
 - `ui.max-width`
 - `ui.max-height`
 - `preview.youtube-max-embeds-per-message`
+- `preview.social-embeds.max-embeds-per-message`
 - `preview.external-media-cache-max-size-mb`
 - `pinned.max-pins`
 - `pinned.show-to-logged-out`
@@ -122,6 +147,23 @@ player-display:
 
 `strip-colors: false`는 실제 채팅 작성자 이름에만 Minecraft legacy 색상 코드를 렌더링합니다. 서버 입장/퇴장/사망/업적 같은 system/event 메시지는 항상 색상 코드를 제거합니다.
 
+## 커스텀 이모지와 ImageEmojis
+
+BlueMapWebChat은 커스텀 이모지를 `plugins/BlueMapWebChat/emojis` 아래에 저장합니다. 하위 폴더는 이모지 팩으로 처리됩니다.
+
+`emoji.game-link.mode`가 `imageemojis` 또는 `imageemojis-link`일 때는 GIF/JPG/JPEG/WEBP 원본 옆에 ImageEmojis용 PNG 사이드카를 자동 생성합니다. 예를 들어 `default` 팩에 `wave.gif`를 업로드하면 다음 파일이 같이 생깁니다.
+
+```text
+plugins/BlueMapWebChat/emojis/default/wave.gif
+plugins/BlueMapWebChat/emojis/default/wave.png
+```
+
+웹 UI는 원본 파일을 사용하므로 GIF 애니메이션은 유지됩니다. ImageEmojis는 PNG 사이드카를 읽을 수 있습니다. ImageEmojis가 같은 이모지 디렉터리를 참조한다면, 이모지 추가/변경 후 `/emojis reload`를 실행하세요.
+
+### Social embeds
+
+YouTube Shorts는 기존 YouTube 미리보기 설정을 사용합니다. TikTok과 X/Twitter 게시물 embed는 `preview.social-embeds`에서 선택적으로 켤 수 있습니다. 공개 서버에서는 사용자가 클릭하기 전 외부 콘텐츠가 로드되지 않도록 `click-to-load: true`를 유지하는 것을 권장합니다.
+
 ## 명령어 패널
 
 ```yaml
@@ -152,11 +194,35 @@ ui:
 
 ```yaml
 preview:
+  youtube-embed-enabled: true
   youtube-click-to-load: true
   media-click-to-load: true
+  youtube-nocookie: true
+  youtube-remember-expanded: true
+  youtube-autoplay-on-open: false
+  youtube-max-embeds-per-message: 1
+
+  social-embeds:
+    enabled: true
+    click-to-load: true
+    max-embeds-per-message: 2
+    tiktok:
+      enabled: false
+    x:
+      enabled: false
+      theme: "auto"
+      dnt: true
+      hide-media: false
+      hide-thread: true
 ```
 
-`false`로 두면 별도 로드 버튼 없이 플레이어/iframe을 바로 렌더링합니다. 자동 재생 여부는 브라우저 정책의 영향을 받습니다.
+YouTube Shorts는 일반 YouTube 미리보기 경로에서 처리됩니다. Shorts는 세로형 플레이어로 표시되고 YouTube loop 파라미터를 사용합니다.
+
+TikTok과 X/Twitter는 사용자의 브라우저에서 외부 콘텐츠를 불러오므로 선택 기능입니다. 서버 정책상 외부 embed 요청을 허용할 때만 켜는 것을 권장합니다. 공개 서버에서는 `social-embeds.click-to-load: true`를 유지해서 사용자가 미리보기를 열 때만 외부 플레이어가 로드되게 하는 편이 안전합니다.
+
+TikTok은 공식 `player/v1` iframe을 사용하고 `description=0`, `music_info=0`을 적용합니다. 이렇게 하면 게시물 본문/음악 정보 길이에 따라 채팅 패널 안에 내부 스크롤바가 생기는 문제를 피할 수 있습니다. 전체 게시물 정보는 플레이어 아래의 원문 TikTok 링크로 열 수 있습니다.
+
+`youtube-click-to-load` 또는 `media-click-to-load`를 `false`로 두면 해당 미리보기를 즉시 렌더링합니다. 자동 재생 여부는 브라우저 정책의 영향을 받습니다.
 
 ## PIP
 
@@ -195,3 +261,6 @@ ui:
 - `ui.text-shadow-custom`: 모드가 `custom`일 때 사용할 CSS `text-shadow` 값입니다. 채팅 설정 화면에서는 색상 선택기와 가로 위치, 세로 위치, 흐림, 불투명도 조절바로 편집하며, 저장값은 표준 CSS 형식으로 유지됩니다. 예: `0 1px 2px rgba(0, 0, 0, 0.85)`.
 
 > 테마는 브라우저별 채팅 설정에서도 변경할 수 있습니다. 테마를 바꾸면 글자색/배경색/그림자 같은 시각 설정은 해당 테마의 기본값으로 초기화됩니다.
+
+
+관리자 커스텀 이모지 참고: 이모지 파일명이나 폴더명을 변경하면 `:emoji:pack/name:` 토큰도 바뀝니다. 기존 토큰을 사용한 과거 채팅은 기존 파일/폴더명을 유지하지 않는 한 더 이상 렌더링되지 않을 수 있습니다.

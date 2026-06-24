@@ -120,13 +120,19 @@ http:
 standalone-web:
   enabled: true
   path: "/chat"
+  # 선택 사항입니다. web-addon.api-base-url과 같은 값을 넣어도 됩니다.
   api-base-url: "/bmwc/api"
 
 web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
-  public-base-url: "/bmwc/api/uploads"
+  # 권장값은 빈 값입니다. 필요하면 "/bmwc/api" 또는 "/bmwc/api/uploads"도 사용 가능합니다.
+  public-base-url: ""
+
+emoji:
+  # 권장값은 빈 값입니다. 필요하면 "/bmwc/api" 또는 "/bmwc/api/emojis"도 사용 가능합니다.
+  public-base-url: ""
 
 ui:
   image-preview-max-height: 720
@@ -153,8 +159,8 @@ nginx와 Minecraft가 같은 호스트에 있으면 API는 `127.0.0.1`에만 바
 4. `sudo certbot --nginx -d map.example.com`으로 인증서를 발급하거나 직접 인증서를 배치합니다.
 5. nginx 설정을 적용하고 `sudo nginx -t`가 성공하는지 확인합니다.
 6. `web-addon.api-base-url`을 `/bmwc/api`로 설정합니다.
-7. 독립 페이지를 `https://map.example.com/bmwc/chat`으로 열려면 `standalone-web.api-base-url`도 `/bmwc/api`로 설정합니다.
-8. 업로드를 사용한다면 `upload.public-base-url`을 `/bmwc/api/uploads`로 설정합니다.
+7. 독립 페이지를 `https://map.example.com/bmwc/chat`으로 열 때 `standalone-web.api-base-url`은 비워두거나 `web-addon.api-base-url`과 같은 `/bmwc/api`로 설정할 수 있습니다.
+8. 업로드/이모지 공개 URL은 보통 비워둡니다. 별도 공개 경로로 서빙할 때만 설정하고, 기존 명시 방식인 `/bmwc/api/uploads`, `/bmwc/api/emojis`도 사용할 수 있습니다.
 9. `/bmchat reload` 또는 서버 재시작으로 웹 애드온 파일을 다시 생성합니다.
 10. BlueMap이 자동 갱신하지 않으면 `/bluemap reload`를 실행합니다.
 11. 브라우저에서 `https://map.example.com/` 또는 `https://map.example.com/bmwc/chat`을 엽니다.
@@ -164,3 +170,7 @@ nginx와 Minecraft가 같은 호스트에 있으면 API는 `127.0.0.1`에만 바
 BlueMap 페이지를 HTTP로 제공하고 채팅 API만 HTTPS로 사용하는 구성은 완전한 보안 경계가 아닙니다. 페이지나 `chat.js`가 HTTP로 전달되면 네트워크 공격자가 스크립트를 바꿀 수 있습니다.
 
 공개 서버에서는 BlueMap과 BlueMapWebChat을 같은 HTTPS origin에서 제공하세요.
+
+### URL 설정 해석 규칙
+
+`web-addon.api-base-url`이 HTTPS 공개 API 경로의 기준입니다. `standalone-web.api-base-url`, `upload.public-base-url`, `emoji.public-base-url`은 호환 목적이 아니면 비워둡니다. standalone 빈 값은 `web-addon.api-base-url`을 따르고, upload/emoji 빈 값은 각각 `/uploads`, `/emojis`를 붙입니다. `/bmwc/api` 같은 절대 브라우저 경로는 그대로 사용합니다. 선행 `/`가 없는 상대값은 `http.cors-origin`이 실제 origin일 때 그 origin을 앞에 붙입니다. `https://...` 전체 URL은 그대로 사용합니다.

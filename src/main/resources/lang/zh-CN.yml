@@ -8,9 +8,11 @@ web:
     reconnecting: 重新连接中...
     loggedIn: 已登录
   button:
+    emoji: "表情"
     admin: 管理
     login: 登录
     upload: 附件
+    resizeEmojiPanel: '拖动调整表情选择器大小'
     resize: 调整大小
     send: 发送
     reset: 重置
@@ -26,6 +28,7 @@ web:
     revoke: 撤销会话
     delete: 删除
     cancel: 取消
+    reply: "回复"
     pin: 置顶
     moderationActionsEnable: 启用固定/删除
     moderationActionsDisable: 停用固定/删除
@@ -34,6 +37,15 @@ web:
     pip: PIP
     run: 运行
     jumpLatest: 跳到最新消息
+    createPack: '创建文件夹'
+    uploadEmoji: '上传'
+    deselectAll: '取消全选'
+    selectAll: '全选'
+    deleteSelected: '删除所选'
+    deletePack: '删除文件夹'
+    change: '更改'
+    rename: '更改'
+    renamePack: '重命名文件夹'
   placeholder:
     guestName: 访客名称
     captchaAnswer: 答案
@@ -44,9 +56,18 @@ web:
     muteTarget: 访客名称或 IP
     minutes: 分钟
     reason: 原因
+    emojiPack: '新表情包/文件夹名称'
+  reply:
+    composing: "回复 {sender}"
+    jump: "跳转到被回复的消息"
+    notFound: "找不到引用的消息。"
   message:
     deleted: '[已删除]'
+  emoji:
+    empty: "没有配置表情。"
+    emptyPack: '无表情'
   alert:
+    emojiTooMany: "每条消息最多只能使用 {max} 个表情。"
     rateLimited: 发送太快了，请稍后再试。
     sendFailed: '发送失败: {error}'
     serverUnavailable: 无法连接到聊天服务器。
@@ -64,6 +85,16 @@ web:
     saveFailed: '保存失败: {error}'
     pinFailed: 置顶失败：{error}
     unpinFailed: 取消置顶失败：{error}
+    emojiPackNameRequired: '请输入文件夹名称。'
+    emojiFileRequired: '请选择表情文件。'
+    confirmDeleteEmoji: '要删除这个表情吗？'
+    emojiSelectRequired: '请选择要删除的表情。'
+    confirmDeleteSelectedEmoji: '要删除选中的 {count} 个表情吗？'
+    confirmDeleteEmojiPack: '要删除文件夹 {pack} 及其中所有表情吗？'
+    emojiRenameNameRequired: '请输入新名称。'
+    confirmRenameEmoji: '要将此表情重命名为 {name} 吗？使用旧名称的表情标记将不再匹配。'
+    confirmRenameEmojiPack: '要将文件夹 {pack} 重命名为 {name} 吗？此文件夹中的表情标记将会改变。'
+    renameFailed: '重命名失败: {error}'
   admin:
     title: BlueMap 聊天管理
     summary: 摘要
@@ -82,6 +113,22 @@ web:
     currentMutes: 当前禁言
     expires: 到期
     never: 永不
+    emojis: '表情'
+    emojiTitle: '自定义表情'
+    emojiCurrent: '当前表情'
+    emojiLimits: '单文件 {file} KB / 总计 {total} MB'
+    emojiFileLimit: '单文件 {file}'
+    emojiStorageUsage: '表情容量 {current} / {total}'
+    emojiStorageCurrent: '表情容量 {current}'
+    emojiStorageLimit: '表情最大容量 {total}'
+    unlimited: '无限制'
+    emojiFolderSelect: '表情文件夹'
+    emojiPackCount: '{count} 个表情'
+    emojiNoFileSelected: '未选择文件'
+  prompt:
+    createEmojiPack: '新文件夹名称'
+    renameEmoji: '新表情名称'
+    renameEmojiPack: '新文件夹名称'
   login:
     title: BlueMap 聊天登录
     tabLogin: 登录
@@ -172,8 +219,15 @@ web:
   media:
     videoUnavailable: 视频预览不可用
     audioUnavailable: 音频预览不可用
+    imageUnavailable: 图片预览不可用
     youtube: YouTube
     youtubeTitle: YouTube 视频
+    youtubeShorts: YouTube Shorts
+    youtubeShortsTitle: YouTube Shorts
+    loadTikTok: ▶ TikTok
+    loadXPost: ▶ X 帖子
+    openTikTok: 在 TikTok 打开
+    tiktok: TikTok
     loadVideo: ▶ 视频
     loadAudio: ▶ 音频
   error:
@@ -192,6 +246,8 @@ web:
     upload_disabled: 文件上传已禁用
     multipart_required: 上传请求无效
     file_too_large: 文件过大
+    total_size_exceeded: 已超过表情总容量限制
+    total_size_exceededWithUsage: '已超过表情总容量限制。当前 {current}，所选文件 {file}，最大 {max}。'
     file_missing: 没有上传文件
     upload_permission_denied: 你没有上传文件的权限
     extension_not_allowed: 不允许的文件类型
@@ -232,6 +288,7 @@ web:
     web-login: 🌐 {name} 登录了网页聊天。
     web-logout: 🌐 {name} 退出了网页聊天。
   sender:
+    unknown: "未知"
     server: 服务器
     discord: Discord
     originalId: '原始ID: {name}'
@@ -302,7 +359,12 @@ web:
     tooLong: 命令过长。最多 {max} 个字符。
     maxLengthHint: 最多 {max} 个字符
   system:
-    command-executed: 已执行 Web 命令：{label}
+    command-executed: '{executor} 执行了 Web 命令：{label}'
+    command-executed-by: '{executor} 执行了 Web 命令：{label}'
     note: 服务器事件和 Web 命令结果等系统消息在存在 i18n 键时会在 Web UI 中翻译。config.yml 中的自定义 announcement 文本会作为回退文本保留。
   history:
     end: 没有更多可显示的消息。
+    loading: "正在加载历史。\n请稍候。"
+    failed: "加载失败。\n请稍后重试。"
+    timeout: "响应较慢。\n请稍后重试。"
+    offline: "连接已断开。\n请检查网络。"

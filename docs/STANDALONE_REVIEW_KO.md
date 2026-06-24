@@ -24,6 +24,8 @@ standalone-web:
   api-base-url: ""
 ```
 
+`standalone-web.api-base-url`은 자동 감지를 위해 비워둘 수 있습니다. standalone 페이지가 BlueMap 내장 채팅과 같은 리버스 프록시 API 경로를 쓰는 경우 `web-addon.api-base-url`과 같은 값, 예를 들어 `/bmwc/api`를 넣어도 됩니다.
+
 직접 HTTP URL:
 
 ```text
@@ -54,3 +56,7 @@ web-addon:
 ## 투명 창 제한
 
 standalone 브라우저 창과 Document Picture-in-Picture 창은 일반 웹 API만으로 OS 레벨의 진짜 투명 창으로 만들 수 없습니다. CSS로 채팅 패널 자체를 반투명하게 만들 수는 있지만, 브라우저/PIP 창 배경과 데스크탑 투과는 브라우저 또는 운영체제가 제어합니다.
+
+### URL 설정 해석 규칙
+
+`web-addon.api-base-url`이 HTTPS 공개 API 경로의 기준입니다. `standalone-web.api-base-url`, `upload.public-base-url`, `emoji.public-base-url`은 호환 목적이 아니면 비워둡니다. standalone 빈 값은 `web-addon.api-base-url`을 따르고, upload/emoji 빈 값은 각각 `/uploads`, `/emojis`를 붙입니다. `/bmwc/api` 같은 절대 브라우저 경로는 그대로 사용합니다. 선행 `/`가 없는 상대값은 `http.cors-origin`이 실제 origin일 때 그 origin을 앞에 붙입니다. `https://...` 전체 URL은 그대로 사용합니다.

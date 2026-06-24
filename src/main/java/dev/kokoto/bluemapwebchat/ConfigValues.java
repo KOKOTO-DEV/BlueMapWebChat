@@ -68,6 +68,15 @@ public class ConfigValues {
     public boolean youtubeRememberExpanded;
     public boolean youtubeAutoplayOnOpen;
     public int youtubeMaxEmbedsPerMessage;
+    public boolean socialEmbedsEnabled;
+    public boolean socialEmbedsClickToLoad;
+    public int socialEmbedsMaxPerMessage;
+    public boolean tiktokEmbedEnabled;
+    public boolean xEmbedEnabled;
+    public String xEmbedTheme;
+    public boolean xEmbedDnt;
+    public boolean xEmbedHideMedia;
+    public boolean xEmbedHideThread;
     public boolean hideChatForGuestsWhenGuestDisabled;
     public boolean showLoginOnlyWhenHidden;
     public boolean uiResizable;
@@ -184,6 +193,38 @@ public class ConfigValues {
     public boolean uploadPreviewImages;
     public boolean uploadPreviewVideos;
     public boolean uploadPreviewAudio;
+
+
+    public boolean emojiEnabled;
+    public boolean emojiShowButton;
+    public String emojiDirectory;
+    public String emojiPublicBaseUrl;
+    public int emojiMaxFileSizeKb;
+    public int emojiMaxTotalSizeMb;
+    public boolean emojiShowStorageUsage;
+    public boolean emojiShowStorageLimit;
+    public int emojiRenderSizePx;
+    public int emojiPickerSizePx;
+    public int emojiMessageTokenLimit;
+    public String emojiTokenFormat;
+    public List<String> emojiAllowedExtensions;
+    public boolean emojiGameLinkEnabled;
+    public String emojiGameLinkMode;
+    public String emojiGameLinkPublicApiBaseUrl;
+    public String emojiGameLinkLabelFormat;
+    public int emojiGameLinkMaxLinksPerMessage;
+    public String emojiImageEmojisResourcePackZip;
+    public String emojiImageEmojisOutput;
+    public String emojiImageEmojisTemplateFormat;
+    public boolean emojiImageEmojisFallbackToLink;
+    public boolean emojiImageEmojisClickableUrlsAfterConversion;
+    public boolean emojiImageEmojisPlainBroadcastWithUrls;
+    public String emojiImageEmojisDefaultPack;
+    public Map<String, String> emojiImageEmojisAliases;
+    public boolean emojiImageEmojisGeneratedSymbolFallback;
+
+    public boolean replyGamePrefixEnabled;
+    public String replyGamePrefixText;
 
     public boolean pinnedEnabled;
     public int pinnedMaxPins;
@@ -325,6 +366,16 @@ public class ConfigValues {
         v.youtubeRememberExpanded = c.getBoolean("preview.youtube-remember-expanded", true);
         v.youtubeAutoplayOnOpen = c.getBoolean("preview.youtube-autoplay-on-open", false);
         v.youtubeMaxEmbedsPerMessage = Math.max(0, c.getInt("preview.youtube-max-embeds-per-message", 1));
+        v.socialEmbedsEnabled = c.getBoolean("preview.social-embeds.enabled", true);
+        v.socialEmbedsClickToLoad = c.getBoolean("preview.social-embeds.click-to-load", true);
+        v.socialEmbedsMaxPerMessage = Math.max(0, c.getInt("preview.social-embeds.max-embeds-per-message", 2));
+        v.tiktokEmbedEnabled = c.getBoolean("preview.social-embeds.tiktok.enabled", false);
+        v.xEmbedEnabled = c.getBoolean("preview.social-embeds.x.enabled", false);
+        String xTheme = String.valueOf(c.getString("preview.social-embeds.x.theme", "auto")).trim().toLowerCase(Locale.ROOT);
+        v.xEmbedTheme = (xTheme.equals("dark") || xTheme.equals("light")) ? xTheme : "auto";
+        v.xEmbedDnt = c.getBoolean("preview.social-embeds.x.dnt", true);
+        v.xEmbedHideMedia = c.getBoolean("preview.social-embeds.x.hide-media", false);
+        v.xEmbedHideThread = c.getBoolean("preview.social-embeds.x.hide-thread", true);
         v.hideChatForGuestsWhenGuestDisabled = c.getBoolean("ui.hide-chat-for-guests-when-guest-disabled", true);
         v.showLoginOnlyWhenHidden = c.getBoolean("ui.show-login-only-when-hidden", true);
         v.uiResizable = c.getBoolean("ui.resizable", true);
@@ -473,6 +524,66 @@ public class ConfigValues {
         v.uploadPreviewImages = c.getBoolean("upload.preview-images", true);
         v.uploadPreviewVideos = c.getBoolean("upload.preview-videos", true);
         v.uploadPreviewAudio = c.getBoolean("upload.preview-audio", true);
+
+
+        v.emojiEnabled = c.getBoolean("emoji.enabled", true);
+        v.emojiShowButton = c.getBoolean("emoji.show-button", true);
+        v.emojiDirectory = c.getString("emoji.directory", "emojis");
+        v.emojiPublicBaseUrl = c.getString("emoji.public-base-url", "");
+        v.emojiMaxFileSizeKb = Math.max(0, c.getInt("emoji.max-file-size-kb", 512));
+        v.emojiMaxTotalSizeMb = Math.max(0, c.getInt("emoji.max-total-size-mb", 64));
+        v.emojiShowStorageUsage = c.getBoolean("emoji.show-storage-usage", true);
+        v.emojiShowStorageLimit = c.getBoolean("emoji.show-storage-limit", true);
+        v.emojiRenderSizePx = Math.max(16, Math.min(1024, c.getInt("emoji.render-size-px", 32)));
+        v.emojiPickerSizePx = Math.max(24, Math.min(1024, c.getInt("emoji.picker-size-px", 44)));
+        v.emojiMessageTokenLimit = Math.max(0, c.getInt("emoji.message-token-limit", 12));
+        String emojiTokenFormat = String.valueOf(c.getString("emoji.token-format", "short")).trim().toLowerCase(Locale.ROOT);
+        v.emojiTokenFormat = (emojiTokenFormat.equals("legacy") || emojiTokenFormat.equals("prefixed") || emojiTokenFormat.equals("emoji")) ? "legacy" : "short";
+        v.emojiAllowedExtensions = c.getStringList("emoji.allowed-extensions");
+        if (v.emojiAllowedExtensions == null || v.emojiAllowedExtensions.isEmpty()) {
+            v.emojiAllowedExtensions = List.of("png", "jpg", "jpeg", "gif", "webp");
+        }
+        v.emojiGameLinkEnabled = c.getBoolean("emoji.game-link.enabled", true);
+        String emojiGameLinkMode = String.valueOf(c.getString("emoji.game-link.mode", "link")).trim().toLowerCase(Locale.ROOT);
+        if (emojiGameLinkMode.equals("imageemojis") || emojiGameLinkMode.equals("image-emojis")) {
+            v.emojiGameLinkMode = "imageemojis";
+        } else if (emojiGameLinkMode.equals("imageemojis-link") || emojiGameLinkMode.equals("image-emojis-link") || emojiGameLinkMode.equals("imageemojis_with_link") || emojiGameLinkMode.equals("imageemojis-with-link")) {
+            v.emojiGameLinkMode = "imageemojis-link";
+        } else if (emojiGameLinkMode.equals("label") || emojiGameLinkMode.equals("template") || emojiGameLinkMode.equals("text")) {
+            v.emojiGameLinkMode = "label";
+        } else {
+            v.emojiGameLinkMode = "link";
+        }
+        v.emojiGameLinkPublicApiBaseUrl = c.getString("emoji.game-link.public-api-base-url", "");
+        v.emojiGameLinkLabelFormat = c.getString("emoji.game-link.label-format", ":{id}:");
+        v.emojiGameLinkMaxLinksPerMessage = Math.max(0, c.getInt("emoji.game-link.max-links-per-message", 4));
+        v.emojiImageEmojisResourcePackZip = c.getString("emoji.game-link.imageemojis.resource-pack-zip", "../ImageEmojis/emojis.zip");
+        String emojiImageEmojisOutput = String.valueOf(c.getString("emoji.game-link.imageemojis.output", "template")).trim().toLowerCase(Locale.ROOT);
+        if (emojiImageEmojisOutput.equals("symbol") || emojiImageEmojisOutput.equals("actual") || emojiImageEmojisOutput.equals("unicode")) {
+            v.emojiImageEmojisOutput = "symbol";
+        } else if (emojiImageEmojisOutput.equals("auto")) {
+            v.emojiImageEmojisOutput = "auto";
+        } else {
+            v.emojiImageEmojisOutput = "template";
+        }
+        v.emojiImageEmojisTemplateFormat = c.getString("emoji.game-link.imageemojis.template-format", ":{id}:");
+        v.emojiImageEmojisFallbackToLink = c.getBoolean("emoji.game-link.imageemojis.fallback-to-link", false);
+        v.emojiImageEmojisClickableUrlsAfterConversion = c.getBoolean("emoji.game-link.imageemojis.clickable-urls-after-conversion", true);
+        v.emojiImageEmojisPlainBroadcastWithUrls = c.getBoolean("emoji.game-link.imageemojis.plain-broadcast-with-urls", true);
+        v.emojiImageEmojisDefaultPack = String.valueOf(c.getString("emoji.game-link.imageemojis.default-pack", "")).trim();
+        v.emojiImageEmojisGeneratedSymbolFallback = c.getBoolean("emoji.game-link.imageemojis.generated-symbol-fallback", false);
+        v.emojiImageEmojisAliases = new LinkedHashMap<>();
+        org.bukkit.configuration.ConfigurationSection imageEmojiAliases = c.getConfigurationSection("emoji.game-link.imageemojis.aliases");
+        if (imageEmojiAliases != null) {
+            for (String key : imageEmojiAliases.getKeys(false)) {
+                String alias = String.valueOf(key == null ? "" : key).trim();
+                String id = String.valueOf(imageEmojiAliases.getString(key, "")).trim();
+                if (!alias.isBlank() && !id.isBlank()) v.emojiImageEmojisAliases.put(alias, id);
+            }
+        }
+
+        v.replyGamePrefixEnabled = c.getBoolean("reply.game-prefix.enabled", true);
+        v.replyGamePrefixText = c.getString("reply.game-prefix.text", "[Reply] ");
 
         v.pinnedEnabled = c.getBoolean("pinned.enabled", true);
         v.pinnedMaxPins = Math.max(0, c.getInt("pinned.max-pins", 20));

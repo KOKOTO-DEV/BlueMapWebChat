@@ -39,14 +39,34 @@ http:
 
 standalone-web:
   enabled: true
+  # 可选。可以与 web-addon.api-base-url 使用同一个公开 API 路径。
   api-base-url: "/bmwc/api"
 
 web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
-  public-base-url: "/bmwc/api/uploads"
+  # 推荐留空。上传 URL 会自动跟随当前 API base。
+  # 旧式显式值也可用: "/bmwc/api" 或 "/bmwc/api/uploads"
+  public-base-url: ""
+
+emoji:
+  # 推荐留空。表情 URL 会自动跟随当前 API base。
+  # 旧式显式值也可用: "/bmwc/api" 或 "/bmwc/api/emojis"
+  public-base-url: ""
 ```
+
+### 公开 URL 选项规则
+
+- `http.path-prefix` 是插件内部 HTTP API 路径。通常保持默认 `/api` 不变。
+- `web-addon.api-base-url` 是 BlueMap 内嵌聊天使用的公开 API base。HTTPS 反向代理中通常设为 `/bmwc/api`。
+- `standalone-web.api-base-url` 通常留空。留空时会复用 `web-addon.api-base-url`。例如 `/bmwc/chat` 会使用 `/bmwc/api`。需要时也可以显式设置同一个 `/bmwc/api`。
+- `upload.public-base-url` 通常留空。留空时使用当前 API base 加 `/uploads`，例如 `/bmwc/api/uploads`。
+- `emoji.public-base-url` 通常留空。留空时使用当前 API base 加 `/emojis`，例如 `/bmwc/api/emojis`。
+- 也支持显式值。设置 `/bmwc/api` 时，upload 会自动追加 `/uploads`，emoji 会自动追加 `/emojis`；`/bmwc/api/uploads` 和 `/bmwc/api/emojis` 会原样使用。
+- 不带前导 `/` 的相对值，例如 `bmwc/api`、`bmwc/api/uploads`、`bmwc/api/emojis`，会在 `http.cors-origin` 为实际 origin 时自动加上该 origin。若 `cors-origin: "*"`，则按同源绝对路径 `/bmwc/api...` 处理。
+- `https://map.example.com/bmwc/api` 这样的完整 URL 会原样使用。
+
 
 ## 0 表示无限制/无最大值的选项
 
@@ -64,6 +84,7 @@ upload:
 - `ui.max-width`
 - `ui.max-height`
 - `preview.youtube-max-embeds-per-message`
+- `preview.social-embeds.max-embeds-per-message`
 - `preview.external-media-cache-max-size-mb`
 - `pinned.max-pins`
 - `pinned.show-to-logged-out`
@@ -99,6 +120,23 @@ player-display:
 
 当 `strip-colors: false` 时，仅实际聊天发送者名称会渲染 Minecraft legacy 颜色代码。加入/退出/死亡/进度等 system/event 消息始终会去除颜色代码。
 
+## 自定义表情与 ImageEmojis
+
+BlueMapWebChat 将自定义表情保存到 `plugins/BlueMapWebChat/emojis`。子文件夹会作为表情包处理。
+
+当 `emoji.game-link.mode` 设置为 `imageemojis` 或 `imageemojis-link` 时，GIF/JPG/JPEG/WEBP 原始文件旁边会自动生成供 ImageEmojis 使用的 PNG sidecar。例如，将 `wave.gif` 上传到 `default` 表情包后，会生成：
+
+```text
+plugins/BlueMapWebChat/emojis/default/wave.gif
+plugins/BlueMapWebChat/emojis/default/wave.png
+```
+
+Web UI 会继续使用原始文件，因此 GIF 动画会保留。ImageEmojis 可以读取 PNG sidecar。如果 ImageEmojis 指向同一个表情目录，添加或修改表情后请执行 `/emojis reload`。
+
+### Social embeds
+
+YouTube Shorts 使用现有的 YouTube 预览设置。TikTok 和 X/Twitter 帖子 embed 可在 `preview.social-embeds` 下选择启用。公开服务器建议保持 `click-to-load: true`，避免用户点击前加载第三方内容。
+
 ## 命令面板
 
 ```yaml
@@ -127,11 +165,35 @@ ui:
 
 ```yaml
 preview:
+  youtube-embed-enabled: true
   youtube-click-to-load: true
   media-click-to-load: true
+  youtube-nocookie: true
+  youtube-remember-expanded: true
+  youtube-autoplay-on-open: false
+  youtube-max-embeds-per-message: 1
+
+  social-embeds:
+    enabled: true
+    click-to-load: true
+    max-embeds-per-message: 2
+    tiktok:
+      enabled: false
+    x:
+      enabled: false
+      theme: "auto"
+      dnt: true
+      hide-media: false
+      hide-thread: true
 ```
 
-设为 `false` 时会立即渲染 iframe/player。自动播放仍受浏览器策略限制。
+YouTube Shorts 通过普通 YouTube 预览路径处理。Shorts 会以竖屏播放器显示，并使用 YouTube loop 参数。
+
+TikTok 和 X/Twitter 会从查看者的浏览器加载第三方内容，因此是可选功能。只有在服务器策略允许第三方 embed 请求时才建议启用。公开服务器建议保持 `social-embeds.click-to-load: true`，让外部播放器只在用户打开预览后加载。
+
+TikTok 使用官方 `player/v1` iframe，并应用 `description=0`、`music_info=0`。这样可以避免帖子描述或音乐信息长度变化导致聊天面板内出现内部滚动条。完整帖子信息可通过播放器下方的原始 TikTok 链接打开。
+
+将 `youtube-click-to-load` 或 `media-click-to-load` 设为 `false` 会立即渲染对应预览。自动播放仍受浏览器策略控制。
 
 ## PIP
 
@@ -150,6 +212,10 @@ ui:
 
 `auth.link-code-cooldown-seconds` 和 `auth.link-code-max-per-minute` 用于限制 Web UI 按远程 IP 生成 `/bmchat auth <code>` 链接代码的频率。将任一值设为 `0` 可禁用对应限制。
 
+
+### 表情容量显示
+
+`emoji.max-total-size-mb` 用于限制自定义表情的总容量。超过限制时，管理员上传界面会显示警告。`emoji.show-storage-usage` 控制是否显示当前表情容量，`emoji.show-storage-limit` 控制是否显示总容量限制。
 
 ## UI 时区
 
@@ -195,3 +261,6 @@ ui:
 - `ui.text-shadow-custom`: `custom` 模式使用的 CSS `text-shadow` 值。聊天设置界面会以颜色选择器以及水平偏移、垂直偏移、模糊、不透明度滑块进行编辑；保存值仍为标准 CSS 格式，例如 `0 1px 2px rgba(0, 0, 0, 0.85)`。
 
 > 主题也可以在每个浏览器的聊天设置中更改。切换主题时，文字颜色、背景颜色和阴影等外观设置会重置为该主题默认值。
+
+
+管理员自定义表情说明：重命名表情文件或文件夹会改变 `:emoji:pack/name:` 标记。引用旧标记的既有聊天消息可能不再渲染，除非保留旧文件/文件夹名称。

@@ -39,14 +39,35 @@ http:
 
 standalone-web:
   enabled: true
-  api-base-url: "/bmwc/api"
+  # 推奨は空です。web-addon.api-base-url に従います。
+  # 同じ公開 API 経路を明示する場合は "/bmwc/api" も使えます。
+  api-base-url: ""
 
 web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
-  public-base-url: "/bmwc/api/uploads"
+  # 推奨は空です。アップロード URL は有効な API base に自動追従します。
+  # 従来の明示値も使えます: "/bmwc/api" または "/bmwc/api/uploads"
+  public-base-url: ""
+
+emoji:
+  # 推奨は空です。絵文字 URL は有効な API base に自動追従します。
+  # 従来の明示値も使えます: "/bmwc/api" または "/bmwc/api/emojis"
+  public-base-url: ""
 ```
+
+### 公開 URL オプションの規則
+
+- `http.path-prefix` はプラグイン内部の HTTP API 経路です。通常は既定の `/api` のままにします。
+- `web-addon.api-base-url` は BlueMap 埋め込みチャットが使う公開 API base です。HTTPS リバースプロキシでは通常 `/bmwc/api` にします。
+- `standalone-web.api-base-url` は通常空のままにします。空の場合は `web-addon.api-base-url` を再利用します。例: `/bmwc/chat` は `/bmwc/api` を使います。必要なら同じ `/bmwc/api` を明示しても構いません。
+- `upload.public-base-url` は通常空のままにします。空の場合は有効な API base に `/uploads` を追加します。例: `/bmwc/api/uploads`。
+- `emoji.public-base-url` は通常空のままにします。空の場合は有効な API base に `/emojis` を追加します。例: `/bmwc/api/emojis`。
+- 明示値も使えます。`/bmwc/api` を指定すると upload は `/uploads`、emoji は `/emojis` を自動で追加します。`/bmwc/api/uploads`、`/bmwc/api/emojis` はそのまま使います。
+- 先頭 `/` のない相対値、例: `bmwc/api`、`bmwc/api/uploads`、`bmwc/api/emojis` は、`http.cors-origin` が実際の origin のときその origin を前に付けます。`cors-origin: "*"` の場合は `/bmwc/api...` のような同一 origin の絶対パスとして扱います。
+- `https://map.example.com/bmwc/api` のような完全 URL はそのまま使います。
+
 
 ## 0 が無制限/最大値なしを意味する項目
 
@@ -64,6 +85,7 @@ upload:
 - `ui.max-width`
 - `ui.max-height`
 - `preview.youtube-max-embeds-per-message`
+- `preview.social-embeds.max-embeds-per-message`
 - `preview.external-media-cache-max-size-mb`
 - `pinned.max-pins`
 - `pinned.show-to-logged-out`
@@ -99,6 +121,23 @@ player-display:
 
 `strip-colors: false` の場合、実際のチャット送信者名だけ Minecraft legacy 色コードをレンダリングします。参加/退出/死亡/進捗などの system/event メッセージは常に色コードを削除します。
 
+## カスタム絵文字と ImageEmojis
+
+BlueMapWebChat はカスタム絵文字を `plugins/BlueMapWebChat/emojis` に保存します。サブフォルダーは絵文字パックとして扱われます。
+
+`emoji.game-link.mode` が `imageemojis` または `imageemojis-link` の場合、GIF/JPG/JPEG/WEBP の元ファイルの横に ImageEmojis 用の PNG サイドカーを自動生成します。たとえば `default` パックに `wave.gif` をアップロードすると、次のファイルが作成されます。
+
+```text
+plugins/BlueMapWebChat/emojis/default/wave.gif
+plugins/BlueMapWebChat/emojis/default/wave.png
+```
+
+Web UI は元ファイルを使うため、GIF アニメーションは維持されます。ImageEmojis は PNG サイドカーを読み込めます。ImageEmojis が同じ絵文字ディレクトリを参照している場合は、絵文字の追加や変更後に `/emojis reload` を実行してください。
+
+### Social embeds
+
+YouTube Shorts は既存の YouTube プレビュー設定を使います。TikTok と X/Twitter の投稿 embed は `preview.social-embeds` で任意に有効化できます。公開サーバーでは、クリック前に外部コンテンツを読み込まないよう `click-to-load: true` を推奨します.
+
 ## コマンドパネル
 
 ```yaml
@@ -127,11 +166,35 @@ ui:
 
 ```yaml
 preview:
+  youtube-embed-enabled: true
   youtube-click-to-load: true
   media-click-to-load: true
+  youtube-nocookie: true
+  youtube-remember-expanded: true
+  youtube-autoplay-on-open: false
+  youtube-max-embeds-per-message: 1
+
+  social-embeds:
+    enabled: true
+    click-to-load: true
+    max-embeds-per-message: 2
+    tiktok:
+      enabled: false
+    x:
+      enabled: false
+      theme: "auto"
+      dnt: true
+      hide-media: false
+      hide-thread: true
 ```
 
-`false` にすると iframe/player をすぐに表示します。自動再生はブラウザのポリシーに従います。
+YouTube Shorts は通常の YouTube プレビュー経路で処理されます。Shorts は縦型プレイヤーで表示され、YouTube の loop パラメーターを使用します。
+
+TikTok と X/Twitter は、閲覧者のブラウザーから外部コンテンツを読み込むため任意機能です。サーバーポリシーで外部 embed を許可できる場合のみ有効にしてください。公開サーバーでは `social-embeds.click-to-load: true` を維持し、ユーザーがプレビューを開いたときだけ外部プレイヤーを読み込む設定が安全です。
+
+TikTok は公式 `player/v1` iframe を使用し、`description=0` と `music_info=0` を適用します。これにより、投稿本文や音楽情報の長さによってチャットパネル内に内部スクロールバーが出る問題を避けます。完全な投稿情報はプレイヤー下の元 TikTok リンクから開けます。
+
+`youtube-click-to-load` または `media-click-to-load` を `false` にすると、対象のプレビューを即時表示します。自動再生はブラウザーのポリシーに従います。
 
 ## PIP
 
@@ -150,6 +213,10 @@ ui:
 
 `auth.link-code-cooldown-seconds` と `auth.link-code-max-per-minute` は、Web UI が `/bmchat auth <code>` 用のリンクコードをリモート IP ごとに発行できる頻度を制限します。各値を `0` にすると、その制限を無効化できます。
 
+
+### 絵文字容量表示
+
+`emoji.max-total-size-mb` はカスタム絵文字の合計容量を制限します。制限を超えると、管理者アップロード画面に警告が表示されます。`emoji.show-storage-usage` は現在の絵文字容量表示、`emoji.show-storage-limit` は合計容量制限の表示を制御します。
 
 ## UI タイムゾーン
 
@@ -195,3 +262,6 @@ ui:
 - `ui.text-shadow-custom`: `custom` モードで使用する CSS `text-shadow` 値です。チャット設定画面では、色ピッカーと横方向、縦方向、ぼかし、不透明度のスライダーで編集できます。保存値は標準の CSS 形式です。例: `0 1px 2px rgba(0, 0, 0, 0.85)`.
 
 > テーマはブラウザごとのチャット設定からも変更できます。テーマを変更すると、文字色・背景色・影などの表示設定はそのテーマの既定値にリセットされます。
+
+
+管理者向けカスタム絵文字メモ: 絵文字ファイル名またはフォルダー名を変更すると `:emoji:pack/name:` トークンも変わります。古いトークンを含む既存メッセージは、古いファイル/フォルダー名を残さない限り表示されなくなる場合があります。

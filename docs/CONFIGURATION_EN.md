@@ -39,15 +39,39 @@ http:
 
 standalone-web:
   enabled: true
-  api-base-url: "/bmwc/api"
+  # Recommended: empty; follows web-addon.api-base-url.
+  # You may also set the same public API route explicitly.
+  api-base-url: ""
 
 web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
-  public-base-url: "/bmwc/api/uploads"
+  # Recommended: keep empty so uploads follow the active API base.
+  # Legacy explicit values also work: "/bmwc/api" or "/bmwc/api/uploads".
+  public-base-url: ""
+
+emoji:
+  # Recommended: keep empty so emoji files follow the active API base.
+  # Legacy explicit values also work: "/bmwc/api" or "/bmwc/api/emojis".
+  public-base-url: ""
 ```
 
+### Public URL option rules
+
+- `http.path-prefix` is the plugin's internal HTTP API path. Normally leave the default `/api` unchanged.
+- `web-addon.api-base-url` is the public API base used by the BlueMap embedded chat. In HTTPS reverse-proxy setups, this is usually `/bmwc/api`.
+- `standalone-web.api-base-url` normally stays empty. When empty, standalone reuses `web-addon.api-base-url`; for example `/bmwc/chat` uses `/bmwc/api`. You may also explicitly set the same `/bmwc/api` value.
+- `upload.public-base-url` normally stays empty. When empty, uploaded files use the active API base plus `/uploads`, for example `/bmwc/api/uploads`.
+- `emoji.public-base-url` normally stays empty. When empty, custom emoji files use the active API base plus `/emojis`, for example `/bmwc/api/emojis`.
+- Explicit legacy values are accepted. `/bmwc/api` appends `/uploads` or `/emojis` automatically, while `/bmwc/api/uploads` and `/bmwc/api/emojis` are used as-is.
+- Relative values without a leading `/`, such as `bmwc/api`, `bmwc/api/uploads`, or `bmwc/api/emojis`, are resolved against `http.cors-origin` when it is a real origin. If `cors-origin` is `*`, they fall back to same-origin absolute paths such as `/bmwc/api...`.
+- Full URLs such as `https://map.example.com/bmwc/api` are used as-is.
+
+
+### Emoji storage display
+
+`emoji.max-total-size-mb` limits total custom emoji storage. When the limit is exceeded, admin uploads show a localized warning instead of failing silently. `emoji.show-storage-usage` controls whether current emoji storage is shown in the admin emoji manager, and `emoji.show-storage-limit` controls whether the total limit is shown.
 
 ## UI time zone
 
@@ -69,6 +93,7 @@ upload:
 - `ui.max-width`
 - `ui.max-height`
 - `preview.youtube-max-embeds-per-message`
+- `preview.social-embeds.max-embeds-per-message`
 - `preview.external-media-cache-max-size-mb`
 - `pinned.max-pins`
 - `pinned.show-to-logged-out`
@@ -150,11 +175,35 @@ Set it to `0` only when unlimited preview height is acceptable. Unlimited or ver
 
 ```yaml
 preview:
+  youtube-embed-enabled: true
   youtube-click-to-load: true
   media-click-to-load: true
+  youtube-nocookie: true
+  youtube-remember-expanded: true
+  youtube-autoplay-on-open: false
+  youtube-max-embeds-per-message: 1
+
+  social-embeds:
+    enabled: true
+    click-to-load: true
+    max-embeds-per-message: 2
+    tiktok:
+      enabled: false
+    x:
+      enabled: false
+      theme: "auto"
+      dnt: true
+      hide-media: false
+      hide-thread: true
 ```
 
-Set these to `false` to render iframe/player previews immediately. Autoplay is still controlled by browser policy.
+YouTube Shorts are handled by the normal YouTube preview path. Shorts are displayed in a vertical player and use YouTube loop parameters.
+
+TikTok and X/Twitter are optional because they load third-party content in the viewer's browser. Keep them disabled unless your server policy allows third-party embeds. For public servers, keep `social-embeds.click-to-load: true` so the third-party player loads only after a user opens the preview.
+
+TikTok uses the official `player/v1` iframe with `description=0` and `music_info=0`. This avoids variable-height captions creating inner scrollbars in the chat panel. The original TikTok link remains available below the player for the full post details.
+
+Set `youtube-click-to-load` or `media-click-to-load` to `false` to render those previews immediately. Autoplay is still controlled by browser policy.
 
 ## PIP
 
@@ -194,3 +243,24 @@ Collapsed pinned-message bar text follows the configured chat font and message f
 - `ui.text-shadow-custom`: CSS `text-shadow` value used when the mode is `custom`. In the chat settings UI, this is edited with a color picker and sliders for X offset, Y offset, blur, and opacity; the stored value remains standard CSS, for example `0 1px 2px rgba(0, 0, 0, 0.85)`.
 
 > The theme can also be changed per browser from Chat settings. Changing the theme resets visual settings such as text colors, background colors, and shadows to that theme's defaults.
+
+
+Admin custom emoji manager note: renaming an emoji file or folder changes the `:emoji:pack/name:` token. Existing chat messages that reference the old token may no longer render unless the old file/folder name is kept.
+
+
+## Custom emoji and ImageEmojis
+
+BlueMapWebChat stores custom emoji files under `plugins/BlueMapWebChat/emojis`. Subfolders are treated as emoji packs.
+
+When `emoji.game-link.mode` is set to `imageemojis` or `imageemojis-link`, GIF/JPG/JPEG/WEBP emoji originals automatically get same-folder PNG sidecars for ImageEmojis. For example, uploading `wave.gif` to the `default` pack stores:
+
+```text
+plugins/BlueMapWebChat/emojis/default/wave.gif
+plugins/BlueMapWebChat/emojis/default/wave.png
+```
+
+The web UI keeps using the original file, so GIF animation is preserved. ImageEmojis can load the PNG sidecar. If ImageEmojis watches the same emoji directory, run `/emojis reload` after adding or changing emoji files.
+
+### Social embeds
+
+YouTube Shorts use the existing YouTube preview. Optional TikTok and X/Twitter post embeds can be enabled under `preview.social-embeds`. Keep `click-to-load: true` for public servers so third-party content is not loaded until the user clicks.

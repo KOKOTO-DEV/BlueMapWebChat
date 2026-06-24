@@ -5,6 +5,8 @@ import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.logging.Level;
@@ -39,6 +41,7 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
         discordBridge = new DiscordBridge(this);
 
         installAssets();
+        ensureEmojiDirectory();
         startWebServer();
         discordBridge.start();
 
@@ -92,6 +95,7 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
         }
         langManager.reload();
         installAssets();
+        ensureEmojiDirectory();
         startWebServer();
         if (discordBridge == null) {
             discordBridge = new DiscordBridge(this);
@@ -101,6 +105,24 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
 
     private void installAssets() {
         new WebAssetsInstaller(this).install();
+    }
+
+    private void ensureEmojiDirectory() {
+        ConfigValues config = configValues;
+        if (config == null || !config.emojiEnabled) return;
+
+        String configured = config.emojiDirectory;
+        if (configured == null || configured.isBlank()) configured = "emojis";
+
+        try {
+            Path dir = Path.of(configured);
+            if (!dir.isAbsolute()) {
+                dir = getDataFolder().toPath().resolve(dir);
+            }
+            Files.createDirectories(dir.normalize());
+        } catch (Exception ex) {
+            getLogger().log(Level.WARNING, "Failed to create emoji directory: " + configured, ex);
+        }
     }
 
     private void startWebServer() {

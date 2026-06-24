@@ -111,8 +111,11 @@ public class WebAssetsInstaller {
         String apiBase = c.apiBaseUrl == null ? "" : c.apiBaseUrl.trim();
         String js;
         if (apiBase.isEmpty()) {
+            // Direct HTTP default. HTTPS reverse proxies should normally set
+            // web-addon.api-base-url to a public browser path such as /bmwc/api.
             js = "window.BlueMapWebChatConfig = { apiBase: location.protocol + '//' + location.hostname + ':" + c.httpPort + c.pathPrefix + "', apiBaseUrl: location.protocol + '//' + location.hostname + ':" + c.httpPort + c.pathPrefix + "' };\n";
         } else {
+            apiBase = normalizeConfiguredBrowserUrl(c, apiBase);
             js = "window.BlueMapWebChatConfig = { apiBase: " + JsonUtil.quote(apiBase) + ", apiBaseUrl: " + JsonUtil.quote(apiBase) + " };\n";
         }
         try {
@@ -120,6 +123,34 @@ public class WebAssetsInstaller {
         } catch (IOException ex) {
             plugin.getLogger().warning("Failed to write config.js: " + ex.getMessage());
         }
+    }
+
+    private String normalizeConfiguredBrowserUrl(ConfigValues c, String configured) {
+        String value = configured == null ? "" : configured.trim();
+        if (value.isBlank()) return value;
+        if (value.startsWith("http://") || value.startsWith("https://")) return trimTrailingSlash(value);
+        if (value.startsWith("//")) {
+            String origin = configuredCorsOrigin(c);
+            String proto = origin.startsWith("http://") ? "http" : "https";
+            return trimTrailingSlash(proto + ":" + value);
+        }
+        if (value.startsWith("/")) return trimTrailingSlash(value);
+        String origin = configuredCorsOrigin(c);
+        if (!origin.isBlank()) return trimTrailingSlash(origin + "/" + value.replaceFirst("^/+", ""));
+        return trimTrailingSlash("/" + value);
+    }
+
+    private String configuredCorsOrigin(ConfigValues c) {
+        String origin = c == null || c.corsOrigin == null ? "" : c.corsOrigin.trim();
+        if (origin.isBlank() || "*".equals(origin)) return "";
+        if (origin.startsWith("http://") || origin.startsWith("https://")) return trimTrailingSlash(origin);
+        return "";
+    }
+
+    private String trimTrailingSlash(String value) {
+        String out = value == null ? "" : value.trim();
+        while (out.endsWith("/") && out.length() > 1) out = out.substring(0, out.length() - 1);
+        return out;
     }
 
     private void copyResource(String resource, File out) {

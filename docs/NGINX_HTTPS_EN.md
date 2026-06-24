@@ -122,13 +122,19 @@ http:
 standalone-web:
   enabled: true
   path: "/chat"
+  # Optional. Same value as web-addon.api-base-url is valid.
   api-base-url: "/bmwc/api"
 
 web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
-  public-base-url: "/bmwc/api/uploads"
+  # Recommended: keep empty. If needed, "/bmwc/api" or "/bmwc/api/uploads" also works.
+  public-base-url: ""
+
+emoji:
+  # Recommended: keep empty. If needed, "/bmwc/api" or "/bmwc/api/emojis" also works.
+  public-base-url: ""
 
 ui:
   image-preview-max-height: 720
@@ -155,8 +161,8 @@ When nginx and Minecraft run on the same host, bind the BlueMapWebChat API to `1
 4. Issue a certificate with `sudo certbot --nginx -d map.example.com` or install your certificate manually.
 5. Apply the nginx config and confirm `sudo nginx -t` succeeds.
 6. Set `web-addon.api-base-url` to `/bmwc/api`.
-7. Set `standalone-web.api-base-url` to `/bmwc/api` if you want the standalone page at `https://map.example.com/bmwc/chat`.
-8. Set `upload.public-base-url` to `/bmwc/api/uploads` if uploads are enabled.
+7. For `https://map.example.com/bmwc/chat`, `standalone-web.api-base-url` may be left empty or set to the same `/bmwc/api` value as `web-addon.api-base-url`.
+8. Leave upload/emoji public URLs empty in normal deployments. For legacy explicit settings, `upload.public-base-url` may be `/bmwc/api` or `/bmwc/api/uploads`, and `emoji.public-base-url` may be `/bmwc/api` or `/bmwc/api/emojis`.
 9. Run `/bmchat reload` or restart the server to regenerate the web addon file.
 10. Run `/bluemap reload` if BlueMap does not refresh the web assets automatically.
 11. Open `https://map.example.com/` or `https://map.example.com/bmwc/chat` in the browser.
@@ -166,3 +172,7 @@ When nginx and Minecraft run on the same host, bind the BlueMapWebChat API to `1
 Serving the BlueMap page over HTTP while only the chat API uses HTTPS is not a complete security boundary. If the page or `chat.js` is delivered over HTTP, a network attacker could modify the script before it talks to the HTTPS API.
 
 For public servers, serve both BlueMap and BlueMapWebChat under the same HTTPS origin.
+
+### URL setting resolution
+
+`web-addon.api-base-url` is the primary HTTPS public API path. Leave `standalone-web.api-base-url`, `upload.public-base-url`, and `emoji.public-base-url` empty unless you need a compatibility override. Empty standalone follows `web-addon.api-base-url`; empty upload/emoji append `/uploads` and `/emojis`. Absolute browser paths such as `/bmwc/api` are used as-is. Relative values without a leading `/` are resolved against `http.cors-origin` when it is a real origin. Full `https://...` URLs are used as-is.

@@ -7,11 +7,26 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 
+import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
+
 public class ChatListener implements Listener {
     private final BlueMapWebChatPlugin plugin;
+    private final Map<AsyncPlayerChatEvent, String> originalChatMessages = Collections.synchronizedMap(new WeakHashMap<>());
 
     public ChatListener(BlueMapWebChatPlugin plugin) {
         this.plugin = plugin;
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void captureOriginalChatMessage(AsyncPlayerChatEvent event) {
+        // Some chat/emoji plugins replace the message later in the same event.
+        // Keep the player's original template text so the web side can map
+        // ImageEmojis aliases such as :name: back to BM Web Chat emojis.
+        if (event != null) {
+            originalChatMessages.put(event, event.getMessage());
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -19,7 +34,9 @@ public class ChatListener implements Listener {
         if (!plugin.configValues().broadcastIngameChatToWeb) return;
         WebChatServer server = plugin.webServer();
         if (server != null) {
-            server.publishFromGame(event.getPlayer(), event.getMessage());
+            String message = originalChatMessages.remove(event);
+            if (message == null) message = event.getMessage();
+            server.publishFromGame(event.getPlayer(), message);
         }
     }
 

@@ -9,9 +9,10 @@ A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can r
 - Guest chat with math captcha, cooldowns, and per-minute limits
 - `/bmchat auth <code>` account linking, web password login, local admin accounts
 - Web admin/moderator panel, message hiding, pin/delete action toggle, guest/IP mutes, session revoke
-- File and clipboard upload, image/video/audio/YouTube previews
+- Admin custom emoji manager: create, upload, rename, and delete emoji folders/files
+- File and clipboard upload, image/video/audio/YouTube/Shorts previews, plus optional TikTok and X/Twitter embeds
 - DiscordSRV relay and Discord CDN media cache
-- Pinned messages, virtual scrolling, draggable/resizable window, experimental PIP
+- Message replies with clickable referenced-message previews, pinned messages, virtual scrolling, draggable/resizable window, experimental PIP
 - Built-in UI languages: en-US, ko-KR, ja-JP, zh-CN
 
 ## Build
@@ -21,7 +22,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-3.1.0.jar
+target/BlueMapWebChat-4.0.0.jar
 ```
 
 ## Install
@@ -78,13 +79,24 @@ http:
 standalone-web:
   enabled: true
   path: "/chat"
+  # Optional. This may be the same route as web-addon.api-base-url.
   api-base-url: "/bmwc/api"
 
 web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
-  public-base-url: "/bmwc/api/uploads"
+  # Recommended: keep empty so uploads follow /bmwc/api automatically.
+  # Legacy explicit forms also work: "/bmwc/api" or "/bmwc/api/uploads".
+  public-base-url: ""
+
+emoji:
+  # Recommended: keep empty so emoji files follow /bmwc/api automatically.
+  # Legacy explicit forms also work: "/bmwc/api" or "/bmwc/api/emojis".
+  public-base-url: ""
+  max-total-size-mb: 64
+  show-storage-usage: true
+  show-storage-limit: true
 ```
 
 Example paths:
@@ -94,6 +106,9 @@ https://map.example.com/          # BlueMap
 https://map.example.com/bmwc/api  # BlueMapWebChat API
 https://map.example.com/bmwc/chat # standalone chat
 ```
+
+
+URL settings note: in HTTPS reverse proxy mode, set `web-addon.api-base-url` to the public API path such as `/bmwc/api`. `standalone-web.api-base-url`, `upload.public-base-url`, and `emoji.public-base-url` usually stay empty. When empty, standalone reuses the web-addon API base, and uploads/emojis append `/uploads` and `/emojis` automatically. Legacy explicit values such as `/bmwc/api`, `/bmwc/api/uploads`, and `/bmwc/api/emojis` are also accepted. Relative values without a leading `/` are resolved against `http.cors-origin` when it is a real origin.
 
 See `docs/CADDY_HTTPS_EN.md` for details.
 
@@ -107,6 +122,38 @@ See `docs/CADDY_HTTPS_EN.md` for details.
 - `commands.allow-all`: allow arbitrary console commands instead of presets only
 - `commands.run-from-chat-input`: allow `/command` execution from the normal chat input
 - `ui.picture-in-picture.enabled`: controls both the PIP button and PIP execution
+
+## Custom emoji and ImageEmojis
+
+BlueMapWebChat stores custom emoji files under `plugins/BlueMapWebChat/emojis`. Subfolders are treated as emoji packs.
+
+When `emoji.game-link.mode` is set to `imageemojis` or `imageemojis-link`, GIF/JPG/JPEG/WEBP emoji originals automatically get same-folder PNG sidecars for ImageEmojis. For example, uploading `wave.gif` to the `default` pack stores:
+
+```text
+plugins/BlueMapWebChat/emojis/default/wave.gif
+plugins/BlueMapWebChat/emojis/default/wave.png
+```
+
+The web UI keeps using the original file, so GIF animation is preserved. ImageEmojis can load the PNG sidecar. If ImageEmojis watches the same emoji directory, run `/emojis reload` after adding or changing emoji files.
+
+## YouTube Shorts, TikTok, and X/Twitter previews
+
+YouTube Shorts URLs are handled by the normal YouTube preview, use a vertical player, and are enabled by default. TikTok and X/Twitter embeds are available as optional social embeds and are disabled by default because they load third-party content. TikTok uses the official `player/v1` iframe with long description/music text hidden in the chat panel; users can open the original TikTok link for full details.
+
+```yaml
+preview:
+  youtube-embed-enabled: true
+  social-embeds:
+    enabled: true
+    click-to-load: true
+    max-embeds-per-message: 2
+    tiktok:
+      enabled: false
+    x:
+      enabled: false
+```
+
+Enable TikTok or X/Twitter only if you are comfortable with third-party embed requests from users' browsers. Keep `click-to-load: true` for public servers so third-party content loads only after a user opens a preview.
 
 ## Commands
 

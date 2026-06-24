@@ -1,7 +1,26 @@
 (() => {
   const BMWC_INNER_IFRAME_MARKER_296 = true;
   const cfg = window.BlueMapWebChatConfig || {};
-  const apiBase = cfg.apiBase || cfg.apiBaseUrl || (location.origin + "/bmwc/api");
+  function bmwcDefaultApiBase() {
+    const path = String(location.pathname || "").replace(/\/+$/, "");
+    const marker = "/bmwc";
+    if (path === marker || path.indexOf(marker + "/") === 0) {
+      return location.origin + marker + "/api";
+    }
+    return location.origin + "/api";
+  }
+
+  function bmwcNormalizeApiBase(value) {
+    let v = String(value || "").trim();
+    if (!v) v = bmwcDefaultApiBase();
+    v = v.replace(/\/+$/, "");
+    // Be forgiving when a legacy resource URL is accidentally placed in an API
+    // base option. The API base must point at /api or /bmwc/api; uploads/emojis
+    // are appended separately.
+    v = v.replace(/\/(?:uploads|emojis)$/i, "");
+    return v;
+  }
+  const apiBase = bmwcNormalizeApiBase(cfg.apiBase || cfg.apiBaseUrl || "");
   const runtimeMode = {
     pip: cfg.pip === true,
     standalone: cfg.standalone === true
@@ -32,7 +51,9 @@
     availableLanguages: [],
     historyLoading: false,
     historyHasMore: true,
+    historyHasAfter: false,
     historyOldestId: "",
+    historyNewestId: "",
     historyPageSize: 20,
     frameMinimizedHeight: 71,
     frameNormalWidth: 372,
@@ -44,6 +65,7 @@
     lastLoginButtonActivateAt: 0,
     dragStart: null,
     messages: [],
+    replyTarget: null,
     pins: [],
     pinsEnabled: true,
     pinsCanPin: false,
@@ -56,6 +78,23 @@
     commandsShowSlashPanel: true,
     commandsRunFromChatInput: false,
     commandsRequireConfirm: true,
+
+    emojiEnabled: false,
+    emojiShowButton: true,
+    emojiRenderSizePx: 32,
+    emojiPickerSizePx: 44,
+    emojiMessageTokenLimit: 12,
+    emojiTokenFormat: "short",
+    emojiPacks: [],
+    emojiItems: [],
+    emojiById: new Map(),
+    emojiByAlias: new Map(),
+    emojiBySymbol: new Map(),
+    emojiPanelOpen: false,
+    emojiLoading: false,
+    emojiPanelHeightPx: Math.max(56, Math.min(420, Number(localStorage.getItem("bmwc.emojiPanelHeightPx") || 180) || 180)),
+    emojiPanelResizeStart: null,
+    adminEmojiSelectedPack: localStorage.getItem("bmwc.adminEmojiPack") || "default",
     commandMaxLength: 0,
     nextLocalMessageId: 1,
     sendInFlight: false,
@@ -89,6 +128,18 @@
     historyEndNoticeVisibleUntil: 0,
     historyEndNoticeLastShownAt: 0,
     historyEndNoticePendingUserTopUntil: 0,
+    historyEndNoticeKey: "history.end",
+    historyEndNoticeFallback: "No more messages to display.",
+    historySlowNoticeTimer: null,
+    forceLatestJumpUntil: 0,
+    replyJumpUntil: 0,
+    replyJumpGeneration: 0,
+    replyJumpTargetId: "",
+    replyJumpStartedAt: 0,
+    replyJumpLastCenteredScrollTop: NaN,
+    replyJumpStabilizeTimer: null,
+    explicitLatestFollowUntil: 0,
+    explicitLatestFollowReason: "",
     pendingMediaRender: false,
     scrollInteractionUntil: 0,
     scrollIdleTimer: null,
@@ -96,12 +147,14 @@
     touchScrollActive: false,
     pendingScrollRenderOptions: null,
     pendingOlderHistoryLoad: false,
+    pendingNewerHistoryLoad: false,
     pendingTopOlderHistoryTimer: null,
     pendingTopOlderHistoryDueAt: 0,
     olderHistorySettleUntil: 0,
     lastTopOlderHistoryRequestAt: 0,
     historyLoadingSince: 0,
     historyLoadSeq: 0,
+    lastBottomNewerHistoryRequestAt: 0,
     pendingResumeRefreshReason: "",
     uploadXhr: null,
     uploadCancelRequested: false,
@@ -119,6 +172,8 @@
     mediaLayoutBatchOptions: null,
     historyViewportFillTimer: null,
     historyViewportFillAttempts: 0,
+    viewportMaintenanceTimer: null,
+    viewportMaintenanceDueAt: 0,
     dragUploadDepth: 0,
     senderIdentityMode: localStorage.getItem("bmwc.senderIdentityMode") === "real" ? "real" : "display",
     timeDisplayMode: localStorage.getItem("bmwc.timeDisplayMode") === "full" ? "full" : "short"
@@ -176,14 +231,48 @@
     return s === "game" || s === "web" || s === "guest" || s === "discord";
   }
 
-  function minecraftNameHtml(value, renderColors = shouldRenderMinecraftNameColors()) {
-    const text = String(value ?? "");
+  function normalizeMinecraftLegacySource(value) {
+    // Reply previews may come from persisted JSON, plugin text, copied HTML,
+    // or mis-decoded section signs. Normalize the common escaped/entity forms
+    // before parsing so compact reply UI does not leak raw tags such as
+    // &a, §a, \u00A7a, &amp;a, &#167;a, &sect;a, or Â§a.
+    let text = String(value ?? "");
+    for (let i = 0; i < 3; i++) {
+      const next = text
+        .replace(/\\u00a7/gi, "§")
+        .replace(/\\xA7/gi, "§")
+        .replace(/\\u0026/gi, "&")
+        .replace(/\u00c2\u00a7/g, "§")
+        .replace(/Â§/g, "§")
+        .replace(/&amp;/gi, "&")
+        .replace(/&#0*167;?/gi, "§")
+        .replace(/&#x0*a7;?/gi, "§")
+        .replace(/&sect;?/gi, "§");
+      if (next === text) break;
+      text = next;
+    }
+    return text;
+  }
+
+  function plainLegacyText(value) {
+    return stripMinecraftColorCodes(normalizeMinecraftLegacySource(value));
+  }
+
+  function formatReplyComposeLabelHtml(sender) {
+    const marker = "__BMWC_REPLY_SENDER__";
+    const template = fmt("reply.composing", "Replying to {sender}", {sender: marker});
+    const parts = String(template || "").split(marker);
+    if (parts.length < 2) return esc(fmt("reply.composing", "Replying to {sender}", {sender: plainLegacyText(sender)}));
+    return parts.map(esc).join(minecraftLegacyTextHtml(sender, true));
+  }
+
+  function minecraftLegacyTextHtml(value, renderColors = true) {
+    const text = normalizeMinecraftLegacySource(value);
     if (!renderColors) return esc(stripMinecraftColorCodes(text));
 
     let out = "";
     let buf = "";
     let style = {};
-    let open = false;
 
     const styleAttr = () => {
       const parts = [];
@@ -199,16 +288,20 @@
     const flush = () => {
       if (!buf) return;
       const attr = styleAttr();
-      out += attr ? `<span style="${esc(attr)}">${esc(buf)}</span>` : esc(buf);
+      const html = renderCustomEmojiTokens(buf);
+      out += attr ? `<span class="bmwc-mc-legacy" style="${esc(attr)}">${html}</span>` : html;
       buf = "";
     };
     const resetFormatting = () => {
       style = {};
-      open = false;
     };
     const setColor = color => {
-      style = {color};
-      open = true;
+      style = Object.assign({}, style, {color});
+      // Minecraft color codes reset formatting in normal legacy text.
+      delete style.bold;
+      delete style.italic;
+      delete style.underline;
+      delete style.strikethrough;
     };
 
     for (let i = 0; i < text.length; i++) {
@@ -234,6 +327,12 @@
             continue;
           }
         }
+        if (code === "#" && /^[0-9a-fA-F]{6}$/.test(text.slice(i + 2, i + 8))) {
+          flush();
+          setColor("#" + text.slice(i + 2, i + 8));
+          i += 7;
+          continue;
+        }
         if (Object.prototype.hasOwnProperty.call(MC_LEGACY_COLORS, code)) {
           flush();
           setColor(MC_LEGACY_COLORS[code]);
@@ -253,7 +352,6 @@
           if (code === "n") style.underline = true;
           if (code === "m") style.strikethrough = true;
           // Obfuscated text (&k/§k) is intentionally not reproduced in the web UI.
-          open = true;
           i++;
           continue;
         }
@@ -268,6 +366,10 @@
     }
     flush();
     return out;
+  }
+
+  function minecraftNameHtml(value, renderColors = shouldRenderMinecraftNameColors()) {
+    return minecraftLegacyTextHtml(value, renderColors);
   }
 
   function plainMinecraftName(value) {
@@ -377,10 +479,69 @@
     return safeHttpUrl(raw, {allowRelative: false});
   }
 
+  function apiBasePath() {
+    try {
+      return new URL(String(apiBase || ""), location.href).pathname.replace(/\/+$/, "");
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function firstApiResourceSuffix(path) {
+    const value = String(path || "");
+    const names = ["/emojis", "/uploads", "/external-media", "/fonts"];
+    let best = -1;
+    for (const name of names) {
+      const idx = value.indexOf(name);
+      if (idx >= 0 && (best < 0 || idx < best)) best = idx;
+    }
+    return best >= 0 ? value.slice(best) : "";
+  }
+
+  function apiResourceUrl(raw) {
+    const value = String(raw || "").trim();
+    if (!value) return "";
+    if (/^https?:\/\//i.test(value)) return value;
+
+    const base = String(apiBase || "").replace(/\/+$/, "");
+    if (!base) return value;
+
+    try {
+      if (value.startsWith("/")) {
+        const basePath = apiBasePath();
+        const valuePath = new URL(value, location.href).pathname.replace(/\/+$/, "");
+        // If the server already returned the same public path, keep it as-is.
+        // This is important for explicit settings such as /bmwc/api/emojis.
+        if (basePath && (valuePath === basePath || valuePath.startsWith(basePath + "/"))) {
+          return new URL(value, location.href).href;
+        }
+        // Also keep explicitly configured prefixed API resource paths such as
+        // /bmwc/api/uploads even if the runtime API base is currently /api.
+        // Only plain internal /api/... paths are candidates for rewriting.
+        if (/^\/.+\/api\/(?:emojis|uploads|external-media|fonts)(?:\/|$)/i.test(valuePath)) {
+          return new URL(value, location.href).href;
+        }
+        // If the server returned an internal path such as /api/emojis while the
+        // browser uses /bmwc/api, keep only the resource suffix and attach it to
+        // the runtime API base.
+        const suffix = firstApiResourceSuffix(value);
+        if (suffix) return new URL(base + suffix, location.href).href;
+        return new URL(value, location.href).href;
+      }
+      return new URL(base + "/" + value.replace(/^\/+/, ""), location.href).href;
+    } catch (_) {
+      return value;
+    }
+  }
+
   function safePreviewUrl(raw) {
     // Preview URLs may be external http(s) URLs or same-origin relative API
-    // URLs generated by BlueMapWebChat, such as /bmwc/api/external-media?... .
-    return safeHttpUrl(raw, {allowRelative: true});
+    // URLs generated by BlueMapWebChat, such as /bmwc/api/uploads/... .
+    // Normalize internal /api/... resource paths to the runtime API base so
+    // explicit reverse-proxy settings keep working.
+    const value = String(raw || "").trim();
+    const normalized = /^https?:\/\//i.test(value) ? value : apiResourceUrl(value);
+    return safeHttpUrl(normalized || value, {allowRelative: true});
   }
 
   function safeYouTubeEmbedUrl(raw) {
@@ -692,37 +853,197 @@
     return "https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w1600";
   }
 
-  function youtubeVideoId(raw) {
-    if (!state.config || state.config.youtubeEmbedEnabled === false) return "";
+  function youtubeVideoInfo(raw) {
+    if (!state.config || state.config.youtubeEmbedEnabled === false) return {id: "", shorts: false};
     try {
       const u = new URL(normalizeUrl(raw), location.href);
       const host = u.hostname.toLowerCase().replace(/^www\./, "");
       if (host === "youtu.be") {
         const id = u.pathname.split("/").filter(Boolean)[0] || "";
-        return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? id : "";
+        return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? {id, shorts: false} : {id: "", shorts: false};
       }
       if (host === "youtube.com" || host === "m.youtube.com" || host === "music.youtube.com" || host === "youtube-nocookie.com") {
         let id = u.searchParams.get("v") || "";
-        if (!id && u.pathname.startsWith("/shorts/")) id = u.pathname.split("/").filter(Boolean)[1] || "";
+        let shorts = false;
+        if (!id && u.pathname.startsWith("/shorts/")) {
+          id = u.pathname.split("/").filter(Boolean)[1] || "";
+          shorts = true;
+        }
         if (!id && u.pathname.startsWith("/embed/")) id = u.pathname.split("/").filter(Boolean)[1] || "";
-        return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? id : "";
+        return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? {id, shorts} : {id: "", shorts: false};
       }
     } catch (_) {}
-    return "";
+    return {id: "", shorts: false};
   }
 
-  function youtubeEmbedUrl(id, autoplay = false) {
+  function youtubeVideoId(raw) {
+    return youtubeVideoInfo(raw).id || "";
+  }
+
+  function youtubeEmbedUrl(id, autoplay = false, loop = false) {
     const host = state.config && state.config.youtubeNoCookie === false ? "www.youtube.com" : "www.youtube-nocookie.com";
     const params = new URLSearchParams();
     params.set("rel", "0");
     params.set("modestbranding", "1");
     params.set("playsinline", "1");
+    if (loop) {
+      params.set("loop", "1");
+      params.set("playlist", id);
+    }
     if (autoplay) params.set("autoplay", "1");
+    try { if (location && location.origin && location.origin !== "null") params.set("origin", location.origin); } catch (_) {}
     return "https://" + host + "/embed/" + encodeURIComponent(id) + "?" + params.toString();
+  }
+
+  function youtubeShellStyle(shorts, maxHeightCss = "") {
+    if (shorts) {
+      return "position:relative;width:min(100%,260px);max-width:100%;aspect-ratio:9/16;max-height:420px;border-radius:10px;overflow:hidden;background:#000;margin:6px auto 0;";
+    }
+    return "position:relative;width:100%;aspect-ratio:16/9;" + String(maxHeightCss || "") + "border-radius:10px;overflow:hidden;background:#000;margin-top:6px;";
+  }
+
+  function socialVerticalLoadCardStyle() {
+    return "position:relative;width:min(100%,260px);max-width:100%;height:180px;border-radius:10px;overflow:hidden;background:#000;margin:6px auto 0;display:flex;align-items:center;justify-content:center;";
   }
 
   function youtubeThumbUrl(id) {
     return "https://i.ytimg.com/vi/" + encodeURIComponent(id) + "/hqdefault.jpg";
+  }
+
+  function socialEmbedsEnabled() {
+    return !!(state.config && state.config.socialEmbedsEnabled === true);
+  }
+
+  function socialClickToLoadEnabled() {
+    return !state.config || state.config.socialEmbedsClickToLoad !== false;
+  }
+
+  function tiktokVideoId(raw) {
+    if (!socialEmbedsEnabled() || !state.config.tiktokEmbedEnabled) return "";
+    try {
+      const u = new URL(normalizeUrl(raw), location.href);
+      const host = u.hostname.toLowerCase().replace(/^www\./, "");
+      if (host !== "tiktok.com" && host !== "m.tiktok.com") return "";
+      let match = u.pathname.match(/\/video\/(\d{8,32})/);
+      if (match && match[1]) return match[1];
+      match = u.pathname.match(/\/embed\/v2\/(\d{8,32})/);
+      if (match && match[1]) return match[1];
+    } catch (_) {}
+    return "";
+  }
+
+  function xPostInfo(raw) {
+    if (!socialEmbedsEnabled() || !state.config.xEmbedEnabled) return null;
+    try {
+      const u = new URL(normalizeUrl(raw), location.href);
+      const host = u.hostname.toLowerCase().replace(/^www\./, "");
+      if (host !== "x.com" && host !== "twitter.com" && host !== "mobile.twitter.com") return null;
+      const match = u.pathname.match(/^\/([^\/]+)\/status(?:es)?\/(\d{6,32})/i);
+      if (!match || !match[1] || !match[2]) return null;
+      const url = "https://x.com/" + encodeURIComponent(match[1]) + "/status/" + encodeURIComponent(match[2]);
+      return {user: match[1], id: match[2], url};
+    } catch (_) {}
+    return null;
+  }
+
+  function tiktokCanonicalUrl(raw, id) {
+    const safe = safeExternalUrl(raw);
+    if (safe && /(^|\.)tiktok\.com$/i.test((() => { try { return new URL(safe).hostname.replace(/^www\./, ""); } catch (_) { return ""; } })())) return safe;
+    if (!/^\d{8,32}$/.test(String(id || ""))) return "";
+    return "https://www.tiktok.com/@_/video/" + encodeURIComponent(id);
+  }
+
+  function tiktokPlayerUrl(id) {
+    if (!/^\d{8,32}$/.test(String(id || ""))) return "";
+    const params = new URLSearchParams();
+    params.set("controls", "1");
+    params.set("progress_bar", "1");
+    params.set("play_button", "1");
+    params.set("volume_control", "1");
+    params.set("fullscreen_button", "1");
+    params.set("timestamp", "1");
+    params.set("loop", "1");
+    params.set("autoplay", "0");
+    params.set("music_info", "0");
+    params.set("description", "0");
+    params.set("rel", "0");
+    params.set("native_context_menu", "1");
+    params.set("closed_caption", "1");
+    return "https://www.tiktok.com/player/v1/" + encodeURIComponent(id) + "?" + params.toString();
+  }
+
+  function tiktokPlayerShellStyle() {
+    return "position:relative;width:min(100%,325px);max-width:100%;height:575px;border-radius:10px;overflow:hidden;background:#000;margin:6px auto 0;";
+  }
+
+  function xThemeValue() {
+    const v = String(state.config && state.config.xEmbedTheme || "auto").toLowerCase();
+    if (v === "dark" || v === "light") return v;
+    const root = document.getElementById("bmwc-root");
+    return root && root.classList.contains("bmwc-theme-light") ? "light" : "dark";
+  }
+
+  let xWidgetsLoading = false;
+  function loadXWidgets(root) {
+    try {
+      if (window.twttr && window.twttr.widgets && typeof window.twttr.widgets.load === "function") {
+        window.twttr.widgets.load(root || document.body);
+        return;
+      }
+      if (!document.querySelector('script[src="https://platform.twitter.com/widgets.js"]')) {
+        const script = document.createElement("script");
+        script.async = true;
+        script.charset = "utf-8";
+        script.src = "https://platform.twitter.com/widgets.js";
+        document.head.appendChild(script);
+      }
+      if (!xWidgetsLoading) {
+        xWidgetsLoading = true;
+        setTimeout(() => {
+          xWidgetsLoading = false;
+          if (window.twttr && window.twttr.widgets && typeof window.twttr.widgets.load === "function") window.twttr.widgets.load(root || document.body);
+        }, 1200);
+      }
+    } catch (_) {}
+  }
+
+  function socialEmbedHtml(item, maxHeightCss = "") {
+    const key = item.previewKey || previewKey(item.type, item.href);
+    if (item.type === "tiktok") {
+      const id = String(item.tiktokId || "");
+      if (!/^\d{8,32}$/.test(id)) return "";
+      const href = tiktokCanonicalUrl(item.href, id);
+      const player = tiktokPlayerUrl(id);
+      if (!href || !player) return "";
+      if (socialClickToLoadEnabled() && !state.mediaOpen.has(key)) {
+        return `<div class="bmwc-social-card bmwc-tiktok-card" data-social-kind="tiktok" data-social-src="${esc(href)}" data-tiktok-id="${esc(id)}" data-preview-key="${esc(key)}" style="${socialVerticalLoadCardStyle()}">
+          <button type="button" class="bmwc-media-load">${esc(t("media.loadTikTok", "▶ TikTok"))}</button>
+        </div>`;
+      }
+      return `<div class="bmwc-social-embed bmwc-tiktok-embed" data-preview-key="${esc(key)}" style="${tiktokPlayerShellStyle()}">
+        <iframe class="bmwc-social-frame" src="${esc(player)}" title="TikTok" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; fullscreen; picture-in-picture; web-share" allowfullscreen style="position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;color-scheme:dark;"></iframe>
+      </div>
+      <div class="bmwc-social-open" style="width:min(100%,325px);max-width:100%;margin:4px auto 0;font-size:11px;opacity:.78;text-align:right;">
+        <a class="bmwc-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(t("media.openTikTok", "Open on TikTok"))}</a>
+      </div>`;
+    }
+    if (item.type === "x") {
+      const href = safeExternalUrl(item.href);
+      if (!href) return "";
+      if (socialClickToLoadEnabled() && !state.mediaOpen.has(key)) {
+        return `<div class="bmwc-social-card bmwc-x-card" data-social-kind="x" data-social-src="${esc(href)}" data-preview-key="${esc(key)}" style="${maxHeightCss}">
+          <button type="button" class="bmwc-media-load">${esc(t("media.loadXPost", "▶ X post"))}</button>
+        </div>`;
+      }
+      const theme = xThemeValue();
+      const dnt = state.config && state.config.xEmbedDnt !== false ? "true" : "false";
+      const hideMedia = state.config && state.config.xEmbedHideMedia === true ? ' data-cards="hidden"' : "";
+      const hideThread = state.config && state.config.xEmbedHideThread !== false ? ' data-conversation="none"' : "";
+      return `<div class="bmwc-social-embed bmwc-x-embed" data-preview-key="${esc(key)}" style="margin-top:6px;${maxHeightCss}">
+        <blockquote class="twitter-tweet" data-theme="${esc(theme)}" data-dnt="${esc(dnt)}"${hideMedia}${hideThread}><a href="${esc(href)}"></a></blockquote>
+      </div>`;
+    }
+    return "";
   }
 
   function previewKey(kind, href) {
@@ -776,6 +1097,11 @@
     return media;
   }
 
+  function hydrateSocialEmbeds(root) {
+    if (!root) return;
+    if (root.querySelector && root.querySelector(".twitter-tweet")) loadXWidgets(root);
+  }
+
   function hydratePreviewMedia(root) {
     if (!root) return;
     root.querySelectorAll(".bmwc-image-preview").forEach(img => {
@@ -814,6 +1140,15 @@
     });
   }
 
+  function safeImagePreviews(value, messageKey = "") {
+    try {
+      return imagePreviews(value, messageKey);
+    } catch (err) {
+      try { console.warn("media preview failed", err); } catch (_) {}
+      return "";
+    }
+  }
+
   function imagePreviews(value, messageKey = "") {
     if (!state.config) return "";
     const configuredMax = Number(state.config.imagePreviewMaxPerMessage);
@@ -831,18 +1166,28 @@
       if (!unlimitedPreviews && items.length >= max) break;
       const href = safeExternalUrl(url);
       if (!href) continue;
-      const youtubeId = youtubeVideoId(url);
+      const youtubeInfo = youtubeVideoInfo(url);
+      const youtubeId = youtubeInfo.id || "";
+      const tiktokId = tiktokVideoId(url);
+      const xPost = xPostInfo(url);
       const discordPreview = safePreviewUrl(discordCdnPreviewUrl(url));
       const drivePreview = safePreviewUrl(googleDrivePreviewUrl(url));
-      if (items.some(item => item.href === href || item.linkHref === href || (discordPreview && item.href === discordPreview) || (drivePreview && item.href === drivePreview) || (youtubeId && item.youtubeId === youtubeId))) continue;
+      if (items.some(item => item.href === href || item.linkHref === href || (discordPreview && item.href === discordPreview) || (drivePreview && item.href === drivePreview) || (youtubeId && item.youtubeId === youtubeId) || (tiktokId && item.tiktokId === tiktokId) || (xPost && item.xPostId === xPost.id))) continue;
       const imageKey = previewKey("image", drivePreview || discordPreview || href);
       const videoKey = previewKey("video", discordPreview || href);
       const audioKey = previewKey("audio", discordPreview || href);
+      const socialMaxConfig = Number(state.config.socialEmbedsMaxPerMessage);
+      const maxSocial = Number.isFinite(socialMaxConfig) ? Math.max(0, Math.floor(socialMaxConfig)) : 2;
+      const socialCount = items.filter(item => item.type === "tiktok" || item.type === "x").length;
       if (youtubeId) {
         const configuredYoutubeMax = Number(state.config.youtubeMaxEmbedsPerMessage);
         const maxYoutube = Number.isFinite(configuredYoutubeMax) ? Math.max(0, Math.floor(configuredYoutubeMax)) : 1;
         const youtubeCount = items.filter(item => item.type === "youtube").length;
-        if (maxYoutube === 0 || youtubeCount < maxYoutube) items.push({type: "youtube", href, youtubeId, youtubeKey: String(messageKey || "message") + ":" + youtubeId});
+        if (maxYoutube === 0 || youtubeCount < maxYoutube) items.push({type: "youtube", href, youtubeId, youtubeShorts: youtubeInfo.shorts === true, youtubeKey: String(messageKey || "message") + ":" + youtubeId});
+      } else if (tiktokId && (maxSocial === 0 || socialCount < maxSocial)) {
+        items.push({type: "tiktok", href, tiktokId, previewKey: previewKey("tiktok", tiktokId)});
+      } else if (xPost && (maxSocial === 0 || socialCount < maxSocial)) {
+        items.push({type: "x", href: xPost.url, xPostId: xPost.id, previewKey: previewKey("x", xPost.id)});
       } else if (discordPreview) {
         const mediaType = previewMediaType(url);
         if (mediaType === "video" && state.config.uploadPreviewVideos && !state.failedMediaPreviews.has(videoKey)) {
@@ -868,20 +1213,25 @@
         const id = item.youtubeId;
         const thumb = youtubeThumbUrl(id);
         const key = item.youtubeKey || (String(messageKey || "message") + ":" + id);
+        const isShorts = item.youtubeShorts === true;
         const shouldAutoplay = state.config && state.config.youtubeAutoplayOnOpen === true;
-        const embed = safeYouTubeEmbedUrl(youtubeEmbedUrl(id, shouldAutoplay));
+        const embed = safeYouTubeEmbedUrl(youtubeEmbedUrl(id, shouldAutoplay, isShorts));
+        const shellStyle = youtubeShellStyle(isShorts, maxHeightCss);
         if (!embed) return "";
         const rememberedOpen = state.config.youtubeRememberExpanded !== false && state.youtubeExpanded.has(key);
         const currentlyOpen = state.youtubeOpen.has(key);
         if (state.config.youtubeClickToLoad === false || rememberedOpen || currentlyOpen) {
-          return `<div class="bmwc-youtube-wrap" data-youtube-key="${esc(key)}" style="position:relative;width:100%;aspect-ratio:16/9;${maxHeightCss}border-radius:10px;overflow:hidden;background:#000;margin-top:6px;">
-            <iframe class="bmwc-youtube-frame" style="position:absolute;inset:0;width:100%;height:100%;border:0;" src="${esc(embed)}" title="${esc(t("media.youtubeTitle", "YouTube video"))}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+          return `<div class="bmwc-youtube-wrap${isShorts ? " bmwc-youtube-shorts-wrap" : ""}" data-youtube-key="${esc(key)}" style="${shellStyle}">
+            <iframe class="bmwc-youtube-frame" style="position:absolute;inset:0;width:100%;height:100%;border:0;" src="${esc(embed)}" title="${esc(isShorts ? t("media.youtubeShortsTitle", "YouTube Shorts") : t("media.youtubeTitle", "YouTube video"))}" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
           </div>`;
         }
-        return `<button type="button" class="bmwc-youtube-card" data-youtube-embed="${esc(embed)}" data-youtube-key="${esc(key)}" style="position:relative;width:100%;aspect-ratio:16/9;${maxHeightCss}border:0;border-radius:10px;overflow:hidden;background-size:cover;background-position:center;cursor:pointer;color:#fff;background-image:url('${esc(thumb)}')">
+        return `<button type="button" class="bmwc-youtube-card${isShorts ? " bmwc-youtube-shorts-card" : ""}" data-youtube-embed="${esc(embed)}" data-youtube-key="${esc(key)}" data-youtube-shorts="${isShorts ? "1" : "0"}" style="${shellStyle}border:0;background-size:cover;background-position:center;cursor:pointer;color:#fff;background-image:url('${esc(thumb)}')">
           <span class="bmwc-youtube-play" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:34px;text-shadow:0 2px 8px rgba(0,0,0,.85);">▶</span>
-          <span class="bmwc-youtube-label" style="position:absolute;left:8px;bottom:8px;font-size:12px;font-weight:700;text-shadow:0 2px 8px rgba(0,0,0,.85);">${esc(t("media.youtube", "YouTube"))}</span>
+          <span class="bmwc-youtube-label" style="position:absolute;left:8px;bottom:8px;font-size:12px;font-weight:700;text-shadow:0 2px 8px rgba(0,0,0,.85);">${esc(isShorts ? t("media.youtubeShorts", "YouTube Shorts") : t("media.youtube", "YouTube"))}</span>
         </button>`;
+      }
+      if (item.type === "tiktok" || item.type === "x") {
+        return socialEmbedHtml(item, maxHeightCss);
       }
       if (item.type === "video") {
         const key = item.previewKey || previewKey("video", item.href);
@@ -923,8 +1273,38 @@
 
 
   function api(path, opts = {}) {
-    opts.headers = Object.assign({"Content-Type": "application/json"}, opts.headers || {});
-    return fetch(apiBase + path, opts).then(r => r.json());
+    const timeoutMs = Number(opts.timeoutMs || 0);
+    const fetchOpts = Object.assign({}, opts);
+    delete fetchOpts.timeoutMs;
+    const isFormData = typeof FormData !== "undefined" && fetchOpts.body instanceof FormData;
+    fetchOpts.headers = Object.assign(isFormData ? {} : {"Content-Type": "application/json"}, fetchOpts.headers || {});
+
+    let timeoutId = null;
+    let controller = null;
+    if (timeoutMs > 0 && !fetchOpts.signal && typeof AbortController === "function") {
+      controller = new AbortController();
+      fetchOpts.signal = controller.signal;
+      timeoutId = setTimeout(() => {
+        try { controller.abort(); } catch (_) {}
+      }, Math.max(1000, Math.min(60000, Math.round(timeoutMs))));
+    }
+
+    return fetch(apiBase + path, fetchOpts).then(async r => {
+      if (!r.ok) {
+        const err = new Error("HTTP " + r.status);
+        err.status = r.status;
+        try { err.response = await r.clone().json(); } catch (_) {}
+        throw err;
+      }
+      return r.json();
+    }).catch(err => {
+      if (controller && err && err.name === "AbortError") {
+        err.bmwcTimeout = true;
+      }
+      throw err;
+    }).finally(() => {
+      if (timeoutId) clearTimeout(timeoutId);
+    });
   }
 
   function t(key, fallback = "") {
@@ -937,6 +1317,20 @@
       s = s.replaceAll("{" + k + "}", String(v ?? ""));
     }
     return s;
+  }
+
+  function formatBytes(bytes) {
+    const n = Number(bytes || 0);
+    if (!Number.isFinite(n) || n <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let value = n;
+    let idx = 0;
+    while (value >= 1024 && idx < units.length - 1) {
+      value /= 1024;
+      idx++;
+    }
+    const digits = idx === 0 || value >= 100 ? 0 : value >= 10 ? 1 : 2;
+    return value.toFixed(digits).replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1") + " " + units[idx];
   }
 
   function humanizeErrorCode(code) {
@@ -956,6 +1350,16 @@
     const code = res && res.error ? String(res.error) : fallbackCode;
     if (code === "guest_muted" && res && res.reason) {
       return fmt("error.guest_mutedWithReason", "Guest chat is muted: {reason}", {reason: res.reason});
+    }
+    if (code === "total_size_exceeded" && res && Number(res.maxTotalSize || 0) > 0) {
+      const current = Number(res.currentSize || 0);
+      const file = Number(res.fileSize || 0);
+      const max = Number(res.maxTotalSize || 0);
+      return fmt("error.total_size_exceededWithUsage", "Total emoji storage limit exceeded. Current {current}, selected {file}, maximum {max}.", {
+        current: formatBytes(current),
+        file: formatBytes(file),
+        max: formatBytes(max)
+      });
     }
     return localizedError(code);
   }
@@ -986,8 +1390,806 @@
     return shouldStripMessageColorCodes(msg) ? stripMinecraftColorCodes(text) : text;
   }
 
+  function customEmojiTokenRegex() {
+    try {
+      return new RegExp(":(?:emoji:)?([^:\\r\\n]{1,200}):", "gu");
+    } catch (_) {
+      return /:(?:emoji:)?([^:\r\n]{1,200}):/g;
+    }
+  }
+
+  function customEmojiBoundaryRegex(which) {
+    const prefix = which === "start" ? "^" : "";
+    const suffix = which === "end" ? "$" : "";
+    try {
+      return new RegExp(prefix + ":(?:emoji:)?[^:\\r\\n]{1,200}:" + suffix, "u");
+    } catch (_) {
+      return new RegExp(prefix + ":(?:emoji:)?[^:\\r\\n]{1,200}:" + suffix);
+    }
+  }
+
+  function normalizeEmojiTokenFormat(value) {
+    const v = String(value || "").trim().toLowerCase();
+    return (v === "legacy" || v === "prefixed" || v === "emoji") ? "legacy" : "short";
+  }
+
+  function customEmojiTokenForId(id) {
+    id = String(id || "");
+    return normalizeEmojiTokenFormat(state.emojiTokenFormat) === "legacy" ? `:emoji:${id}:` : `:${id}:`;
+  }
+
+  function putCustomEmojiAlias(map, key, item) {
+    key = String(key || "").trim();
+    if (!key || !item) return;
+    if (!map.has(key)) map.set(key, item);
+    const lower = key.toLowerCase();
+    if (!map.has(lower)) map.set(lower, item);
+  }
+
+  function putCustomEmojiSymbol(map, symbol, item) {
+    symbol = String(symbol || "");
+    if (!symbol || !item) return;
+    if (!map.has(symbol)) map.set(symbol, item);
+  }
+
+  function rebuildCustomEmojiLookups(items) {
+    const byId = new Map();
+    const byAlias = new Map();
+    const bySymbol = new Map();
+    (Array.isArray(items) ? items : []).forEach(item => {
+      if (!item) return;
+      const id = String(item.id || "").trim();
+      const name = String(item.name || "").trim();
+      const label = String(item.label || "").trim();
+      const pack = String(item.pack || "").trim();
+      if (id) byId.set(id, item);
+      putCustomEmojiAlias(byAlias, id, item);
+      putCustomEmojiAlias(byAlias, name, item);
+      putCustomEmojiAlias(byAlias, label, item);
+      if (pack && name) putCustomEmojiAlias(byAlias, pack + "/" + name, item);
+      if (pack && label) putCustomEmojiAlias(byAlias, pack + "/" + label, item);
+      (Array.isArray(item.aliases) ? item.aliases : []).forEach(alias => putCustomEmojiAlias(byAlias, alias, item));
+      (Array.isArray(item.symbols) ? item.symbols : []).forEach(symbol => putCustomEmojiSymbol(bySymbol, symbol, item));
+    });
+    state.emojiById = byId;
+    state.emojiByAlias = byAlias;
+    state.emojiBySymbol = bySymbol;
+  }
+
+  function customEmojiById(id) {
+    if (!state.emojiById || typeof state.emojiById.get !== "function") return null;
+    return state.emojiById.get(String(id || "")) || null;
+  }
+
+  function customEmojiByToken(token) {
+    token = String(token || "").trim();
+    if (!token) return null;
+    let item = customEmojiById(token);
+    if (item) return item;
+    const alias = state.emojiByAlias;
+    if (alias && typeof alias.get === "function") {
+      item = alias.get(token) || alias.get(token.toLowerCase());
+      if (item) return item;
+    }
+    return null;
+  }
+
+  function customEmojiBySymbol(symbol) {
+    symbol = String(symbol || "");
+    if (!symbol) return null;
+    const symbols = state.emojiBySymbol;
+    return symbols && typeof symbols.get === "function" ? (symbols.get(symbol) || null) : null;
+  }
+
+  function customEmojiSymbols() {
+    const symbols = state.emojiBySymbol;
+    if (!symbols || typeof symbols.keys !== "function") return [];
+    return Array.from(symbols.keys()).filter(Boolean).sort((a, b) => b.length - a.length);
+  }
+
+  function customEmojiImgHtml(item) {
+    if (!item || !item.url) return "";
+    const size = Math.max(16, Math.min(1024, Number(state.emojiRenderSizePx || (state.config && state.config.emojiRenderSizePx) || 32)));
+    const label = item.label || item.name || item.id || "emoji";
+    const title = item.path ? `${label}\n${item.path}` : label;
+    return `<img class="bmwc-custom-emoji" src="${esc(item.url)}" alt="${esc(":" + label + ":")}" title="${esc(title)}" loading="lazy" draggable="false" style="width:${size}px;height:${size}px;">`;
+  }
+
+  function emojiPickerSizePx() {
+    return Math.max(24, Math.min(1024, Number(state.emojiPickerSizePx || (state.config && state.config.emojiPickerSizePx) || 44)));
+  }
+
+  function emojiPanelHeightPx() {
+    return clampEmojiPanelHeightPx(Number(state.emojiPanelHeightPx || 180) || 180);
+  }
+
+  function clampEmojiPanelHeightPx(px, panel = null) {
+    const min = emojiPanelMinHeightPx(panel);
+    const max = emojiPanelMaxHeightPx();
+    return Math.max(min, Math.min(max, Math.round(Number(px) || 180)));
+  }
+
+  function emojiPanelFallbackItemHeightPx() {
+    // Tile height = icon + item vertical padding + icon/name gap + one label line + border.
+    // Keep this tied to picker-size-px so the one-row minimum follows icon scaling.
+    return Math.ceil(emojiPickerSizePx() + 28);
+  }
+
+  function emojiPanelMinHeightPx(panel = null) {
+    panel = panel || document.getElementById("bmwc-emoji-panel");
+    const fallbackItemHeight = emojiPanelFallbackItemHeightPx();
+    const fallbackTabsHeight = Array.isArray(state.emojiPacks) && state.emojiPacks.length > 1 ? 30 : 0;
+    const fallback = 16 + fallbackTabsHeight + fallbackItemHeight;
+    if (!panel || panel.classList.contains("bmwc-hidden")) return Math.max(56, Math.ceil(fallback));
+
+    const panelStyle = getComputedStyle(panel);
+    const padTop = parseFloat(panelStyle.paddingTop || "0") || 0;
+    const padBottom = parseFloat(panelStyle.paddingBottom || "0") || 0;
+    const borderTop = parseFloat(panelStyle.borderTopWidth || "0") || 0;
+    const borderBottom = parseFloat(panelStyle.borderBottomWidth || "0") || 0;
+    const tabs = panel.querySelector(".bmwc-emoji-tabs");
+    const item = panel.querySelector(".bmwc-emoji-item");
+
+    let tabsHeight = 0;
+    if (tabs) {
+      const tabsStyle = getComputedStyle(tabs);
+      tabsHeight = Number(tabs.getBoundingClientRect().height || tabs.offsetHeight || fallbackTabsHeight);
+      tabsHeight += parseFloat(tabsStyle.marginTop || "0") || 0;
+      tabsHeight += parseFloat(tabsStyle.marginBottom || "0") || 0;
+    }
+
+    const itemHeight = item ? Number(item.getBoundingClientRect().height || item.offsetHeight || 0) : 0;
+    // This is the actual one-row minimum: panel chrome + fixed pack row + one complete emoji tile.
+    // Do not use the selected pack's total content height here; multi-row packs must be able to shrink
+    // to the same one-row minimum as one-row packs.
+    return Math.max(56, Math.ceil(borderTop + padTop + tabsHeight + (itemHeight || fallbackItemHeight) + padBottom + borderBottom));
+  }
+
+  function emojiPanelMaxHeightPx() {
+    const root = document.getElementById("bmwc-root");
+    const panelHeight = root ? Number(root.clientHeight || 0) : 0;
+    // Keep enough room for header, messages, input row, and panel padding.
+    // On small windows this prevents the emoji picker from swallowing the chat list.
+    const min = emojiPanelMinHeightPx();
+    const viewportBound = panelHeight > 0 ? Math.max(min, panelHeight - 210) : 420;
+    return Math.max(min, Math.min(420, Math.floor(viewportBound)));
+  }
+
+  function emojiScrollElement(panel = null) {
+    panel = panel || document.getElementById("bmwc-emoji-panel");
+    return panel ? (panel.querySelector(".bmwc-emoji-scroll") || panel) : null;
+  }
+
+  function emojiGridRowStepPx(panel = null) {
+    panel = panel || document.getElementById("bmwc-emoji-panel");
+    const item = panel ? panel.querySelector(".bmwc-emoji-item") : null;
+    const grid = panel ? panel.querySelector(".bmwc-emoji-grid") : null;
+    const itemHeight = item ? Number(item.getBoundingClientRect().height || item.offsetHeight || 0) : 0;
+    const gridStyle = grid ? getComputedStyle(grid) : null;
+    const rowGap = gridStyle ? parseFloat(gridStyle.rowGap || gridStyle.gap || "0") || 0 : 0;
+    const fallback = emojiPanelFallbackItemHeightPx();
+    return Math.max(28, Math.round((itemHeight || fallback) + rowGap));
+  }
+
+  function snapEmojiPanelHeightPx(px, panel = null) {
+    panel = panel || document.getElementById("bmwc-emoji-panel");
+    const min = emojiPanelMinHeightPx(panel);
+    const max = emojiPanelMaxHeightPx();
+    let height = Math.max(min, Math.min(max, Math.round(Number(px) || 180)));
+    const scroll = emojiScrollElement(panel);
+    const grid = panel ? panel.querySelector(".bmwc-emoji-grid") : null;
+    if (!grid || !scroll || panel.classList.contains("bmwc-hidden")) return height;
+    const panelStyle = getComputedStyle(panel);
+    const padTop = parseFloat(panelStyle.paddingTop || "0") || 0;
+    const padBottom = parseFloat(panelStyle.paddingBottom || "0") || 0;
+    const scrollTopOffset = Number(scroll.offsetTop || 0);
+    const fixedPart = Math.max(0, scrollTopOffset + padBottom);
+    const row = emojiGridRowStepPx(panel);
+    if (row > 0 && height > fixedPart + row) {
+      const available = Math.max(row, height - fixedPart);
+      const rows = Math.max(1, Math.round(available / row));
+      height = Math.round(fixedPart + rows * row);
+      if (height > max) {
+        const maxRows = Math.max(1, Math.floor(Math.max(row, max - fixedPart) / row));
+        height = Math.round(fixedPart + maxRows * row);
+      }
+      height = Math.max(min, Math.min(max, height));
+    }
+    return height;
+  }
+
+  function snapEmojiPanelScrollTop(panel = null) {
+    panel = panel || document.getElementById("bmwc-emoji-panel");
+    if (!panel || panel.classList.contains("bmwc-hidden")) return;
+    const scroll = emojiScrollElement(panel);
+    const grid = panel.querySelector(".bmwc-emoji-grid");
+    if (!grid || !scroll) return;
+    const row = emojiGridRowStepPx(panel);
+    if (!Number.isFinite(row) || row <= 0) return;
+    const current = Number(scroll.scrollTop || 0);
+    const maxTop = Math.max(0, Number(scroll.scrollHeight || 0) - Number(scroll.clientHeight || 0));
+    const target = Math.max(0, Math.min(maxTop, Math.round(Math.round(current / row) * row)));
+    if (Math.abs(target - current) > 0.5) scroll.scrollTop = target;
+  }
+
+  function setEmojiPanelHeight(px, persist = true, options = {}) {
+    const panel = document.getElementById("bmwc-emoji-panel");
+    const height = options && options.snap === false
+      ? clampEmojiPanelHeightPx(px, panel)
+      : snapEmojiPanelHeightPx(px, panel);
+    state.emojiPanelHeightPx = height;
+    const root = document.getElementById("bmwc-root");
+    if (root) {
+      root.style.setProperty("--bmwc-emoji-panel-height", height + "px");
+      root.style.setProperty("--bmwc-emoji-panel-min-height", emojiPanelMinHeightPx(panel) + "px");
+    }
+    if (persist) {
+      try { localStorage.setItem("bmwc.emojiPanelHeightPx", String(height)); } catch (_) {}
+    }
+    if (panel) {
+      const minHeight = emojiPanelMinHeightPx(panel);
+      panel.style.maxHeight = height + "px";
+      panel.style.minHeight = minHeight + "px";
+      // Keep the panel as a max-height box during normal use so one-row packs do not
+      // leave a large empty area. While dragging, or when the picker is clamped to
+      // its minimum, use an explicit height so multi-row packs can shrink to the
+      // same one-row minimum instead of being held open by their natural content.
+      if ((state.emojiPanelResizeStart && (!options || options.fixed !== false)) || height <= minHeight + 1 || (options && options.fixed === true)) {
+        panel.style.height = height + "px";
+      } else {
+        panel.style.removeProperty("height");
+      }
+      if (!options || options.snapScroll !== false) snapEmojiPanelScrollTop(panel);
+    }
+    return height;
+  }
+
+  function updateEmojiResizeHandleVisibility() {
+    const handle = document.getElementById("bmwc-emoji-resize");
+    if (!handle) return;
+    const visible = !!(state.emojiPanelOpen && canUseCustomEmoji() && !state.minimized && !guestChatHidden());
+    handle.classList.toggle("bmwc-hidden", !visible);
+  }
+
+  function installEmojiPanelResize(root) {
+    const handle = document.getElementById("bmwc-emoji-resize");
+    const panel = document.getElementById("bmwc-emoji-panel");
+    if (!handle || !panel || handle.dataset.bmwcInstalled === "1") return;
+    handle.dataset.bmwcInstalled = "1";
+    setEmojiPanelHeight(emojiPanelHeightPx(), false);
+
+    const pointY = event => {
+      const src = event.touches && event.touches.length ? event.touches[0] :
+                  event.changedTouches && event.changedTouches.length ? event.changedTouches[0] :
+                  event;
+      return Number(src.clientY) || 0;
+    };
+
+    const begin = event => {
+      if (!state.emojiPanelOpen) return;
+      event.preventDefault();
+      event.stopPropagation();
+      markNonScrollUiAction();
+      state.emojiPanelResizeStart = {
+        y: pointY(event),
+        height: Number(panel.getBoundingClientRect().height || emojiPanelHeightPx()),
+        currentHeight: Number(panel.getBoundingClientRect().height || emojiPanelHeightPx())
+      };
+      document.body.classList.add("bmwc-emoji-resizing");
+      try { handle.setPointerCapture && event.pointerId != null && handle.setPointerCapture(event.pointerId); } catch (_) {}
+    };
+
+    const move = event => {
+      const start = state.emojiPanelResizeStart;
+      if (!start) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const delta = start.y - pointY(event);
+      start.currentHeight = setEmojiPanelHeight(start.height + delta, false, {snap: false, snapScroll: false});
+    };
+
+    const end = event => {
+      const start = state.emojiPanelResizeStart;
+      if (!start) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setEmojiPanelHeight(start.currentHeight || emojiPanelHeightPx(), true, {snap: false, snapScroll: true});
+      state.emojiPanelResizeStart = null;
+      document.body.classList.remove("bmwc-emoji-resizing");
+    };
+
+    handle.addEventListener("pointerdown", begin, {passive: false});
+    document.addEventListener("pointermove", move, {passive: false});
+    document.addEventListener("pointerup", end, {passive: false});
+    document.addEventListener("pointercancel", end, {passive: false});
+    handle.addEventListener("touchstart", begin, {passive: false});
+    document.addEventListener("touchmove", move, {passive: false});
+    document.addEventListener("touchend", end, {passive: false});
+    document.addEventListener("touchcancel", end, {passive: false});
+  }
+
+  function emojiPanelRowScrollTargets(panel = null) {
+    panel = panel || document.getElementById("bmwc-emoji-panel");
+    const scroll = emojiScrollElement(panel);
+    const grid = panel ? panel.querySelector(".bmwc-emoji-grid") : null;
+    if (!panel || !scroll || !grid) return [];
+
+    const scrollRect = scroll.getBoundingClientRect();
+    const rawRows = [];
+    const seen = [];
+    grid.querySelectorAll(".bmwc-emoji-item").forEach(item => {
+      const rect = item.getBoundingClientRect();
+      const absoluteTop = Math.max(0, Math.round((rect.top - scrollRect.top) + Number(scroll.scrollTop || 0)));
+      if (!seen.some(v => Math.abs(v - absoluteTop) <= 2)) {
+        seen.push(absoluteTop);
+        rawRows.push(absoluteTop);
+      }
+    });
+    rawRows.sort((a, b) => a - b);
+    if (!rawRows.length) return [];
+
+    // The grid may sit below pack tabs/header inside the scroll area. Normalize
+    // the first emoji row to 0 so the first wheel tick moves exactly one emoji
+    // row instead of jumping by the header height plus one row.
+    const first = rawRows[0];
+    return rawRows.map(v => Math.max(0, Math.round(v - first)));
+  }
+
+  function emojiPanelNextRowScrollTop(panel, direction) {
+    const scroll = emojiScrollElement(panel);
+    if (!scroll) return null;
+    const maxTop = Math.max(0, Number(scroll.scrollHeight || 0) - Number(scroll.clientHeight || 0));
+    const current = Number(scroll.scrollTop || 0);
+    const rows = emojiPanelRowScrollTargets(panel).filter(v => v <= maxTop + 2);
+    if (!rows.length) {
+      const row = emojiGridRowStepPx(panel);
+      if (!Number.isFinite(row) || row <= 0) return null;
+      const base = Math.round(current / row) * row;
+      return Math.max(0, Math.min(maxTop, Math.round(base + (direction > 0 ? row : -row))));
+    }
+
+    if (direction > 0) {
+      const next = rows.find(v => v > current + 2);
+      return Math.max(0, Math.min(maxTop, next == null ? maxTop : next));
+    }
+
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (rows[i] < current - 2) return Math.max(0, Math.min(maxTop, rows[i]));
+    }
+    return 0;
+  }
+
+  function installEmojiPanelWheelStep(panel) {
+    panel = panel || document.getElementById("bmwc-emoji-panel");
+    const scroll = emojiScrollElement(panel);
+    if (!panel || !scroll || scroll.dataset.bmwcWheelStepInstalled === "1") return;
+    scroll.dataset.bmwcWheelStepInstalled = "1";
+    scroll.addEventListener("wheel", event => {
+      if (!state.emojiPanelOpen || panel.classList.contains("bmwc-hidden")) return;
+      if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const deltaY = Number(event.deltaY || 0);
+      if (Math.abs(deltaY) < 1) return;
+      const target = emojiPanelNextRowScrollTop(panel, deltaY > 0 ? 1 : -1);
+      if (target == null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      scroll.scrollTo({top: target, behavior: "auto"});
+    }, {passive: false});
+  }
+
+  function applyEmojiPickerSize() {
+    const root = document.getElementById("bmwc-root");
+    if (!root) return;
+    root.style.setProperty("--bmwc-emoji-picker-size", emojiPickerSizePx() + "px");
+    root.style.setProperty("--bmwc-emoji-panel-height", emojiPanelHeightPx() + "px");
+    root.style.setProperty("--bmwc-emoji-panel-min-height", emojiPanelMinHeightPx() + "px");
+  }
+
+  function renderCustomEmojiTokens(text) {
+    text = String(text ?? "");
+    if (!state.emojiEnabled || !state.emojiById || state.emojiById.size === 0) return linkifyText(text);
+    const re = customEmojiTokenRegex();
+    const symbols = customEmojiSymbols();
+    let out = "";
+    let pos = 0;
+    while (pos < text.length) {
+      re.lastIndex = pos;
+      const tokenMatch = re.exec(text);
+      let bestIndex = tokenMatch ? tokenMatch.index : -1;
+      let bestLength = tokenMatch ? tokenMatch[0].length : 0;
+      let bestHtml = tokenMatch ? (() => {
+        const item = customEmojiByToken(tokenMatch[1]);
+        return item ? customEmojiImgHtml(item) : esc(tokenMatch[0]);
+      })() : "";
+
+      for (const symbol of symbols) {
+        const idx = text.indexOf(symbol, pos);
+        if (idx < 0) continue;
+        if (bestIndex < 0 || idx < bestIndex || (idx === bestIndex && symbol.length > bestLength)) {
+          const item = customEmojiBySymbol(symbol);
+          if (!item) continue;
+          bestIndex = idx;
+          bestLength = symbol.length;
+          bestHtml = customEmojiImgHtml(item);
+        }
+      }
+
+      if (bestIndex < 0) break;
+      out += linkifyText(text.slice(pos, bestIndex));
+      out += bestHtml;
+      pos = bestIndex + Math.max(1, bestLength);
+    }
+    out += linkifyText(text.slice(pos));
+    return out;
+  }
+
   function messageTextHtml(msg) {
-    return linkifyText(plainDisplayMessageText(msg));
+    return renderCustomEmojiTokens(plainDisplayMessageText(msg));
+  }
+
+  function replyPreviewPlain(msg) {
+    if (!msg) return "";
+    const value = String(msg.replyToPreview || "").trim();
+    if (value) return value;
+    return plainDisplayMessageText(msg).replace(/[\r\n]+/g, " ").trim();
+  }
+
+  function messageById(id) {
+    id = String(id || "");
+    if (!id) return null;
+    return state.messages.find(m => m && String(m.id || "") === id) || null;
+  }
+
+  function replyTargetFromMessage(msg) {
+    if (!msg || !msg.id || msg.hidden) return null;
+    const sender = displaySender(msg) || msg.sender || "";
+    let preview = plainDisplayMessageText(msg).replace(/[\r\n]+/g, " ").trim();
+    if (preview.length > 120) preview = preview.slice(0, 117) + "...";
+    return {id: String(msg.id), sender, preview};
+  }
+
+  function renderReplyCompose() {
+    const wrap = document.getElementById("bmwc-reply-compose");
+    if (!wrap) return;
+    const target = state.replyTarget;
+    wrap.classList.toggle("bmwc-hidden", !target || !target.id);
+    const label = document.getElementById("bmwc-reply-compose-label");
+    const preview = document.getElementById("bmwc-reply-compose-preview");
+    if (label) label.innerHTML = target && target.id ? formatReplyComposeLabelHtml(target.sender || "") : "";
+    if (preview) preview.innerHTML = target && target.id ? replyPreviewHtml(target.preview || "") : "";
+  }
+
+  function startReplyToMessage(msg) {
+    const target = replyTargetFromMessage(msg);
+    if (!target) return;
+    state.replyTarget = target;
+    renderReplyCompose();
+    const input = document.getElementById("bmwc-message");
+    if (input) input.focus();
+  }
+
+  function clearReplyTarget() {
+    state.replyTarget = null;
+    renderReplyCompose();
+  }
+
+  function replyPreviewHtml(value) {
+    // Reply previews are stored as a plain short copy of the original text.
+    // Use the dedicated legacy text renderer so raw §a/&a/&#RRGGBB tags do not
+    // leak into the compact reply reference UI.
+    return minecraftLegacyTextHtml(String(value || ""), true);
+  }
+
+  function replyReferenceHtml(msg) {
+    if (!msg || !msg.replyToId) return "";
+    const sender = msg.replyToSender || t("sender.unknown", "Unknown");
+    const preview = msg.replyToPreview || "";
+    const plainSender = plainLegacyText(sender).trim() || t("sender.unknown", "Unknown");
+    const plainPreview = plainLegacyText(preview).trim();
+    const title = plainPreview ? fmt("reply.jump", "Jump to replied message") + ": " + plainSender + " - " + plainPreview : t("reply.jump", "Jump to replied message");
+    return `<button type="button" class="bmwc-reply-ref" data-reply-jump="${esc(msg.replyToId)}" title="${esc(title)}">
+      <span class="bmwc-reply-ref-sender">${minecraftLegacyTextHtml(sender, true)}</span>
+      <span class="bmwc-reply-ref-preview">${replyPreviewHtml(preview)}</span>
+    </button>`;
+  }
+
+  function highlightMessageElement(el) {
+    if (!el) return;
+    el.classList.remove("bmwc-reply-highlight");
+    void el.offsetWidth;
+    el.classList.add("bmwc-reply-highlight");
+    setTimeout(() => { try { el.classList.remove("bmwc-reply-highlight"); } catch (_) {} }, 2600);
+  }
+
+  function cancelReplyJumpDeferredWork(reason = "reply-jump") {
+    // A reply jump is an explicit navigation request. Any delayed scroll-idle,
+    // viewport-fill, maintenance, or history paging job that was queued for the
+    // previous viewport may otherwise run a few frames later and pull the chat
+    // back down. Cancel them and invalidate in-flight history pages before the
+    // target-focused render starts.
+    clearTimeout(state.scrollIdleTimer);
+    state.scrollIdleTimer = null;
+    clearTimeout(state.historyViewportFillTimer);
+    state.historyViewportFillTimer = null;
+    state.historyViewportFillAttempts = 0;
+    clearTimeout(state.viewportMaintenanceTimer);
+    state.viewportMaintenanceTimer = null;
+    state.viewportMaintenanceDueAt = 0;
+    clearTimeout(state.pendingTopOlderHistoryTimer);
+    state.pendingTopOlderHistoryTimer = null;
+    state.pendingTopOlderHistoryDueAt = 0;
+    clearTimeout(state.replyJumpStabilizeTimer);
+    state.replyJumpStabilizeTimer = null;
+
+    state.pendingScrollRenderOptions = null;
+    state.virtualPendingRenderOptions = null;
+    state.pendingOlderHistoryLoad = false;
+    state.pendingNewerHistoryLoad = false;
+    state.pendingResumeRefreshReason = "";
+    state.replyJumpLastCenteredScrollTop = NaN;
+    state.olderHistorySettleUntil = 0;
+    state.scrollInteractionUntil = 0;
+    state.scrollbarDragActive = false;
+    state.touchScrollActive = false;
+
+    if (state.historyLoading) {
+      state.historyLoading = false;
+      state.historyLoadingSince = 0;
+    }
+    state.historyLoadSeq++;
+    state.forceLatestJumpUntil = 0;
+    state.explicitLatestFollowUntil = 0;
+    state.explicitLatestFollowReason = "";
+  }
+
+  function extendReplyJumpLock(ms = 900) {
+    const now = Date.now();
+    const duration = Math.max(250, Number(ms) || 900);
+    state.replyJumpUntil = Math.max(Number(state.replyJumpUntil || 0), now + duration);
+    state.preventBottomStickUntil = Math.max(Number(state.preventBottomStickUntil || 0), now + duration);
+    state.suppressScrollRenderUntil = Math.max(Number(state.suppressScrollRenderUntil || 0), now + duration);
+    state.suppressAutoFollowUpdate = true;
+    state.autoFollowLatest = false;
+    state.explicitLatestFollowUntil = 0;
+    state.forceLatestJumpUntil = 0;
+  }
+
+  function beginReplyJumpLock(ms = 1400) {
+    cancelReplyJumpDeferredWork("reply-jump");
+    const duration = Math.max(300, Number(ms) || 1400);
+    const generation = ++state.replyJumpGeneration;
+    state.replyJumpStartedAt = Date.now();
+    state.replyJumpLastCenteredScrollTop = NaN;
+    extendReplyJumpLock(duration);
+    setTimeout(() => {
+      if (state.replyJumpGeneration === generation && Date.now() >= Number(state.replyJumpUntil || 0) - 30) {
+        state.suppressAutoFollowUpdate = false;
+        state.replyJumpTargetId = "";
+        state.replyJumpStartedAt = 0;
+        state.replyJumpLastCenteredScrollTop = NaN;
+      }
+    }, duration + 40);
+    return generation;
+  }
+
+  function cancelReplyJumpForUserScroll(reason = "user-scroll") {
+    const now = Date.now();
+    const hasActiveReplyJump = now < Number(state.replyJumpUntil || 0) || !!state.replyJumpStabilizeTimer || !!state.replyJumpTargetId;
+    if (!hasActiveReplyJump) return;
+
+    // Once the user starts wheel/touch/key/scrollbar scrolling, the reply jump is
+    // no longer allowed to keep re-centering the target. The previous
+    // stabilization loop intentionally rechecked the target for ~2s so late
+    // virtual-scroll/media height changes would not knock it out of view. That
+    // same loop becomes harmful after real user input: it feels like the scroll
+    // is being rewound. Incrementing the generation invalidates any pending
+    // requestAnimationFrame/setTimeout callbacks from the old jump.
+    clearTimeout(state.replyJumpStabilizeTimer);
+    state.replyJumpStabilizeTimer = null;
+    state.replyJumpGeneration++;
+    state.replyJumpUntil = 0;
+    state.replyJumpTargetId = "";
+    state.replyJumpStartedAt = 0;
+    state.replyJumpLastCenteredScrollTop = NaN;
+    state.pendingScrollRenderOptions = null;
+    state.virtualPendingRenderOptions = null;
+    state.suppressScrollRenderUntil = 0;
+    state.suppressAutoFollowUpdate = false;
+    state.preventBottomStickUntil = Math.max(Number(state.preventBottomStickUntil || 0), now + 350);
+    state.forceLatestJumpUntil = 0;
+    state.explicitLatestFollowUntil = 0;
+    state.explicitLatestFollowReason = "";
+    state.autoFollowLatest = false;
+  }
+
+  function isMessageElementCentered(box, el, tolerancePx = 18) {
+    if (!box || !el) return false;
+    try {
+      const boxRect = box.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      if (elRect.bottom < boxRect.top + 4 || elRect.top > boxRect.bottom - 4) return false;
+      const boxCenter = boxRect.top + Math.max(1, boxRect.height || box.clientHeight || 1) / 2;
+      const elCenter = elRect.top + Math.max(1, elRect.height || 1) / 2;
+      return Math.abs(elCenter - boxCenter) <= Math.max(4, Number(tolerancePx) || 18);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function renderReplyJumpFocusedRange(id, generation, options = {}) {
+    if (state.replyJumpGeneration !== generation) return false;
+    id = String(id || "");
+    if (!id) return false;
+    const idx = state.messages.findIndex(m => m && String(m.id || "") === id);
+    if (idx < 0) return false;
+    renderVirtualMessages({
+      stickToBottom: false,
+      preserveScroll: false,
+      preserveVisualAnchor: false,
+      forcePreservePosition: true,
+      suppressBottomStick: true,
+      ignoreVisibleRangeProtection: true,
+      focusIndex: idx,
+      allowDuringMedia: true,
+      allowDuringVisibleMedia: true,
+      allowDuringMediaLayout: true,
+      deferDuringMediaLayout: false,
+      deferDuringScroll: false
+    });
+    return true;
+  }
+
+  function replyJumpLooksUserMoved(box, startedAt) {
+    if (!box) return false;
+    const lastDirect = Number(state.lastDirectScrollInputAt || 0);
+    const lastUserScroll = Number(state.lastUserScrollAt || 0);
+    if (lastDirect > 0 && lastDirect >= Number(startedAt || 0) - 10) return true;
+    if (lastUserScroll > 0 && lastUserScroll >= Number(startedAt || 0) - 10) return true;
+    const lastCentered = Number(state.replyJumpLastCenteredScrollTop);
+    if (!Number.isFinite(lastCentered)) return false;
+    const drift = Math.abs(Number(box.scrollTop || 0) - lastCentered);
+    return drift > Math.max(28, Math.round(Math.max(1, Number(box.clientHeight || 1)) * 0.07));
+  }
+
+  function stabilizeReplyJumpTarget(id, generation, options = {}) {
+    id = String(id || "");
+    if (!id) return;
+    clearTimeout(state.replyJumpStabilizeTimer);
+    const selector = `.bmwc-msg[data-id="${cssEscape(id)}"]`;
+    const lockMs = Math.max(450, Number(options.lockMs || 1100));
+    const delays = Array.isArray(options.delays) ? options.delays : [0, 60, 160, 360, 720];
+    const startedAt = Number(options.startedAt || state.replyJumpStartedAt || Date.now());
+    let pos = 0;
+
+    const run = () => {
+      if (state.replyJumpGeneration !== generation) return;
+      const box = document.getElementById("bmwc-messages");
+      if (!box) return;
+      if (pos > 0 && replyJumpLooksUserMoved(box, startedAt)) {
+        cancelReplyJumpForUserScroll("reply-jump-user-moved");
+        return;
+      }
+      extendReplyJumpLock(Math.max(260, Math.min(lockMs, 650)));
+      let el = box.querySelector(selector);
+      if (!el) {
+        renderReplyJumpFocusedRange(id, generation, {reason: "reply-jump-stabilize-render"});
+        el = box.querySelector(selector);
+      }
+      if (el && (!isMessageElementCentered(box, el, pos === 0 ? 8 : 22) || pos <= 1)) {
+        centerMessageElementInBox(box, el, {
+          reason: "reply-jump-stabilize",
+          suppressRenderMs: Math.max(450, Math.min(lockMs, 900)),
+          suppressUpdateMs: Math.max(450, Math.min(lockMs, 900)),
+          highlight: pos <= 1
+        });
+      }
+      const delay = delays[++pos];
+      if (state.replyJumpGeneration === generation && Number.isFinite(Number(delay))) {
+        state.replyJumpStabilizeTimer = setTimeout(run, Math.max(0, Number(delay)));
+      } else if (state.replyJumpGeneration === generation) {
+        state.replyJumpStabilizeTimer = null;
+      }
+    };
+
+    state.replyJumpStabilizeTimer = setTimeout(run, Math.max(0, Number(delays[0]) || 0));
+  }
+
+  function centerMessageElementInBox(box, el, options = {}) {
+    if (!box || !el) return false;
+    let desired = Number(box.scrollTop || 0);
+    try {
+      const boxRect = box.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const centerOffset = Math.max(0, (Number(box.clientHeight || 0) - Number(elRect.height || 0)) / 2);
+      desired = desired + (elRect.top - boxRect.top) - centerOffset;
+    } catch (_) {
+      desired = Number(box.scrollTop || 0);
+    }
+    setScrollTopPreserved(box, desired, {
+      allowAwayFromBottom: true,
+      reason: options.reason || "reply-jump-center",
+      suppressRenderMs: Number(options.suppressRenderMs || 900),
+      suppressUpdateMs: Number(options.suppressUpdateMs || 900)
+    });
+    if (String(options.reason || "").indexOf("reply-jump") === 0) {
+      state.replyJumpLastCenteredScrollTop = desired;
+    }
+    if (options.highlight !== false) highlightMessageElement(el);
+    refreshScrollAffordances(box);
+    return true;
+  }
+
+  function scrollToMessageId(id, options = {}) {
+    id = String(id || "");
+    if (!id) return false;
+    const box = document.getElementById("bmwc-messages");
+    if (!box) return false;
+    const selector = `.bmwc-msg[data-id="${cssEscape(id)}"]`;
+    const lockMs = Math.max(1000, Number(options.lockMs || 1800));
+    state.replyJumpTargetId = id;
+
+    let el = box.querySelector(selector);
+    if (el) {
+      const generation = beginReplyJumpLock(lockMs);
+      centerMessageElementInBox(box, el, {reason: "reply-jump-visible", suppressRenderMs: lockMs, suppressUpdateMs: lockMs});
+      stabilizeReplyJumpTarget(id, generation, {lockMs});
+      return true;
+    }
+
+    const idx = state.messages.findIndex(m => m && String(m.id || "") === id);
+    if (idx < 0) return false;
+
+    const generation = beginReplyJumpLock(lockMs);
+    renderReplyJumpFocusedRange(id, generation, {reason: "reply-jump-virtual"});
+
+    const finish = () => {
+      if (state.replyJumpGeneration !== generation) return;
+      const currentBox = document.getElementById("bmwc-messages");
+      const later = currentBox ? currentBox.querySelector(selector) : null;
+      if (later) centerMessageElementInBox(currentBox, later, {reason: "reply-jump-virtual", suppressRenderMs: lockMs, suppressUpdateMs: lockMs});
+      else renderReplyJumpFocusedRange(id, generation, {reason: "reply-jump-virtual-retry"});
+    };
+    requestAnimationFrame(finish);
+    setTimeout(finish, 80);
+    setTimeout(finish, 220);
+    stabilizeReplyJumpTarget(id, generation, {lockMs});
+    return true;
+  }
+
+  async function jumpToReplyTarget(id) {
+    id = String(id || "");
+    if (!id) return;
+    state.replyJumpTargetId = id;
+    if (scrollToMessageId(id, {lockMs: 2200})) return;
+
+    const generation = beginReplyJumpLock(3200);
+    try {
+      const data = await api(`/history/around?id=${encodeURIComponent(id)}&before=40&after=40`, {timeoutMs: 15000});
+      if (state.replyJumpGeneration !== generation) return;
+      if (!data || !data.ok || !Array.isArray(data.messages) || !data.messages.length) {
+        alert(t("reply.notFound", "The referenced message could not be found."));
+        return;
+      }
+      extendReplyJumpLock(2600);
+      state.messages = [];
+      state.nextLocalMessageId = 1;
+      data.messages.forEach(msg => addMessage(msg, {skipRender: true, suppressAutoFollow: true}));
+      state.historyHasMore = !!data.hasBefore;
+      state.historyHasAfter = !!data.hasAfter;
+      state.historyOldestId = data.oldestId || (state.messages[0] && state.messages[0].id) || "";
+      state.historyNewestId = data.newestId || (state.messages[state.messages.length - 1] && state.messages[state.messages.length - 1].id) || "";
+      state.autoFollowLatest = false;
+      state.explicitLatestFollowUntil = 0;
+      state.forceLatestJumpUntil = 0;
+
+      if (!renderReplyJumpFocusedRange(id, generation, {reason: "reply-jump-around"})) {
+        alert(t("reply.notFound", "The referenced message could not be found."));
+        return;
+      }
+      stabilizeReplyJumpTarget(id, generation, {lockMs: 1000, delays: [0, 50, 120, 260, 520]});
+    } catch (e) {
+      if (state.replyJumpGeneration === generation) alert(t("reply.notFound", "The referenced message could not be found."));
+    }
   }
 
   function displaySender(msg) {
@@ -1651,6 +2853,8 @@
 
     const root = document.createElement("div");
     root.id = "bmwc-root";
+    root.style.setProperty("--bmwc-emoji-picker-size", emojiPickerSizePx() + "px");
+    root.style.setProperty("--bmwc-emoji-panel-min-height", emojiPanelMinHeightPx() + "px");
     if (state.isPip) {
       document.documentElement.classList.add("bmwc-pip-mode");
       document.body.classList.add("bmwc-pip-mode");
@@ -1685,6 +2889,7 @@
           <span class="bmwc-jump-latest-icon">↓</span>
           <span id="bmwc-jump-latest-label">${t("button.jumpLatest", "Jump to latest")}</span>
         </button>
+        <div class="bmwc-emoji-resize-handle bmwc-hidden" id="bmwc-emoji-resize" title="${t("button.resizeEmojiPanel", "Drag to resize emoji picker")}" aria-label="${t("button.resizeEmojiPanel", "Drag to resize emoji picker")}"></div>
         <div class="bmwc-form">
           <div class="bmwc-row" id="bmwc-guest-row">
             <input class="bmwc-input" id="bmwc-guest-name" maxlength="16" placeholder="${t("placeholder.guestName", "Guest name")}">
@@ -1693,14 +2898,23 @@
             <span id="bmwc-captcha-q"></span>
             <input class="bmwc-input" id="bmwc-captcha-a" maxlength="6" placeholder="${t("placeholder.captchaAnswer", "answer")}">
           </div>
+          <div class="bmwc-reply-compose bmwc-hidden" id="bmwc-reply-compose">
+            <button type="button" class="bmwc-reply-compose-main" id="bmwc-reply-compose-main" title="${t("reply.jump", "Jump to replied message")}">
+              <span class="bmwc-reply-compose-label" id="bmwc-reply-compose-label"></span>
+              <span class="bmwc-reply-compose-preview" id="bmwc-reply-compose-preview"></span>
+            </button>
+            <button type="button" class="bmwc-mini-action bmwc-reply-cancel" id="bmwc-reply-cancel" title="${t("button.cancel", "Cancel")}">×</button>
+          </div>
           <div class="bmwc-row">
             <input class="bmwc-input" id="bmwc-message" maxlength="2048" placeholder="${t("placeholder.message", "message")}">
             <button class="bmwc-button bmwc-command bmwc-hidden" id="bmwc-command" title="${t("button.commands", "Commands")}">/</button>
+            <button class="bmwc-button bmwc-emoji-button bmwc-hidden" id="bmwc-emoji" title="${t("button.emoji", "Emoji")}">☺</button>
             <button class="bmwc-button bmwc-upload bmwc-hidden" id="bmwc-upload" title="${t("button.upload", "Attach")}">&#128206;</button>
             <button class="bmwc-button bmwc-send" id="bmwc-send">${t("button.send", "Send")}</button>
             <input type="file" id="bmwc-file" class="bmwc-file-input" multiple hidden style="display:none !important;">
           </div>
           <div class="bmwc-command-panel bmwc-hidden" id="bmwc-command-panel"></div>
+          <div class="bmwc-emoji-panel bmwc-hidden" id="bmwc-emoji-panel" aria-live="polite"></div>
           <div class="bmwc-upload-progress bmwc-hidden" id="bmwc-upload-progress" aria-live="polite">
             <div class="bmwc-upload-progress-head">
               <span id="bmwc-upload-progress-text">${t("upload.ready", "Ready")}</span>
@@ -1737,15 +2951,13 @@
     });
     const jumpLatest = document.getElementById("bmwc-jump-latest");
     if (jumpLatest) jumpLatest.addEventListener("click", () => {
-      const box = document.getElementById("bmwc-messages");
-      state.preventBottomStickUntil = 0;
-      state.autoFollowLatest = true;
-      renderVirtualMessages({stickToBottom: true, preserveScroll: false, allowDuringMedia: true, allowDuringVisibleMedia: true, deferDuringScroll: false, deferDuringMediaLayout: false, allowBottomStickDuringLock: true});
-      if (box) stickToBottomStable(box);
-      refreshScrollAffordances(box);
+      forceLatestChatView("jump-latest");
     });
     const commandBtn = document.getElementById("bmwc-command");
     if (commandBtn) commandBtn.addEventListener("click", () => openCommandModal());
+    const emojiBtn = document.getElementById("bmwc-emoji");
+    if (emojiBtn) emojiBtn.addEventListener("click", () => toggleEmojiPanel());
+    installEmojiPanelResize(root);
     document.getElementById("bmwc-upload").addEventListener("click", () => {
       const input = document.getElementById("bmwc-file");
       if (input) input.click();
@@ -1755,6 +2967,13 @@
     const uploadCancelBtn = document.getElementById("bmwc-upload-cancel");
     if (uploadCancelBtn) uploadCancelBtn.addEventListener("click", cancelCurrentUpload);
     document.getElementById("bmwc-message").addEventListener("paste", handlePasteUpload);
+    const replyCancel = document.getElementById("bmwc-reply-cancel");
+    if (replyCancel) replyCancel.addEventListener("click", clearReplyTarget);
+    const replyComposeMain = document.getElementById("bmwc-reply-compose-main");
+    if (replyComposeMain) replyComposeMain.addEventListener("click", () => {
+      if (state.replyTarget && state.replyTarget.id) jumpToReplyTarget(state.replyTarget.id);
+    });
+    renderReplyCompose();
     const messageInput = document.getElementById("bmwc-message");
     messageInput.addEventListener("keydown", e => {
       if (e.key === "Enter") {
@@ -1762,7 +2981,7 @@
         if (e.repeat || state.sendInFlight) return;
         sendMessage();
       }
-      if (e.key === "Escape") hideCommandPanel();
+      if (e.key === "Escape") { hideCommandPanel(); hideEmojiPanel(); if (state.replyTarget) clearReplyTarget(); }
     });
     messageInput.addEventListener("input", updateCommandPanel);
     messageInput.addEventListener("focus", updateCommandPanel);
@@ -1828,6 +3047,7 @@
     if (messages) messages.classList.toggle("bmwc-hidden", state.minimized);
     const form = document.querySelector(".bmwc-form");
     if (form) form.classList.toggle("bmwc-hidden", state.minimized);
+    updateEmojiResizeHandleVisibility();
     const minBtn = document.getElementById("bmwc-min");
     if (minBtn) minBtn.textContent = state.minimized ? "+" : "-";
     const title = document.querySelector(".bmwc-title");
@@ -1869,6 +3089,7 @@
       if (guestRow) guestRow.classList.add("bmwc-hidden");
       if (captchaRow) captchaRow.classList.remove("bmwc-show");
       state.captcha = null;
+      updateEmojiResizeHandleVisibility();
       updateFrameSize();
       return;
     }
@@ -1877,6 +3098,7 @@
       if (box) box.classList.remove("bmwc-hidden");
       if (form) form.classList.remove("bmwc-hidden");
     }
+    updateEmojiResizeHandleVisibility();
   }
 
   function roleLabel(role) {
@@ -1897,6 +3119,8 @@
     if (sendBtn) sendBtn.textContent = t("button.send", "Send");
     const uploadBtn = document.getElementById("bmwc-upload");
     if (uploadBtn) uploadBtn.title = t("button.upload", "Attach");
+    const emojiBtn = document.getElementById("bmwc-emoji");
+    if (emojiBtn) emojiBtn.title = t("button.emoji", "Emoji");
     const commandBtn = document.getElementById("bmwc-command");
     if (commandBtn) commandBtn.title = t("button.commands", "Commands");
     const jumpBtn = document.getElementById("bmwc-jump-latest");
@@ -1929,6 +3153,7 @@
     const guestRow = document.getElementById("bmwc-guest-row");
     const adminBtn = document.getElementById("bmwc-admin");
     const uploadBtn = document.getElementById("bmwc-upload");
+    const emojiBtn = document.getElementById("bmwc-emoji");
     const commandBtn = document.getElementById("bmwc-command");
     if (!btn || !status) return;
     status.classList.remove("bmwc-status-role-ADMIN", "bmwc-status-role-MODERATOR", "bmwc-status-role-USER", "bmwc-status-role-GUEST");
@@ -1939,6 +3164,7 @@
     const canUseAdminPanel = state.token && adminPanelAllowed && (state.role === "ADMIN" || canManageMutes);
     if (adminBtn) adminBtn.classList.toggle("bmwc-hidden", !canUseAdminPanel);
     if (uploadBtn) uploadBtn.classList.toggle("bmwc-hidden", !canUpload());
+    updateEmojiButton();
     updateCommandButton();
     updatePipButton();
 
@@ -1991,7 +3217,8 @@
       state.historyViewportFillTimer = null;
       const box = document.getElementById("bmwc-messages");
       if (!box || state.minimized || guestChatHidden()) return;
-      if (!state.historyHasMore || state.historyLoading || !state.autoFollowLatest || !state.historyOldestId) return;
+      if (!state.historyHasMore || state.historyLoading || !state.historyOldestId) return;
+      if (!bottomFollowAllowed(box)) return;
       if (isScrollInteractionActive()) {
         scheduleHistoryViewportFill(reason || "scroll-idle");
         return;
@@ -2036,7 +3263,17 @@
     } catch (_) {}
   }
 
-  function ensureHistoryEndNotice(box) {
+  function setHistoryNoticeText(notice, key = "history.end", fallback = "No more messages to display.") {
+    state.historyEndNoticeKey = key || "history.end";
+    state.historyEndNoticeFallback = fallback || "";
+    if (notice) notice.textContent = t(state.historyEndNoticeKey, state.historyEndNoticeFallback);
+  }
+
+  function resetHistoryNoticeText(notice = null) {
+    setHistoryNoticeText(notice || document.getElementById("bmwc-history-end"), "history.end", "No more messages to display.");
+  }
+
+  function ensureHistoryEndNotice(box, key = null, fallback = null) {
     if (!box) box = document.getElementById("bmwc-messages");
     const root = document.getElementById("bmwc-root");
     const panel = root && root.querySelector ? root.querySelector(".bmwc-panel") : null;
@@ -2047,7 +3284,11 @@
       notice.className = "bmwc-history-end bmwc-hidden";
       notice.id = "bmwc-history-end";
     }
-    notice.textContent = t("history.end", "No more messages to display.");
+    if (key) {
+      setHistoryNoticeText(notice, key, fallback || key);
+    } else {
+      setHistoryNoticeText(notice, state.historyEndNoticeKey || "history.end", state.historyEndNoticeFallback || "No more messages to display.");
+    }
 
     // Keep this as a panel-level overlay, not as a child of the virtualized
     // message list.  When the notice lived inside .bmwc-messages it competed
@@ -2086,11 +3327,38 @@
     if (clearPending) state.historyEndNoticePendingUserTopUntil = 0;
     const notice = document.getElementById("bmwc-history-end");
     if (notice) notice.classList.add("bmwc-hidden");
+    resetHistoryNoticeText(notice);
+  }
+
+  function showHistoryStatusNoticeToast(box, key, fallback, durationMs = 3500) {
+    if (!box) box = document.getElementById("bmwc-messages");
+    if (!box || state.minimized || guestChatHidden()) return;
+    if (Number(box.scrollTop || 0) > historyPreloadThresholdPx(box)) return;
+
+    const notice = ensureHistoryEndNotice(box, key, fallback);
+    if (!notice) return;
+    const now = Date.now();
+    if (state.historyEndNoticeTimer) clearTimeout(state.historyEndNoticeTimer);
+    state.historyEndNoticeTimer = null;
+    state.historyEndNoticeVisible = true;
+    state.historyEndNoticeVisibleUntil = now + Math.max(800, Math.min(10000, Number(durationMs) || 3500));
+    notice.classList.remove("bmwc-hidden");
+
+    state.historyEndNoticeTimer = setTimeout(() => {
+      if (Date.now() >= Number(state.historyEndNoticeVisibleUntil || 0)) {
+        hideHistoryEndNoticeToast(false);
+      }
+    }, Math.max(850, Math.min(10050, Number(durationMs) || 3500)) + 50);
+  }
+
+  function hideHistoryStatusNoticeIfActive() {
+    const key = String(state.historyEndNoticeKey || "history.end");
+    if (key !== "history.end") hideHistoryEndNoticeToast(false);
   }
 
   function showHistoryEndNoticeToast(box, reason = "") {
     if (!box) box = document.getElementById("bmwc-messages");
-    const notice = ensureHistoryEndNotice(box);
+    const notice = ensureHistoryEndNotice(box, "history.end", "No more messages to display.");
     if (!notice || !box) return;
     if (state.minimized || guestChatHidden() || !historyEndEligible() || !historyEndNoticeAtTop(box)) return;
 
@@ -2116,6 +3384,41 @@
         hideHistoryEndNoticeToast(false);
       }
     }, 2550);
+  }
+
+  function clearHistorySlowNoticeTimer() {
+    if (state.historySlowNoticeTimer) {
+      clearTimeout(state.historySlowNoticeTimer);
+      state.historySlowNoticeTimer = null;
+    }
+  }
+
+  function scheduleHistorySlowNotice(box, loadSeq, older) {
+    clearHistorySlowNoticeTimer();
+    if (!older) return;
+    state.historySlowNoticeTimer = setTimeout(() => {
+      state.historySlowNoticeTimer = null;
+      if (!state.historyLoading || loadSeq !== state.historyLoadSeq) return;
+      const currentBox = document.getElementById("bmwc-messages") || box;
+      showHistoryStatusNoticeToast(currentBox, "history.loading", "Loading history.\nPlease wait.", 3500);
+    }, 1400);
+  }
+
+  function historyFailureNoticeKey(error) {
+    if (typeof navigator !== "undefined" && navigator && navigator.onLine === false) return "history.offline";
+    if (error && (error.bmwcTimeout || error.name === "AbortError")) return "history.timeout";
+    return "history.failed";
+  }
+
+  function historyFailureNoticeFallback(key) {
+    if (key === "history.offline") return "Offline.\nCheck connection.";
+    if (key === "history.timeout") return "Slow response.\nTry again shortly.";
+    return "Load failed.\nTry again shortly.";
+  }
+
+  function showHistoryFailureNotice(box, error) {
+    const key = historyFailureNoticeKey(error);
+    showHistoryStatusNoticeToast(box, key, historyFailureNoticeFallback(key), 4500);
   }
 
   function recentHistoryEndUserScrollInput(now = Date.now()) {
@@ -2221,7 +3524,8 @@
     updateScrollAffordanceLayout(box);
     const root = document.getElementById("bmwc-root");
     const atBottom = isAutoFollowBottom(box);
-    const show = !!root && !state.minimized && !guestChatHidden() && state.messages.length > 0 && !atBottom;
+    const hasUnloadedNewer = !!state.historyHasAfter;
+    const show = !!root && !state.minimized && !guestChatHidden() && state.messages.length > 0 && (!atBottom || hasUnloadedNewer);
     button.classList.toggle("bmwc-hidden", !show);
   }
 
@@ -2284,6 +3588,10 @@
       state.pendingOlderHistoryLoad = false;
       loadHistory(true);
     }
+    if (state.pendingNewerHistoryLoad) {
+      state.pendingNewerHistoryLoad = false;
+      loadNewerHistory();
+    }
     if (state.pendingResumeRefreshReason) {
       const reason = state.pendingResumeRefreshReason;
       state.pendingResumeRefreshReason = "";
@@ -2299,6 +3607,7 @@
 
   function markDirectScrollInput() {
     state.lastDirectScrollInputAt = Date.now();
+    cancelReplyJumpForUserScroll("direct-scroll-input");
     markScrollInteraction();
   }
 
@@ -2315,6 +3624,36 @@
   function requestOlderHistoryAfterScrollIdle() {
     state.pendingOlderHistoryLoad = true;
     markScrollInteraction();
+  }
+
+  function requestNewerHistoryAfterScrollIdle() {
+    state.pendingNewerHistoryLoad = true;
+    markScrollInteraction();
+  }
+
+  function newerHistoryRequestCooldownMs() {
+    const n = Number(state.config && state.config.uiHistoryNewerRequestCooldownMs);
+    if (Number.isFinite(n) && n >= 120) return Math.max(120, Math.min(2500, Math.round(n)));
+    return Math.max(300, scrollInteractionIdleMs() * 2);
+  }
+
+  function requestNewerHistoryFromBottomInput(reason = "bottom-input") {
+    const box = document.getElementById("bmwc-messages");
+    if (!box || state.minimized || guestChatHidden()) return;
+    if (!state.historyHasAfter || !state.historyNewestId) return;
+    const threshold = historyPreloadThresholdPx(box);
+    if (bottomGapPx(box) > threshold) return;
+    if (state.historyLoading) {
+      requestNewerHistoryAfterScrollIdle();
+      return;
+    }
+    const now = Date.now();
+    if (now - Number(state.lastBottomNewerHistoryRequestAt || 0) < newerHistoryRequestCooldownMs()) {
+      requestNewerHistoryAfterScrollIdle();
+      return;
+    }
+    state.lastBottomNewerHistoryRequestAt = now;
+    loadNewerHistory({forceDuringScroll: true, reason});
   }
 
   function requestOlderHistoryFromTopInput(reason = "top-input") {
@@ -2474,6 +3813,33 @@
     return isNearBottom(box, autoFollowBottomThresholdPx(box));
   }
 
+  function markExplicitLatestFollow(reason = "", ms = 4500) {
+    const now = Date.now();
+    state.explicitLatestFollowUntil = Math.max(Number(state.explicitLatestFollowUntil || 0), now + Math.max(500, Number(ms) || 4500));
+    state.explicitLatestFollowReason = String(reason || "explicit");
+    state.preventBottomStickUntil = 0;
+    state.autoFollowLatest = true;
+  }
+
+  function hasExplicitLatestFollow() {
+    return Date.now() <= Number(state.explicitLatestFollowUntil || 0);
+  }
+
+  function bottomFollowAllowed(box, options = {}) {
+    if (!box) return false;
+    const explicit = !!options.latestJump ||
+      !!options.forceLatestFollow ||
+      !!options.forceStickToBottom ||
+      hasExplicitLatestFollow();
+    if (explicit) return true;
+    // If the current in-memory range is a middle slice loaded by reply jump,
+    // the physical bottom is only the bottom of that slice, not the real latest
+    // chat position. Do not treat it as auto-follow/latest until newer pages
+    // have been loaded or the latest button explicitly reloads the tail page.
+    if (state.historyHasAfter) return false;
+    return isAutoFollowBottom(box);
+  }
+
 
   function allowMediaLayoutAutoFollow(ms = 2500) {
     const now = Date.now();
@@ -2487,7 +3853,7 @@
     const threshold = autoFollowBottomThresholdPx(box);
     const remainingAfter = box.scrollHeight - box.scrollTop - box.clientHeight;
     const remainingBefore = Number(heightDelta) > 0 ? remainingAfter - Number(heightDelta) : remainingAfter;
-    return remainingBefore <= threshold;
+    return remainingBefore <= threshold || hasExplicitLatestFollow();
   }
 
   function cleanupMediaKeepAlive() {
@@ -2608,16 +3974,23 @@
     // difference while video metadata, image dimensions, or virtual spacers settle.
     // Writing scrollTop again for that tiny difference fires another scroll event,
     // which schedules another virtual render, which can look like bottom jitter.
-    const tolerance = Number(options.tolerancePx || (options.bottomStick ? 3 : 1));
+    // Use a much smaller tolerance than before. The old 1-3px tolerance hid
+    // harmless scroll writes, but it also allowed visible 1-2px twitching after
+    // new messages, virtual spacer recalculation, or anchor restoration.
+    // Browser scrollTop can be fractional, so keep a tiny epsilon only to avoid
+    // write/read loops caused by sub-pixel rounding.
+    const tolerance = Number.isFinite(Number(options.tolerancePx))
+      ? Math.max(0, Number(options.tolerancePx))
+      : (options.bottomStick ? 0.35 : 0.15);
     if (Math.abs(currentTop - requested) <= tolerance) {
       if (requestedGap <= threshold) state.autoFollowLatest = true;
       return;
     }
 
     state.suppressAutoFollowUpdate = true;
-    state.suppressScrollRenderUntil = Date.now() + Math.max(80, Number(options.suppressRenderMs || 140));
+    state.suppressScrollRenderUntil = Date.now() + Math.max(80, Number(options.suppressRenderMs || 160));
     box.scrollTop = requested;
-    setTimeout(() => { state.suppressAutoFollowUpdate = false; }, Math.max(40, Number(options.suppressUpdateMs || 100)));
+    setTimeout(() => { state.suppressAutoFollowUpdate = false; }, Math.max(40, Number(options.suppressUpdateMs || 120)));
   }
 
   function bottomGapPx(box) {
@@ -2629,38 +4002,63 @@
     if (!box) return;
     state.autoFollowLatest = true;
 
-    const setBottom = (phase, tolerance = 3) => {
+    const setBottom = (phase, tolerance = 0.35) => {
       if (!box) return false;
       const maxTop = Math.max(0, Number(box.scrollHeight || 0) - Number(box.clientHeight || 0));
       const gap = bottomGapPx(box);
       if (gap <= tolerance && Math.abs(Number(box.scrollTop || 0) - maxTop) <= tolerance) return false;
-      setScrollTopPreserved(box, maxTop, {bottomStick: true, reason: "stick-bottom-" + phase, tolerancePx: tolerance});
+      setScrollTopPreserved(box, maxTop, {bottomStick: true, reason: "stick-bottom-" + phase, tolerancePx: tolerance, suppressRenderMs: 180, suppressUpdateMs: 140});
       return true;
     };
 
-    setBottom("now", 3);
-    requestAnimationFrame(() => {
-      if (!box || !state.autoFollowLatest) return;
-      // Only do the second correction if layout changes opened a visible gap.
-      // This avoids a scroll -> render -> scroll loop while already at maxTop.
-      if (bottomGapPx(box) > 8) setBottom("raf", 3);
-    });
+    // Do only one synchronous bottom write. Delayed rAF/setTimeout corrections
+    // can look like a visible 1-2px second movement after new messages or the
+    // latest-jump button. If later media changes create a small gap, leave it
+    // alone until the user scrolls or a real latest render happens again.
+    setBottom("now", 0.35);
   }
 
-  function forceLatestChatView(reason = "") {
+  async function forceLatestChatView(reason = "") {
     const box = document.getElementById("bmwc-messages");
+    const now = Date.now();
+    markExplicitLatestFollow(reason || "latest", 4500);
+    state.preventBottomStickUntil = 0;
+    state.suppressScrollRenderUntil = now + 220;
+    state.forceLatestJumpUntil = now + 900;
     state.autoFollowLatest = true;
     allowMediaLayoutAutoFollow(4000);
     state.pendingScrollRenderOptions = null;
+    state.pendingNewerHistoryLoad = false;
     state.pendingMediaRender = false;
+    state.virtualPendingRenderOptions = null;
+
+    const options = {
+      stickToBottom: true,
+      preserveScroll: false,
+      preserveVisualAnchor: false,
+      latestJump: true,
+      forceLatestFollow: true,
+      ignoreVisibleRangeProtection: true,
+      allowDuringMedia: true,
+      allowDuringVisibleMedia: true,
+      allowDuringMediaLayout: true,
+      deferDuringScroll: false,
+      deferDuringMediaLayout: false,
+      allowBottomStickDuringLock: true
+    };
 
     if (box) {
-      renderVirtualMessages({stickToBottom: true, preserveScroll: false, deferDuringScroll: false, allowDuringMedia: true, allowDuringVisibleMedia: true});
+      renderVirtualMessages(options);
+      // Latest button is an explicit jump. Render the current tail immediately,
+      // then reload the real latest history page. This matters after reply-jump,
+      // where state.messages may be a middle slice with unloaded newer records.
       stickToBottomStable(box);
-      setTimeout(() => {
-        if (state.autoFollowLatest) stickToBottomStable(box);
-      }, 80);
+      refreshScrollAffordances(box);
+    } else {
+      state.virtualPendingRenderOptions = options;
     }
+
+    await loadHistory(false, {forceLatest: true, forceDuringScroll: true});
   }
 
   function assignMessageKey(msg) {
@@ -2829,19 +4227,35 @@
     const actions = messageActionAvailability(msg);
     const canDelete = actions.canDelete;
     const canPin = actions.canPin;
-    const miniActionsHtml = (canPin || canDelete)
-      ? `<span class="bmwc-mini-actions">${canPin ? `<button class="bmwc-mini-action" data-pin="${esc(msg.id)}">${t("button.pin", "pin")}</button>` : ""}${canDelete ? `<button class="bmwc-mini-action" data-delete="${esc(msg.id)}">${t("button.delete", "delete")}</button>` : ""}</span>`
+    const canReply = actions.canReply;
+    const miniActionsHtml = (canReply || canPin || canDelete)
+      ? `<span class="bmwc-mini-actions">${canReply ? `<button class="bmwc-mini-action bmwc-reply-action" data-reply="${esc(msg.id)}">${t("button.reply", "reply")}</button>` : ""}${canPin ? `<button class="bmwc-mini-action" data-pin="${esc(msg.id)}">${t("button.pin", "pin")}</button>` : ""}${canDelete ? `<button class="bmwc-mini-action" data-delete="${esc(msg.id)}">${t("button.delete", "delete")}</button>` : ""}</span>`
       : "";
-    el.classList.toggle("bmwc-has-mini-actions", !!(canPin || canDelete));
+    el.classList.toggle("bmwc-has-mini-actions", !!(canReply || canPin || canDelete));
     el.innerHTML = `
       <div class="bmwc-meta">
         <span class="bmwc-sender${originalSender ? " bmwc-sender-has-real" : ""}"${senderAttrs}>${originalSender ? senderNameHtml(shownSender, originalSender, msg.source) : minecraftNameHtml(renderedSender, shouldRenderMinecraftNameColors() && sourceMayRenderMinecraftNameColors(msg.source))}</span><span class="bmwc-meta-sep" aria-hidden="true">·</span><span class="bmwc-source-label">${esc(displaySource(msg))}</span><span class="bmwc-meta-sep" aria-hidden="true">·</span><span class="bmwc-time-actions"><span class="bmwc-time" data-time="${esc(msg.time || "")}" title="${esc(timeToggleTitle(msg.time))}" role="button" tabindex="0">${esc(time)}</span>${miniActionsHtml}</span>
       </div>
+      ${replyReferenceHtml(msg)}
       <div class="bmwc-text">${messageTextHtml(msg)}</div>
-      ${imagePreviews(plainDisplayMessageText(msg), key)}
+      ${safeImagePreviews(plainDisplayMessageText(msg), key)}
     `;
     installSenderIdentityToggle(el);
     installTimeToggle(el);
+    el.querySelectorAll("[data-reply]").forEach(btn => {
+      btn.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        startReplyToMessage(messageById(btn.dataset.reply || "") || msg);
+      });
+    });
+    el.querySelectorAll("[data-reply-jump]").forEach(btn => {
+      btn.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        jumpToReplyTarget(btn.dataset.replyJump || "");
+      });
+    });
     el.querySelectorAll(".bmwc-youtube-card").forEach(btn => {
       btn.addEventListener("click", () => {
         const embed = btn.dataset.youtubeEmbed || "";
@@ -2851,10 +4265,11 @@
           state.youtubeOpen.add(key);
           if (!state.config || state.config.youtubeRememberExpanded !== false) state.youtubeExpanded.add(key);
         }
+        const isShorts = btn.dataset.youtubeShorts === "1";
         const wrap = document.createElement("div");
-        wrap.className = "bmwc-youtube-wrap";
+        wrap.className = isShorts ? "bmwc-youtube-wrap bmwc-youtube-shorts-wrap" : "bmwc-youtube-wrap";
         if (key) wrap.setAttribute("data-youtube-key", key);
-        wrap.style.cssText = "position:relative;width:100%;aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:#000;margin-top:6px;";
+        wrap.style.cssText = youtubeShellStyle(isShorts, "");
         const safeEmbed = safeYouTubeEmbedUrl(embed);
         if (!safeEmbed) return;
         const iframe = document.createElement("iframe");
@@ -2863,11 +4278,30 @@
         iframe.src = safeEmbed;
         iframe.title = t("media.youtubeTitle", "YouTube video");
         iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+        iframe.referrerPolicy = "strict-origin-when-cross-origin";
         iframe.allowFullscreen = true;
         wrap.appendChild(iframe);
         btn.replaceWith(wrap);
       }, {once: true});
     });
+    el.querySelectorAll(".bmwc-social-card").forEach(card => {
+      const load = card.querySelector(".bmwc-media-load");
+      if (!load) return;
+      load.addEventListener("click", () => {
+        const kind = card.dataset.socialKind || "";
+        const src = card.dataset.socialSrc || "";
+        const key = card.dataset.previewKey || previewKey(kind, src);
+        if (key) state.mediaOpen.add(key);
+        const html = socialEmbedHtml({type: kind, href: src, tiktokId: kind === "tiktok" ? (card.dataset.tiktokId || "") : "", previewKey: key}, "");
+        const wrap = document.createElement("div");
+        wrap.innerHTML = html;
+        const next = wrap.firstElementChild;
+        if (!next) return;
+        card.replaceWith(next);
+        if (kind === "x") loadXWidgets(next);
+      }, {once: true});
+    });
+    hydrateSocialEmbeds(el);
     el.querySelectorAll(".bmwc-media-card").forEach(card => {
       const load = card.querySelector(".bmwc-media-load");
       if (!load) return;
@@ -2963,7 +4397,9 @@
   function messageActionAvailability(msg) {
     const moderationEnabled = !state.config || state.config.moderationEnabled !== false;
     const canModerate = state.token && moderationEnabled && (state.role === "ADMIN" || state.role === "MODERATOR");
+    const canReply = !!(msg && msg.id && !msg.hidden);
     return {
+      canReply,
       canDelete: state.moderationActionsVisible && canModerate && msg && msg.id && !msg.hidden && (state.role === "ADMIN" || !state.config || state.config.allowModeratorMessageDelete !== false),
       canPin: state.moderationActionsVisible && state.token && (state.role === "ADMIN" || state.role === "MODERATOR") && state.pinsEnabled !== false && state.pinsCanPin !== false && msg && msg.id && !msg.hidden && !isMessagePinned(msg.id)
     };
@@ -2977,7 +4413,7 @@
     meta.querySelectorAll(":scope > .bmwc-mini-actions, :scope > .bmwc-mini-action[data-pin], :scope > .bmwc-mini-action[data-delete], :scope .bmwc-time-actions > .bmwc-mini-actions").forEach(btn => btn.remove());
 
     const actions = messageActionAvailability(msg);
-    const hasActions = !!(actions.canPin || actions.canDelete);
+    const hasActions = !!(actions.canReply || actions.canPin || actions.canDelete);
     el.classList.toggle("bmwc-has-mini-actions", hasActions);
     if (!hasActions) return;
 
@@ -2996,6 +4432,20 @@
 
     const wrap = document.createElement("span");
     wrap.className = "bmwc-mini-actions";
+
+    if (actions.canReply) {
+      const reply = document.createElement("button");
+      reply.className = "bmwc-mini-action bmwc-reply-action";
+      reply.type = "button";
+      reply.setAttribute("data-reply", String(msg.id));
+      reply.textContent = t("button.reply", "reply");
+      reply.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        startReplyToMessage(messageById(String(msg.id)) || msg);
+      });
+      wrap.appendChild(reply);
+    }
 
     if (actions.canPin) {
       const pin = document.createElement("button");
@@ -3075,7 +4525,7 @@
     });
     applyTimeDisplayMode();
     if (wasNearBottom) stickToBottomStable(box);
-    else if (anchor) restoreScrollAnchor(box, anchor);
+    else if (anchor) restoreScrollAnchor(box, anchor, {thresholdPx: 2.5, reason: "maintenance-anchor-restore"});
   }
 
   function syncTransientYoutubeOpen(box) {
@@ -3291,7 +4741,7 @@
     return null;
   }
 
-  function restoreScrollAnchor(box, anchor) {
+  function restoreScrollAnchor(box, anchor, options = {}) {
     if (!box || !anchor || !anchor.key) return false;
     const el = box.querySelector(`:scope > .bmwc-msg[data-virtual-key="${CSS.escape(anchor.key)}"]`);
     if (!el) return false;
@@ -3299,8 +4749,53 @@
     const rect = el.getBoundingClientRect();
     const desiredTop = viewport.top + Number(anchor.offset || 0);
     const delta = rect.top - desiredTop;
-    if (Math.abs(delta) > 0.5) setScrollTopPreserved(box, box.scrollTop + delta, {allowAwayFromBottom: true, reason: "anchor-restore"});
+    // Avoid visible micro-corrections after a jump/render. Corrections smaller
+    // than this are usually fractional spacer/layout settling and look worse
+    // when written back as a second 1-2px scroll movement. Older-history prepends
+    // pass a smaller threshold explicitly because that path needs exact anchoring.
+    const threshold = Number.isFinite(Number(options.thresholdPx)) ? Math.max(0, Number(options.thresholdPx)) : 1.75;
+    if (Math.abs(delta) > threshold) {
+      setScrollTopPreserved(box, box.scrollTop + delta, {
+        allowAwayFromBottom: true,
+        reason: options.reason || "anchor-restore",
+        tolerancePx: Math.min(0.75, Math.max(0.15, threshold / 3))
+      });
+    }
     return true;
+  }
+
+
+  function scheduleViewportMaintenance(reason = "", delay = 900) {
+    // This is a soft, invisible housekeeping pass. It does not remove loaded
+    // message history; it only clears transient caches and re-commits the
+    // current virtual range when the user is idle. The goal is to avoid long
+    // sessions accumulating stale media/layout state while preserving the exact
+    // visible anchor.
+    clearTimeout(state.viewportMaintenanceTimer);
+    const wait = Math.max(400, Math.min(5000, Number(delay) || 900));
+    state.viewportMaintenanceDueAt = Date.now() + wait;
+    state.viewportMaintenanceTimer = setTimeout(() => runViewportMaintenance(reason), wait);
+  }
+
+  function runViewportMaintenance(reason = "") {
+    state.viewportMaintenanceTimer = null;
+    state.viewportMaintenanceDueAt = 0;
+    const box = document.getElementById("bmwc-messages");
+    if (!box || state.minimized || guestChatHidden()) return;
+    if (state.historyLoading || state.virtualRenderScheduled || isScrollInteractionActive() || isMediaLayoutQuietActive()) {
+      scheduleViewportMaintenance(reason || "busy", 1200);
+      return;
+    }
+
+    cleanupMediaKeepAlive();
+    try { state.mediaLayoutEventCache.clear(); } catch (_) {}
+
+    // Keep this pass visually silent. Earlier versions re-rendered the current
+    // virtual range and restored an anchor here, but that can still appear as a
+    // small late movement. Cache cleanup is safe and invisible; virtual range
+    // cleanup is left to normal scroll/history renders.
+    if (!virtualScrollEnabled() || state.messages.length === 0) return;
+    refreshScrollAffordances(box);
   }
 
   function preserveOlderHistoryViewportAfterRender(box, prevTop, prevHeight, anchor, label = "older-history") {
@@ -3312,7 +4807,7 @@
     const restore = () => {
       if (!box || !document.body.contains(box)) return;
       const {delta, expectedTop} = expectedFromCurrentHeight();
-      const restoredAnchor = anchor ? restoreScrollAnchor(box, anchor) : false;
+      const restoredAnchor = anchor ? restoreScrollAnchor(box, anchor, {thresholdPx: 0.5, reason: label + "-anchor"}) : false;
 
       // If older rows/spacers were inserted above the viewport, scrollTop must
       // be moved down by the height delta. Without this fallback, wheel-up at
@@ -3555,6 +5050,21 @@
   }
 
   function renderVirtualMessages(options = {}) {
+    if (Date.now() < Number(state.forceLatestJumpUntil || 0)) {
+      options = Object.assign({}, options, {
+        stickToBottom: true,
+        preserveScroll: false,
+        preserveVisualAnchor: false,
+        latestJump: true,
+        ignoreVisibleRangeProtection: true,
+        allowDuringMedia: true,
+        allowDuringVisibleMedia: true,
+        allowDuringMediaLayout: true,
+        deferDuringScroll: false,
+        deferDuringMediaLayout: false,
+        allowBottomStickDuringLock: true
+      });
+    }
     const mediaActive = isMediaPlaybackActive();
     if (mediaActive && options.allowDuringMedia !== true && !preservePlayingMediaEnabled()) {
       deferRenderBecauseMediaActive();
@@ -3568,12 +5078,18 @@
     }
     const keptActiveMedia = activeMediaMessageElements(box);
     const prevScrollTop = box.scrollTop;
-    const explicitlyStickBottom = !!options.stickToBottom;
     const bottomStickSuppressed = options.forcePreservePosition === true || options.suppressBottomStick === true || (Date.now() < Number(state.preventBottomStickUntil || 0) && options.allowBottomStickDuringLock !== true);
-    const actuallyNearBottom = bottomStickSuppressed ? false : isAutoFollowBottom(box);
+    const explicitLatestFollow = !bottomStickSuppressed && (
+      !!options.latestJump ||
+      !!options.forceLatestFollow ||
+      !!options.forceStickToBottom ||
+      hasExplicitLatestFollow()
+    );
+    const actuallyNearBottom = bottomStickSuppressed ? false : (!state.historyHasAfter && isAutoFollowBottom(box));
+    const explicitlyStickBottom = !!options.stickToBottom && (explicitLatestFollow || actuallyNearBottom);
     const mediaLayoutBottomFollow =
       !bottomStickSuppressed &&
-      state.autoFollowLatest &&
+      (explicitLatestFollow || actuallyNearBottom) &&
       Date.now() <= Number(state.autoFollowMediaLayoutUntil || 0) &&
       !isScrollInteractionActive() &&
       (Date.now() - Number(state.lastUserScrollAt || 0)) > Math.max(250, scrollInteractionIdleMs());
@@ -3581,6 +5097,8 @@
     const preserveBottomAfterRender = !options.anchor && shouldStickBottom;
     if (preserveBottomAfterRender) {
       state.autoFollowLatest = true;
+    } else if (!actuallyNearBottom && !explicitLatestFollow) {
+      state.autoFollowLatest = false;
     }
 
     // For normal non-bottom virtual renders, preserve the user's visual anchor
@@ -3627,6 +5145,13 @@
       end = count;
       const startOffset = Math.max(0, totalHeight - viewport - overscanPx);
       start = findIndexForOffset(startOffset);
+    } else if (Number.isFinite(Number(options.focusIndex))) {
+      const focusIndex = Math.max(0, Math.min(count - 1, Math.floor(Number(options.focusIndex))));
+      const focusCenter = estimatedHeightUntil(focusIndex) + Math.max(1, messageHeightAt(focusIndex)) / 2;
+      const startOffset = Math.max(0, focusCenter - viewport / 2 - overscanPx);
+      const endOffset = Math.min(totalHeight, focusCenter + viewport / 2 + overscanPx);
+      start = findIndexForOffset(startOffset);
+      end = findIndexForOffset(endOffset) + 1;
     } else {
       const startOffset = Math.max(0, box.scrollTop - overscanPx);
       const endOffset = Math.min(totalHeight, box.scrollTop + viewport + overscanPx);
@@ -3648,18 +5173,23 @@
     start = Math.max(0, Math.min(start, count));
     end = Math.max(start, Math.min(end, count));
 
+    const skipVisibleRangeProtection = !!options.ignoreVisibleRangeProtection || !!options.latestJump;
     const mediaProbeMargin = Math.max(240, Math.round(viewport * (isMediaCullingRelaxActive() ? 2.5 : 1.25)));
-    const mediaInfo = mediaNearbyVirtualRangeInfo(box, mediaProbeMargin);
+    const mediaInfo = skipVisibleRangeProtection
+      ? {hasMedia: false, hasLargeMedia: false, minIndex: Infinity, maxIndex: -1, maxMediaHeight: 0}
+      : mediaNearbyVirtualRangeInfo(box, mediaProbeMargin);
     const visibleProtectMargin = mediaInfo.hasMedia || isMediaCullingRelaxActive()
       ? Math.max(720, Math.round(viewport * 2.5))
       : Math.max(160, Math.min(720, Math.round(viewport * 0.75)));
-    const protectedVisibleIndices = visibleMessageIndices(box, visibleProtectMargin);
-    let expanded = expandVirtualRangeForVisibleMessages(start, end, protectedVisibleIndices, count, mediaInfo.hasMedia ? 8 : 3);
-    start = expanded.start;
-    end = expanded.end;
-    expanded = expandVirtualRangeForMediaStability(start, end, count, mediaInfo, protectedVisibleIndices, viewport);
-    start = expanded.start;
-    end = expanded.end;
+    const protectedVisibleIndices = skipVisibleRangeProtection ? new Set() : visibleMessageIndices(box, visibleProtectMargin);
+    if (!skipVisibleRangeProtection) {
+      let expanded = expandVirtualRangeForVisibleMessages(start, end, protectedVisibleIndices, count, mediaInfo.hasMedia ? 8 : 3);
+      start = expanded.start;
+      end = expanded.end;
+      expanded = expandVirtualRangeForMediaStability(start, end, count, mediaInfo, protectedVisibleIndices, viewport);
+      start = expanded.start;
+      end = expanded.end;
+    }
 
     if (options.blankRescue === true) {
       let center = findIndexForOffset(Math.max(0, Number(box.scrollTop || 0) + viewport / 2));
@@ -3741,9 +5271,9 @@
       // Bottom auto-follow wins over scroll-anchor restoration. This prevents
       // media-layout/virtual-scroll renders from pulling the latest chat upward.
       stickToBottomStable(box);
-    } else if (options.anchor && restoreScrollAnchor(box, options.anchor)) {
+    } else if (options.anchor && restoreScrollAnchor(box, options.anchor, {thresholdPx: Number.isFinite(Number(options.anchorThresholdPx)) ? Number(options.anchorThresholdPx) : 0.5, reason: "explicit-anchor-restore"})) {
       // Anchor restore keeps the user's current viewport stable after prepending older history.
-    } else if (visualAnchor && restoreScrollAnchor(box, visualAnchor)) {
+    } else if (visualAnchor && restoreScrollAnchor(box, visualAnchor, {thresholdPx: options.maintenanceRender ? 2.5 : 1.75, reason: options.maintenanceRender ? "maintenance-visual-anchor" : "visual-anchor-restore"})) {
       // Normal scroll/media renders should keep the visible message in place.
       // The scrollbar can resize, but already visible images/text should not
       // jump after scroll idle when spacers are recalculated.
@@ -3754,7 +5284,7 @@
     // been calculated. If the DOM still contains messages but the viewport is
     // effectively empty, immediately re-render a wider rescue range instead of
     // waiting for the user to scroll again.
-    maybeScheduleBlankRescueRender(box, options);
+    if (!options.latestJump) maybeScheduleBlankRescueRender(box, options);
     refreshScrollAffordances(box);
   }
 
@@ -3781,13 +5311,18 @@
   function addMessage(msg, options = {}) {
     const box = document.getElementById("bmwc-messages");
     if (!box || !msg) return;
-    // Auto-follow new incoming chat whenever the viewport is already near the
-    // bottom. Do not depend only on the cached state.autoFollowLatest flag,
-    // because it can become stale after virtual rendering or media layout changes.
-    const wasNearBottom = !options.prepend && (options.forceStickToBottom || isAutoFollowBottom(box));
-    if (wasNearBottom) {
+    // Auto-follow new incoming chat only when the viewport is physically near
+    // the bottom or a user action explicitly requested the latest view
+    // (send/upload/latest button). Do not trust a stale autoFollowLatest flag.
+    const explicitLatestFollow = !options.prepend && options.suppressAutoFollow !== true && (options.forceStickToBottom || hasExplicitLatestFollow());
+    const canUsePhysicalBottomForFollow = !options.prepend && options.suppressAutoFollow !== true && !state.historyHasAfter;
+    const wasNearBottom = canUsePhysicalBottomForFollow && isAutoFollowBottom(box);
+    const shouldFollowLatest = !options.prepend && (wasNearBottom || explicitLatestFollow);
+    if (shouldFollowLatest) {
       state.autoFollowLatest = true;
       if (!options.skipRender) allowMediaLayoutAutoFollow(4000);
+    } else if (!options.prepend) {
+      state.autoFollowLatest = false;
     }
     const key = assignMessageKey(msg);
     let idx = -1;
@@ -3802,9 +5337,10 @@
     }
     if (!options.skipRender) {
       const renderOptions = {
-        stickToBottom: !options.prepend && wasNearBottom,
-        preserveScroll: !wasNearBottom,
-        deferDuringScroll: !wasNearBottom,
+        stickToBottom: shouldFollowLatest,
+        preserveScroll: !shouldFollowLatest,
+        deferDuringScroll: !shouldFollowLatest,
+        forceLatestFollow: explicitLatestFollow,
         allowDuringMedia: true,
         allowDuringVisibleMedia: true,
         // New incoming messages must not be held behind the media-layout quiet
@@ -3812,9 +5348,10 @@
         // so delaying here can make SSE updates appear stuck.
         deferDuringMediaLayout: false
       };
-      if (!options.prepend && !wasNearBottom && isScrollInteractionActive()) deferRenderUntilScrollIdle(renderOptions);
+      if (!options.prepend && !shouldFollowLatest && isScrollInteractionActive()) deferRenderUntilScrollIdle(renderOptions);
       else renderVirtualMessages(renderOptions);
-      if (!options.prepend && wasNearBottom) stickToBottomStable(box);
+      if (!options.prepend && shouldFollowLatest) stickToBottomStable(box);
+      if (!options.prepend) scheduleViewportMaintenance("message", shouldFollowLatest ? 1400 : 2200);
     }
   }
 
@@ -3878,10 +5415,21 @@
     }
   }
 
+  function formatDecimalNumber(value, digits = 2) {
+    value = Number(value);
+    if (!Number.isFinite(value)) value = 0;
+    const fixed = value.toFixed(Math.max(0, Math.min(6, Math.floor(Number(digits) || 0))));
+    return fixed.replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+  }
+
+  function pxLabel(value) {
+    return formatDecimalNumber(value, 2) + "px";
+  }
+
   function fontPx(value, fallback) {
     value = Number(value);
     if (!Number.isFinite(value) || value <= 0) value = fallback;
-    return Math.round(Math.max(8, Math.min(32, value))) + "px";
+    return pxLabel(Math.max(8, Math.min(36, value)));
   }
 
   function savedUserFontSize() {
@@ -3905,7 +5453,7 @@
     value = Math.max(8, Math.min(36, value));
     state.liveUserFontSize = value;
     if (persist) {
-      localStorage.setItem("bmwc.userFontSize", String(Math.round(value)));
+      localStorage.setItem("bmwc.userFontSize", formatDecimalNumber(value, 2));
     }
     applyFontSizeConfig();
     applyMediaViewportConfig();
@@ -4250,11 +5798,11 @@
     return value;
   }
 
-  function clampShadowNumber(value, min, max, fallback) {
+  function clampShadowNumber(value, min, max, fallback, digits = 0) {
     value = Number(value);
     if (!Number.isFinite(value)) value = fallback;
     value = Math.max(min, Math.min(max, value));
-    return Math.round(value);
+    return Number(formatDecimalNumber(value, digits));
   }
 
   function hexFromRgb(r, g, b) {
@@ -4281,20 +5829,20 @@
       if (hex) parts.color = normalizeHexColor(hex[0]) || parts.color;
     }
     const numeric = value.replace(/rgba?\s*\([^)]*\)/ig, " ").replace(/#[0-9a-fA-F]{3,6}/g, " ").match(/-?\d+(?:\.\d+)?/g) || [];
-    if (numeric.length >= 1) parts.x = clampShadowNumber(numeric[0], -12, 12, parts.x);
-    if (numeric.length >= 2) parts.y = clampShadowNumber(numeric[1], -12, 12, parts.y);
-    if (numeric.length >= 3) parts.blur = clampShadowNumber(numeric[2], 0, 24, parts.blur);
+    if (numeric.length >= 1) parts.x = clampShadowNumber(numeric[0], -12, 12, parts.x, 2);
+    if (numeric.length >= 2) parts.y = clampShadowNumber(numeric[1], -12, 12, parts.y, 2);
+    if (numeric.length >= 3) parts.blur = clampShadowNumber(numeric[2], 0, 24, parts.blur, 2);
     return parts;
   }
 
   function buildTextShadowFromParts(parts) {
     parts = parts || {};
-    const x = clampShadowNumber(parts.x, -12, 12, 0);
-    const y = clampShadowNumber(parts.y, -12, 12, 1);
-    const blur = clampShadowNumber(parts.blur, 0, 24, 2);
+    const x = clampShadowNumber(parts.x, -12, 12, 0, 2);
+    const y = clampShadowNumber(parts.y, -12, 12, 1, 2);
+    const blur = clampShadowNumber(parts.blur, 0, 24, 2, 2);
     const opacity = clampShadowNumber(parts.opacity, 0, 100, 85) / 100;
     const rgb = rgbFromHex(parts.color || "#000000");
-    return `${x}px ${y}px ${blur}px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")})`;
+    return `${pxLabel(x)} ${pxLabel(y)} ${pxLabel(blur)} rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")})`;
   }
 
   function savedUserTextShadowMode() {
@@ -4556,6 +6104,13 @@
         else msg.removeAttribute("maxlength");
       }
       state.commandMaxLength = normalizeCommandMaxLength(data.commandsMaxLength, 0);
+      state.emojiEnabled = data.emojiEnabled !== false;
+      state.emojiShowButton = data.emojiShowButton !== false;
+      state.emojiRenderSizePx = Math.max(16, Math.min(1024, Number(data.emojiRenderSizePx) || 32));
+      state.emojiPickerSizePx = Math.max(24, Math.min(1024, Number(data.emojiPickerSizePx) || 44));
+      applyEmojiPickerSize();
+      state.emojiMessageTokenLimit = Math.max(0, Math.floor(Number(data.emojiMessageTokenLimit) || 0));
+      state.emojiTokenFormat = normalizeEmojiTokenFormat(data.emojiTokenFormat);
       const fileInput = document.getElementById("bmwc-file");
       if (fileInput) fileInput.accept = uploadAcceptList();
       updateLoginState();
@@ -4607,11 +6162,12 @@
     }
   }
 
-  function historyQuery(older) {
+  function historyQuery(mode) {
     const configured = Number(state.historyPageSize);
     const limit = Number.isFinite(configured) && configured >= 0 ? Math.floor(configured) : 20;
     let url = "/history?limit=" + encodeURIComponent(limit);
-    if (older && state.historyOldestId) url += "&before=" + encodeURIComponent(state.historyOldestId);
+    if ((mode === true || mode === "older") && state.historyOldestId) url += "&before=" + encodeURIComponent(state.historyOldestId);
+    if (mode === "newer" && state.historyNewestId) url += "&after=" + encodeURIComponent(state.historyNewestId);
     return url;
   }
 
@@ -4627,6 +6183,9 @@
       msg.role || "",
       msg.source || "",
       msg.message || msg.text || "",
+      msg.replyToId || "",
+      msg.replyToSender || "",
+      msg.replyToPreview || "",
       msg.hidden ? "1" : "0"
     ].map(v => String(v)).join("\u001f");
   }
@@ -4654,12 +6213,21 @@
           return !!(target && target.closest && target.closest(
             "[data-delete], [data-pin], [data-unpin], [data-open-pins], " +
             "a.bmwc-link, a.bmwc-image-link, button, input, textarea, select, " +
-            ".bmwc-media-card, .bmwc-youtube-card"
+            ".bmwc-media-card, .bmwc-youtube-card, .bmwc-social-card, .bmwc-social-embed"
           ));
         } catch (_) {
           return false;
         }
       };
+
+      const cancelReplyJumpOnUserScrollInput = () => {
+        cancelReplyJumpForUserScroll("user-scroll-input-capture");
+      };
+      box.addEventListener("wheel", cancelReplyJumpOnUserScrollInput, {capture: true, passive: true});
+      box.addEventListener("touchmove", cancelReplyJumpOnUserScrollInput, {capture: true, passive: true});
+      box.addEventListener("keydown", event => {
+        if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) cancelReplyJumpOnUserScrollInput();
+      }, {capture: true, passive: true});
 
       box.addEventListener("wheel", (ev) => {
         markDirectScrollInput();
@@ -4667,6 +6235,8 @@
         if (ev.deltaY < 0) {
           markHistoryEndTopUserIntent(box, "wheel-top");
           requestOlderHistoryFromTopInput("wheel");
+        } else if (ev.deltaY > 0) {
+          requestNewerHistoryFromBottomInput("wheel");
         }
         setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "wheel"), 0);
       }, {passive: true});
@@ -4675,6 +6245,7 @@
           markDirectScrollInput();
           rememberUserTopIntent(box);
           if (["ArrowUp", "PageUp", "Home"].includes(ev.key)) markHistoryEndTopUserIntent(box, "key-top");
+          if (["ArrowDown", "PageDown", "End", " "].includes(ev.key)) setTimeout(() => requestNewerHistoryFromBottomInput("key"), 0);
           setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "key"), 0);
         }
       }, {passive: true});
@@ -4691,6 +6262,8 @@
         if (historyTouchStartY != null && y != null && y - historyTouchStartY > 18) {
           markHistoryEndTopUserIntent(box, "touch-top");
           requestOlderHistoryFromTopInput("touch");
+        } else if (historyTouchStartY != null && y != null && historyTouchStartY - y > 18) {
+          requestNewerHistoryFromBottomInput("touch");
         }
       }, {passive: true});
       box.addEventListener("touchend", () => { historyTouchStartY = null; endTouchScrollInteraction(); }, {passive: true});
@@ -4739,7 +6312,7 @@
           if (target && target.closest && target.closest(
             "button, input, textarea, select, a, [data-delete], [data-pin], [data-unpin], [data-open-pins], " +
             ".bmwc-modal, .bmwc-modal-backdrop, .bmwc-login, .bmwc-admin-modal, .bmwc-preferences-modal, " +
-            ".bmwc-media-card, .bmwc-youtube-card"
+            ".bmwc-media-card, .bmwc-youtube-card, .bmwc-social-card, .bmwc-social-embed"
           )) markNonScrollUiAction();
         } catch (_) {}
       };
@@ -4753,9 +6326,18 @@
 
     box.addEventListener("scroll", () => {
       if (state.minimized || guestChatHidden()) return;
-      const programmaticScroll = Date.now() < Number(state.suppressScrollRenderUntil || 0);
-      const keepBottom = isAutoFollowBottom(box);
-      const shouldLoadOlder = box.scrollTop <= historyPreloadThresholdPx(box);
+      const now = Date.now();
+      const directScrollInputActive = now - Number(state.lastDirectScrollInputAt || 0) <= Math.max(220, scrollInteractionIdleMs() + 120);
+      let replyProgrammaticScroll = now < Number(state.replyJumpUntil || 0);
+      if (replyProgrammaticScroll && !directScrollInputActive && replyJumpLooksUserMoved(box, Number(state.replyJumpStartedAt || 0))) {
+        cancelReplyJumpForUserScroll("scroll-drift");
+        replyProgrammaticScroll = false;
+      }
+      const programmaticScroll = !directScrollInputActive && (now < Number(state.suppressScrollRenderUntil || 0) || replyProgrammaticScroll);
+      const keepBottom = isAutoFollowBottom(box) && !state.historyHasAfter;
+      const preloadThreshold = historyPreloadThresholdPx(box);
+      const shouldLoadOlder = box.scrollTop <= preloadThreshold;
+      const shouldLoadNewer = !!state.historyHasAfter && bottomGapPx(box) <= preloadThreshold;
       refreshScrollAffordances(box);
       if (!programmaticScroll) {
         if (shouldLoadOlder) markHistoryEndTopUserIntent(box, "scroll-top");
@@ -4773,7 +6355,7 @@
       // Programmatic bottom corrections can emit scroll events for several
       // frames. Do not turn those events into more virtual renders unless they
       // actually reached the top-history preload zone.
-      if (programmaticScroll && !shouldLoadOlder) return;
+      if (programmaticScroll && (replyProgrammaticScroll || !shouldLoadOlder)) return;
 
       const visibleMediaLocked = isActiveMediaVisible();
       // During a real scroll event, the physical position is the source of truth.
@@ -4803,11 +6385,17 @@
         // a fetch -> scrollTop correction -> heavy mutation loop.
         requestOlderHistoryFromTopInput("scroll-top");
       }
+      if (shouldLoadNewer) {
+        // Reply-jump can place the viewport in a middle slice. Reaching the
+        // bottom of that slice should page newer messages, not pretend that this
+        // is already the latest chat position.
+        requestNewerHistoryFromBottomInput("scroll-bottom");
+      }
     }, {passive: true});
 
     if (window.ResizeObserver && !state.virtualResizeObserver) {
       state.virtualResizeObserver = new ResizeObserver(() => {
-        const keepBottom = isAutoFollowBottom(box);
+        const keepBottom = isAutoFollowBottom(box) && !state.historyHasAfter;
         scheduleVirtualRender({preserveScroll: !keepBottom, stickToBottom: keepBottom, allowDuringMedia: true, allowDuringVisibleMedia: true, deferDuringScroll: false});
         if (keepBottom) {
           state.historyViewportFillAttempts = 0;
@@ -4832,36 +6420,52 @@
     const box = document.getElementById("bmwc-messages");
     const prevHeight = box ? box.scrollHeight : 0;
     const prevTop = box ? box.scrollTop : 0;
-    const wasNearBottom = box ? isAutoFollowBottom(box) : true;
+    const wasNearBottom = box ? (isAutoFollowBottom(box) && !state.historyHasAfter) : true;
+    const explicitLatestFollowBeforeHistory = box ? hasExplicitLatestFollow() : true;
 
     const historyLoadSeq = ++state.historyLoadSeq;
     state.historyLoading = true;
     state.historyLoadingSince = Date.now();
     if (older) markOlderHistorySettling();
     if (!older) state.historyViewportFillAttempts = 0;
+    scheduleHistorySlowNotice(box, historyLoadSeq, older);
+    let historyLoadSucceeded = false;
     try {
-      const data = await api(historyQuery(older));
+      const data = await api(historyQuery(older ? "older" : "latest"), {timeoutMs: older ? topHistoryBusyTimeoutMs() : 15000});
       if (historyLoadSeq !== state.historyLoadSeq) return;
+      historyLoadSucceeded = true;
       if (data.ok && Array.isArray(data.messages)) {
-        const nextHasMore = !!data.hasMore;
+        const nextHasBefore = data.hasBefore != null ? !!data.hasBefore : !!data.hasMore;
+        const nextHasAfter = data.hasAfter != null ? !!data.hasAfter : false;
         const nextOldestId = data.oldestId || state.historyOldestId;
+        const nextNewestId = data.newestId || state.historyNewestId;
         if (!older && state.messages.length > 0 && latestHistoryPageUnchanged(data.messages)) {
-          state.historyHasMore = nextHasMore;
+          state.historyHasMore = nextHasBefore;
+          state.historyHasAfter = nextHasAfter;
           state.historyOldestId = nextOldestId;
+          state.historyNewestId = nextNewestId || (state.messages[state.messages.length - 1] && state.messages[state.messages.length - 1].id) || "";
           refreshScrollAffordances(box);
-          scheduleHistoryViewportFill("unchanged-history");
+          if (box && (options.forceLatest || bottomFollowAllowed(box, {forceLatestFollow: !!options.forceLatest}))) {
+            state.autoFollowLatest = true;
+            renderVirtualMessages({stickToBottom: true, preserveScroll: false, latestJump: !!options.forceLatest, forceLatestFollow: !!options.forceLatest, ignoreVisibleRangeProtection: !!options.forceLatest, allowDuringMedia: true, allowDuringVisibleMedia: true, deferDuringMediaLayout: false, deferDuringScroll: false, allowBottomStickDuringLock: !!options.forceLatest});
+            stickToBottomStable(box);
+            scheduleHistoryViewportFill("unchanged-history");
+          }
           return;
         }
         if (older) {
           const lockedVisibleMedia = isActiveMediaVisible();
           const anchor = captureScrollAnchor(box);
           const beforeCount = state.messages.length;
-          [...data.messages].reverse().forEach(msg => addMessage(msg, {prepend: true, skipRender: true}));
+          [...data.messages].reverse().forEach(msg => addMessage(msg, {prepend: true, skipRender: true, suppressAutoFollow: true}));
           const addedCount = Math.max(0, state.messages.length - beforeCount);
-          state.historyHasMore = nextHasMore;
+          state.historyHasMore = nextHasBefore;
           state.historyOldestId = nextOldestId;
-          if (options.viewportFill && state.autoFollowLatest) {
-            renderVirtualMessages({stickToBottom: true, preserveScroll: false, allowDuringMedia: true, allowDuringVisibleMedia: true, deferDuringMediaLayout: false});
+          // Keep the existing newer-side state. A page fetched before the current
+          // oldest message naturally has server-side hasAfter=true, but that does
+          // not mean the current loaded range is missing newer messages.
+          if (options.viewportFill && box && bottomFollowAllowed(box)) {
+            renderVirtualMessages({stickToBottom: true, preserveScroll: false, forceLatestFollow: hasExplicitLatestFollow(), allowDuringMedia: true, allowDuringVisibleMedia: true, deferDuringMediaLayout: false});
             if (box) stickToBottomStable(box);
             scheduleHistoryViewportFill("viewport-fill");
           } else if (box && addedCount > 0) {
@@ -4872,7 +6476,7 @@
             for (let i = 0; i < addedCount; i++) estimatedAddedHeight += messageHeightAt(i);
             setScrollTopPreserved(box, prevTop + estimatedAddedHeight, {allowAwayFromBottom: true, reason: "older-history-preadjust"});
           }
-          if (options.viewportFill && state.autoFollowLatest) {
+          if (options.viewportFill && box && bottomFollowAllowed(box)) {
             // Already rendered above as a latest-chat view.
           } else if (lockedVisibleMedia && box) {
             // The user reached the top while a media player is visible. Add the
@@ -4895,30 +6499,115 @@
         } else {
           state.messages = [];
           state.nextLocalMessageId = 1;
-          data.messages.forEach(msg => addMessage(msg, {skipRender: true}));
-          state.historyHasMore = nextHasMore;
-          state.historyOldestId = nextOldestId || (box && box.firstElementChild && box.firstElementChild.dataset.id) || "";
-          state.autoFollowLatest = wasNearBottom || state.messages.length === 0;
-          renderVirtualMessages({stickToBottom: state.autoFollowLatest, preserveScroll: !state.autoFollowLatest, allowDuringMedia: true, allowDuringVisibleMedia: true, deferDuringMediaLayout: false});
-          if (box && !state.autoFollowLatest) setScrollTopPreserved(box, prevTop);
-          if (state.autoFollowLatest) scheduleHistoryViewportFill("initial-history");
+          data.messages.forEach(msg => addMessage(msg, {skipRender: true, suppressAutoFollow: true}));
+          state.historyHasMore = nextHasBefore;
+          state.historyHasAfter = nextHasAfter;
+          state.historyOldestId = nextOldestId || (state.messages[0] && state.messages[0].id) || "";
+          state.historyNewestId = nextNewestId || (state.messages[state.messages.length - 1] && state.messages[state.messages.length - 1].id) || "";
+          const shouldFollowLatest = !!options.forceLatest || wasNearBottom || explicitLatestFollowBeforeHistory || state.messages.length === 0;
+          state.autoFollowLatest = shouldFollowLatest;
+          renderVirtualMessages({stickToBottom: shouldFollowLatest, preserveScroll: !shouldFollowLatest, latestJump: !!options.forceLatest, forceLatestFollow: !!options.forceLatest || explicitLatestFollowBeforeHistory, ignoreVisibleRangeProtection: !!options.forceLatest, allowDuringMedia: true, allowDuringVisibleMedia: true, deferDuringMediaLayout: false, deferDuringScroll: !!options.forceLatest ? false : undefined, allowBottomStickDuringLock: !!options.forceLatest});
+          if (box && !shouldFollowLatest) setScrollTopPreserved(box, prevTop, {allowAwayFromBottom: true, reason: "latest-history-preserve"});
+          if (shouldFollowLatest) scheduleHistoryViewportFill("initial-history");
         }
-
-        state.historyHasMore = nextHasMore;
-        state.historyOldestId = nextOldestId || (box && box.firstElementChild && box.firstElementChild.dataset.id) || "";
       }
     } catch (e) {
       console.warn("history failed", e);
+      if (historyLoadSeq === state.historyLoadSeq) {
+        clearHistorySlowNoticeTimer();
+        if (older) {
+          state.pendingOlderHistoryLoad = false;
+          state.olderHistorySettleUntil = 0;
+          if (state.pendingTopOlderHistoryTimer) {
+            clearTimeout(state.pendingTopOlderHistoryTimer);
+            state.pendingTopOlderHistoryTimer = null;
+            state.pendingTopOlderHistoryDueAt = 0;
+          }
+          showHistoryFailureNotice(box, e);
+        }
+      }
     } finally {
       if (historyLoadSeq === state.historyLoadSeq) {
+        clearHistorySlowNoticeTimer();
+        if (String(state.historyEndNoticeKey || "history.end") === "history.loading") hideHistoryStatusNoticeIfActive();
         state.historyLoading = false;
         state.historyLoadingSince = 0;
-        if (older) markOlderHistorySettling();
+        if (older && historyLoadSucceeded) {
+          markOlderHistorySettling();
+        } else if (older) {
+          state.olderHistorySettleUntil = 0;
+        }
         const finalBox = document.getElementById("bmwc-messages");
         const hasPendingHistoryEndTopIntent = Number(state.historyEndNoticePendingUserTopUntil || 0) > Date.now();
         if (finalBox && (older || hasPendingHistoryEndTopIntent)) {
           setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(finalBox, older ? "history-loaded" : "history-refreshed"), 0);
           setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(finalBox, older ? "history-loaded-late" : "history-refreshed-late"), 120);
+        }
+        if (historyLoadSucceeded) scheduleViewportMaintenance(older ? "older-history" : "history", older ? 1600 : 2200);
+      }
+    }
+  }
+
+  async function loadNewerHistory(options = {}) {
+    if (state.historyLoading) return;
+    if (!state.historyHasAfter || !state.historyNewestId) return;
+    if (isScrollInteractionActive() && !options.forceDuringScroll) {
+      requestNewerHistoryAfterScrollIdle();
+      return;
+    }
+
+    const box = document.getElementById("bmwc-messages");
+    const prevTop = box ? Number(box.scrollTop || 0) : 0;
+    const anchor = captureScrollAnchor(box);
+    const historyLoadSeq = ++state.historyLoadSeq;
+    state.historyLoading = true;
+    state.historyLoadingSince = Date.now();
+    let historyLoadSucceeded = false;
+    try {
+      const data = await api(historyQuery("newer"), {timeoutMs: 15000});
+      if (historyLoadSeq !== state.historyLoadSeq) return;
+      historyLoadSucceeded = true;
+      if (data.ok && Array.isArray(data.messages)) {
+        const beforeCount = state.messages.length;
+        data.messages.forEach(msg => addMessage(msg, {skipRender: true, suppressAutoFollow: true}));
+        const addedCount = Math.max(0, state.messages.length - beforeCount);
+        state.historyHasAfter = data.hasAfter != null ? !!data.hasAfter : false;
+        state.historyNewestId = data.newestId || (state.messages[state.messages.length - 1] && state.messages[state.messages.length - 1].id) || state.historyNewestId;
+        // Keep older-side state unchanged. The server's hasBefore for an after
+        // page only means there are records before that returned page; those may
+        // already be loaded in the current contiguous range.
+        state.autoFollowLatest = false;
+        if (box && addedCount > 0) {
+          renderVirtualMessages({
+            stickToBottom: false,
+            preserveScroll: true,
+            anchor,
+            forcePreservePosition: true,
+            suppressBottomStick: true,
+            allowDuringMedia: true,
+            allowDuringVisibleMedia: true,
+            deferDuringMediaLayout: false,
+            deferDuringScroll: false
+          });
+          if (anchor) restoreScrollAnchor(box, anchor, {thresholdPx: 0.5, reason: "newer-history-anchor"});
+          else setScrollTopPreserved(box, prevTop, {allowAwayFromBottom: true, reason: "newer-history-preserve"});
+        } else if (box) {
+          refreshScrollAffordances(box);
+        }
+      }
+    } catch (e) {
+      console.warn("newer history failed", e);
+    } finally {
+      if (historyLoadSeq === state.historyLoadSeq) {
+        state.historyLoading = false;
+        state.historyLoadingSince = 0;
+        state.pendingNewerHistoryLoad = false;
+        if (historyLoadSucceeded) scheduleViewportMaintenance("newer-history", 1600);
+        const finalBox = document.getElementById("bmwc-messages");
+        if (finalBox && bottomGapPx(finalBox) <= historyPreloadThresholdPx(finalBox) && state.historyHasAfter) {
+          // If the fetched page was too short to create additional scroll room,
+          // queue one more pass after the current scroll interaction settles.
+          requestNewerHistoryAfterScrollIdle();
         }
       }
     }
@@ -4938,6 +6627,7 @@
   async function refreshOnResume(reason = "resume") {
     if (!resumeRefreshEnabled()) return;
     if (guestChatHidden()) return;
+    if (Date.now() < Number(state.replyJumpUntil || 0)) return;
     if (isScrollInteractionActive() || (Date.now() - Number(state.lastUserScrollAt || 0)) < Math.max(250, scrollInteractionIdleMs() * 2)) {
       requestResumeRefreshAfterScrollIdle(reason);
       return;
@@ -5069,7 +6759,17 @@
     es.addEventListener("ready", handleConnected);
     es.addEventListener("chat", e => {
       if (guestChatHidden()) return;
-      try { addMessage(JSON.parse(e.data)); } catch (_) {}
+      try {
+        const msg = JSON.parse(e.data);
+        if (state.historyHasAfter) {
+          // The current viewport is a reply-jump middle slice. Do not append a
+          // live tail message after a gap; keep the slice contiguous and let
+          // newer-history paging or the latest button fetch the missing range.
+          refreshScrollAffordances(document.getElementById("bmwc-messages"));
+          return;
+        }
+        addMessage(msg);
+      } catch (_) {}
     });
     es.addEventListener("delete", e => {
       try { markMessageDeleted(JSON.parse(e.data).id); } catch (_) {}
@@ -5089,12 +6789,202 @@
       state.nextLocalMessageId = 1;
       renderVirtualMessages({stickToBottom: true});
       state.historyHasMore = false;
+      state.historyHasAfter = false;
       state.historyOldestId = "";
+      state.historyNewestId = "";
     });
     es.onerror = () => {
       if (generation !== state.streamGeneration || state.eventSource !== es) return;
       scheduleStreamReconnect("stream-error");
     };
+  }
+
+
+  function canUseCustomEmoji() {
+    return !!(state.emojiEnabled && state.emojiShowButton !== false && Array.isArray(state.emojiItems) && state.emojiItems.length > 0 && !state.minimized);
+  }
+
+  function updateEmojiButton() {
+    const btn = document.getElementById("bmwc-emoji");
+    if (!btn) return;
+    const visible = canUseCustomEmoji();
+    btn.classList.toggle("bmwc-hidden", !visible);
+    btn.title = t("button.emoji", "Emoji");
+    if (!visible) hideEmojiPanel();
+  }
+
+  function hideEmojiPanel() {
+    state.emojiPanelOpen = false;
+    const panel = document.getElementById("bmwc-emoji-panel");
+    if (panel) panel.classList.add("bmwc-hidden");
+    updateEmojiResizeHandleVisibility();
+  }
+
+  function toggleEmojiPanel() {
+    if (!canUseCustomEmoji()) return;
+    state.emojiPanelOpen = !state.emojiPanelOpen;
+    renderEmojiPanel();
+  }
+
+  function emojiTokenCount(text) {
+    let count = 0;
+    const re = customEmojiTokenRegex();
+    let match;
+    const source = String(text || "");
+    while ((match = re.exec(source)) !== null) {
+      if (customEmojiByToken(match[1])) count++;
+    }
+    return count;
+  }
+
+  function endsWithCustomEmojiToken(text) {
+    const source = String(text || "");
+    const re = customEmojiBoundaryRegex("end");
+    const match = re.exec(source);
+    if (!match) return false;
+    const tokenMatch = customEmojiTokenRegex().exec(match[0]);
+    return !!(tokenMatch && customEmojiByToken(tokenMatch[1]));
+  }
+
+  function startsWithCustomEmojiToken(text) {
+    const source = String(text || "");
+    const re = customEmojiBoundaryRegex("start");
+    const match = re.exec(source);
+    if (!match) return false;
+    const tokenMatch = customEmojiTokenRegex().exec(match[0]);
+    return !!(tokenMatch && customEmojiByToken(tokenMatch[1]));
+  }
+
+  function insertCustomEmoji(id) {
+    id = String(id || "");
+    if (!customEmojiById(id)) return;
+    const input = document.getElementById("bmwc-message");
+    if (!input) return;
+    const limit = Number(state.emojiMessageTokenLimit || 0);
+    if (limit > 0 && emojiTokenCount(input.value) >= limit) {
+      alert(fmt("alert.emojiTooMany", "Only {max} emoji(s) can be used in one message.", {max: limit}));
+      return;
+    }
+    const token = customEmojiTokenForId(id);
+    const start = Number(input.selectionStart);
+    const end = Number(input.selectionEnd);
+    const hasSelection = Number.isFinite(start) && Number.isFinite(end);
+    const current = input.value || "";
+    if (hasSelection) {
+      const before = current.slice(0, start);
+      const after = current.slice(end);
+      // Do not add an automatic gap between custom emoji tokens. Keep a small
+      // separator only when inserting into normal text.
+      const prefix = before && !/\s$/.test(before) && !endsWithCustomEmojiToken(before) ? " " : "";
+      const suffix = after && !/^\s/.test(after) && !startsWithCustomEmojiToken(after) ? " " : "";
+      input.value = before + prefix + token + suffix + after;
+      const caret = (before + prefix + token + suffix).length;
+      try { input.selectionStart = input.selectionEnd = caret; } catch (_) {}
+    } else {
+      const current = input.value || "";
+      const prefix = current && !/\s$/.test(current) && !endsWithCustomEmojiToken(current) ? " " : "";
+      input.value = current + prefix + token;
+      try { input.selectionStart = input.selectionEnd = input.value.length; } catch (_) {}
+    }
+    input.focus();
+  }
+
+  function renderEmojiPanel() {
+    const panel = document.getElementById("bmwc-emoji-panel");
+    if (!panel) return;
+    if (!state.emojiPanelOpen || !canUseCustomEmoji()) {
+      panel.classList.add("bmwc-hidden");
+      updateEmojiResizeHandleVisibility();
+      return;
+    }
+    const packs = Array.isArray(state.emojiPacks) ? state.emojiPacks : [];
+    const items = Array.isArray(state.emojiItems) ? state.emojiItems : [];
+    if (!items.length) {
+      panel.innerHTML = `<div class="bmwc-emoji-scroll"><div class="bmwc-emoji-empty">${esc(t("emoji.empty", "No emojis configured."))}</div></div>`;
+      panel.classList.remove("bmwc-hidden");
+      setEmojiPanelHeight(emojiPanelHeightPx(), false);
+      installEmojiPanelWheelStep(panel);
+      updateEmojiResizeHandleVisibility();
+      return;
+    }
+    const packTabs = packs.length > 1
+      ? `<div class="bmwc-emoji-tabs">${packs.map((pack, idx) => `<button type="button" class="bmwc-emoji-tab${idx === 0 ? " bmwc-active" : ""}" data-emoji-pack="${esc(pack.id)}">${esc(pack.label || pack.id)} <span>${esc(pack.count || "")}</span></button>`).join("")}</div>`
+      : "";
+    const firstPack = packs[0] && packs[0].id ? packs[0].id : "";
+    const shown = firstPack ? items.filter(item => item.pack === firstPack) : items;
+    panel.innerHTML = packTabs + `<div class="bmwc-emoji-scroll"><div class="bmwc-emoji-grid">${shown.map(emojiButtonHtml).join("")}</div></div>`;
+    panel.classList.remove("bmwc-hidden");
+    setEmojiPanelHeight(emojiPanelHeightPx(), false);
+    installEmojiPanelWheelStep(panel);
+    updateEmojiResizeHandleVisibility();
+
+    panel.querySelectorAll("[data-emoji-pack]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const pack = btn.dataset.emojiPack || "";
+        panel.querySelectorAll(".bmwc-emoji-tab").forEach(tab => tab.classList.toggle("bmwc-active", tab === btn));
+        const grid = panel.querySelector(".bmwc-emoji-grid");
+        if (grid) grid.innerHTML = items.filter(item => item.pack === pack).map(emojiButtonHtml).join("");
+        const scroll = emojiScrollElement(panel);
+        if (scroll) scroll.scrollTop = 0;
+        setEmojiPanelHeight(emojiPanelHeightPx(), false);
+        installEmojiItemHandlers(panel);
+      });
+    });
+    installEmojiItemHandlers(panel);
+  }
+
+  function emojiButtonHtml(item) {
+    if (!item || !item.id || !item.url) return "";
+    const label = item.label || item.name || item.id;
+    const size = emojiPickerSizePx();
+    return `<button type="button" class="bmwc-emoji-item" data-emoji-id="${esc(item.id)}" title="${esc(label)}"><img src="${esc(item.url)}" alt="${esc(label)}" loading="lazy" draggable="false" style="width:${size}px;height:${size}px;"><span>${esc(label)}</span></button>`;
+  }
+
+  function installEmojiItemHandlers(panel) {
+    panel.querySelectorAll("[data-emoji-id]").forEach(btn => {
+      btn.addEventListener("click", () => insertCustomEmoji(btn.dataset.emojiId || ""));
+    });
+  }
+
+  async function loadEmojis(options = {}) {
+    if (!state.config || state.config.emojiEnabled === false) {
+      state.emojiEnabled = false;
+      state.emojiPacks = [];
+      state.emojiItems = [];
+      state.emojiById = new Map();
+      state.emojiByAlias = new Map();
+      state.emojiBySymbol = new Map();
+      updateEmojiButton();
+      return;
+    }
+    state.emojiLoading = true;
+    try {
+      const force = options && options.force === true;
+      const res = await api("/emojis" + (force ? ("?_=" + Date.now()) : ""), force ? {cache: "no-store"} : {});
+      state.emojiEnabled = res.enabled !== false;
+      state.emojiPacks = Array.isArray(res.packs) ? res.packs : [];
+      state.emojiItems = (Array.isArray(res.items) ? res.items : []).map(item => Object.assign({}, item, {
+        url: apiResourceUrl(item && item.url)
+      }));
+      rebuildCustomEmojiLookups(state.emojiItems);
+      state.emojiRenderSizePx = Math.max(16, Math.min(1024, Number(res.renderSizePx || state.emojiRenderSizePx || 32)));
+      state.emojiPickerSizePx = Math.max(24, Math.min(1024, Number(res.pickerSizePx || state.emojiPickerSizePx || 44)));
+      applyEmojiPickerSize();
+      state.emojiMessageTokenLimit = Math.max(0, Math.floor(Number(res.messageTokenLimit || state.emojiMessageTokenLimit || 0)));
+      state.emojiTokenFormat = normalizeEmojiTokenFormat(res.tokenFormat || state.emojiTokenFormat);
+      if (state.messages && state.messages.length) scheduleVirtualRender({preserveScroll: true, deferDuringScroll: false});
+    } catch (e) {
+      state.emojiPacks = [];
+      state.emojiItems = [];
+      state.emojiById = new Map();
+      state.emojiByAlias = new Map();
+      state.emojiBySymbol = new Map();
+      console.warn("BlueMapWebChat emoji list failed", e);
+    } finally {
+      state.emojiLoading = false;
+      updateEmojiButton();
+      renderEmojiPanel();
+    }
   }
 
   function canUpload() {
@@ -5467,6 +7357,7 @@
 
     state.uploadCancelRequested = false;
     state.uploadActive = true;
+    markExplicitLatestFollow("upload", 90000);
     setUploadControlsBusy(true);
     updateUploadProgress(t("upload.preparing", "Preparing upload..."), 0, true);
 
@@ -5837,6 +7728,11 @@
   async function sendMessageText(text, inputToClear, options = {}) {
     text = String(text || "").trim();
     if (!text) return false;
+    const emojiLimit = Number(state.emojiMessageTokenLimit || 0);
+    if (emojiLimit > 0 && emojiTokenCount(text) > emojiLimit) {
+      alert(fmt("alert.emojiTooMany", "Only {max} emoji(s) can be used in one message.", {max: emojiLimit}));
+      return false;
+    }
     if (state.sendInFlight && options.allowConcurrent !== true) {
       return false;
     }
@@ -5848,6 +7744,11 @@
     }
 
     const payload = {message: text};
+    if (state.replyTarget && state.replyTarget.id) {
+      payload.replyToId = state.replyTarget.id;
+      payload.replyToSender = state.replyTarget.sender || "";
+      payload.replyToPreview = state.replyTarget.preview || "";
+    }
     if (state.token) {
       payload.token = state.token;
     } else {
@@ -5863,6 +7764,7 @@
     }
 
     try {
+      markExplicitLatestFollow(options.forceLatest ? "send-forced" : "send", 4500);
       const res = await api("/send", {method: "POST", body: JSON.stringify(payload)});
       if (!res.ok) {
         if (res.captchaPass) {
@@ -5887,6 +7789,8 @@
 
         if (res.error === "rate_limited") {
           alert(t("alert.rateLimited", "You are sending messages too quickly. Please wait."));
+        } else if (res.error === "emoji_limit") {
+          alert(fmt("alert.emojiTooMany", "Only {max} emoji(s) can be used in one message.", {max: state.emojiMessageTokenLimit || ""}));
         } else {
           alertResponse("alert.sendFailed", "Send failed: {error}", res);
         }
@@ -5902,6 +7806,7 @@
         localStorage.setItem("bmwc.captchaPass", state.captchaPass);
       }
       if (inputToClear) inputToClear.value = "";
+      clearReplyTarget();
       forceLatestChatView(options.forceLatest ? "send-forced" : "send");
       setTimeout(() => {
         if (state.autoFollowLatest) loadHistory(false, {skipIfUnchanged: true});
@@ -6183,6 +8088,7 @@
           <button class="bmwc-button bmwc-tab" data-panel="summary">${t("admin.summary", "Summary")}</button>
           ${canManageMutes ? `<button class="bmwc-button bmwc-tab" data-panel="mutes">${t("admin.mutes", "Mutes")}</button>` : ""}
           ${state.role === "ADMIN" ? `<button class="bmwc-button bmwc-tab" data-panel="sessions">${t("admin.sessions", "Sessions")}</button>` : ""}
+          ${state.role === "ADMIN" ? `<button class="bmwc-button bmwc-tab" data-panel="emojis">${t("admin.emojis", "Emojis")}</button>` : ""}
         </div>
         <div id="bmwc-admin-content">${t("admin.loading", "Loading...")}</div>
         <br>
@@ -6205,6 +8111,7 @@
       if (panel === "summary") return renderAdminSummary(content);
       if (panel === "mutes") return renderAdminMutes(content);
       if (panel === "sessions") return renderAdminSessions(content);
+      if (panel === "emojis") return renderAdminEmojis(content);
     } catch (e) {
       content.textContent = fmt("admin.failed", "Failed: {error}", {error: e.message});
     }
@@ -6291,6 +8198,274 @@
         await renderAdminMutes(content);
       };
     });
+  }
+
+
+  async function renderAdminEmojis(content) {
+    if (state.role !== "ADMIN") return;
+    await loadEmojis({force: true});
+    const data = await adminApi("/admin/emojis?_=" + Date.now(), {cache: "no-store"});
+    const packs = Array.isArray(data.packs) ? data.packs : [];
+    const items = Array.isArray(state.emojiItems) ? state.emojiItems : [];
+    const packIds = new Set(packs.map(pack => String(pack.id || "default")));
+    let selectedPack = String(state.adminEmojiSelectedPack || "default");
+    if (!packIds.has(selectedPack)) selectedPack = packs[0] && packs[0].id ? String(packs[0].id) : "default";
+    state.adminEmojiSelectedPack = selectedPack;
+    localStorage.setItem("bmwc.adminEmojiPack", selectedPack);
+
+    const selectedPackInfo = packs.find(pack => String(pack.id || "default") === selectedPack) || {id: selectedPack, label: selectedPack, count: 0};
+    const shown = items.filter(item => String(item.pack || "default") === selectedPack);
+    const packOptions = packs.map(pack => `<option value="${esc(pack.id)}"${String(pack.id) === selectedPack ? " selected" : ""}>${esc(pack.label || pack.id)} (${esc(pack.count || 0)})</option>`).join("") || `<option value="default">Default</option>`;
+    const packTabs = packs.map(pack => `<button type="button" class="bmwc-button bmwc-admin-emoji-tab${String(pack.id) === selectedPack ? " bmwc-active" : ""}" data-admin-emoji-pack="${esc(pack.id)}">${esc(pack.label || pack.id)} <span>${esc(pack.count || 0)}</span></button>`).join("");
+    const showStorageUsage = data.showStorageUsage !== false;
+    const showStorageLimit = data.showStorageLimit !== false;
+    const maxTotalBytes = Number(data.maxTotalSize || 0) || (Number(data.maxTotalSizeMb || 0) > 0 ? Number(data.maxTotalSizeMb) * 1024 * 1024 : 0);
+    const limitLines = [
+      `<small>${esc(fmt("admin.emojiFileLimit", "Per file {file}", {file: data.maxFileSizeKb ? (data.maxFileSizeKb + " KB") : t("admin.unlimited", "unlimited")}))}</small>`
+    ];
+    if (showStorageUsage || showStorageLimit) {
+      const currentText = formatBytes(data.totalSize || 0);
+      const totalText = maxTotalBytes > 0 ? formatBytes(maxTotalBytes) : t("admin.unlimited", "unlimited");
+      if (showStorageUsage && showStorageLimit) {
+        limitLines.push(`<small>${esc(fmt("admin.emojiStorageUsage", "Storage {current} / {total}", {current: currentText, total: totalText}))}</small>`);
+      } else if (showStorageUsage) {
+        limitLines.push(`<small>${esc(fmt("admin.emojiStorageCurrent", "Storage {current}", {current: currentText}))}</small>`);
+      } else {
+        limitLines.push(`<small>${esc(fmt("admin.emojiStorageLimit", "Storage limit {total}", {total: totalText}))}</small>`);
+      }
+    }
+
+    content.innerHTML = `
+      <h4>${t("admin.emojiTitle", "Custom emojis")}</h4>
+      <div class="bmwc-admin-emoji-tools">
+        <div class="bmwc-admin-emoji-upload-row">
+          <input class="bmwc-input" id="bmwc-emoji-upload-file" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp">
+          <button class="bmwc-button" id="bmwc-emoji-upload" type="button">${t("button.uploadEmoji", "Upload")}</button>
+          <button class="bmwc-button" id="bmwc-emoji-pack-create" type="button">${t("button.createPack", "Create folder")}</button>
+        </div>
+        <small class="bmwc-admin-emoji-file-name" id="bmwc-emoji-upload-file-name" title="${esc(t("admin.emojiNoFileSelected", "No file selected"))}">${esc(t("admin.emojiNoFileSelected", "No file selected"))}</small>
+        ${limitLines.join("")}
+      </div>
+      <h4>${t("admin.emojiCurrent", "Current emojis")}</h4>
+      <div class="bmwc-admin-emoji-tabs">${packTabs || `<button type="button" class="bmwc-button bmwc-admin-emoji-tab bmwc-active" data-admin-emoji-pack="default">Default <span>0</span></button>`}</div>
+      <div class="bmwc-admin-emoji-pack-actions">
+        <div class="bmwc-admin-emoji-pack-summary">
+          <select class="bmwc-input" id="bmwc-emoji-pack-select" aria-label="${esc(t("admin.emojiFolderSelect", "Emoji folder"))}">${packOptions}</select>
+          <span>${esc(fmt("admin.emojiPackCount", "{count} emojis", {count: shown.length}))}</span>
+        </div>
+        <div class="bmwc-admin-emoji-pack-buttons">
+          <button class="bmwc-button" id="bmwc-emoji-select-all" type="button" ${shown.length ? "" : "disabled"}>${t("button.selectAll", "Select all")}</button>
+          <button class="bmwc-button" id="bmwc-emoji-delete-selected" type="button" ${shown.length ? "" : "disabled"}>${t("button.deleteSelected", "Delete selected")}</button>
+          ${selectedPack !== "default" ? `<button class="bmwc-button" id="bmwc-emoji-rename-pack" type="button">${t("button.renamePack", "Rename folder")}</button><button class="bmwc-button" id="bmwc-emoji-delete-pack" type="button">${t("button.deletePack", "Delete folder")}</button>` : ""}
+        </div>
+      </div>
+      <div class="bmwc-admin-list bmwc-admin-emoji-list">
+        ${shown.map(item => `
+          <label class="bmwc-admin-emoji-item">
+            <input type="checkbox" class="bmwc-admin-emoji-check" data-emoji-delete-id="${esc(item.id)}">
+            <img src="${esc(item.url)}" alt="${esc(item.label || item.name || item.id)}" title="${esc(item.label || item.name || item.id)}" loading="lazy" draggable="false">
+            <div class="bmwc-admin-emoji-item-label" title="${esc(item.label || item.name || item.id)}"><strong title="${esc(item.label || item.name || item.id)}">${esc(item.label || item.name || item.id)}</strong></div>
+            <div class="bmwc-admin-emoji-item-actions">
+              <button class="bmwc-mini-action" data-emoji-rename-one="${esc(item.id)}" data-emoji-current-name="${esc(item.label || item.name || item.id)}" type="button">${t("button.change", "Change")}</button>
+              <button class="bmwc-mini-action" data-emoji-delete-one="${esc(item.id)}" type="button">${t("button.delete", "delete")}</button>
+            </div>
+          </label>
+        `).join("") || `<div class="bmwc-admin-emoji-empty" title="${esc(t("emoji.emptyPack", "No emojis in this folder."))}">${esc(t("emoji.emptyPack", "No emojis here."))}</div>`}
+      </div>
+    `;
+
+    const rerenderPack = async pack => {
+      state.adminEmojiSelectedPack = String(pack || "default");
+      localStorage.setItem("bmwc.adminEmojiPack", state.adminEmojiSelectedPack);
+      await renderAdminEmojis(content);
+    };
+
+    content.querySelectorAll("[data-admin-emoji-pack]").forEach(btn => {
+      btn.onclick = () => rerenderPack(btn.dataset.adminEmojiPack || "default");
+    });
+
+    const packSelect = content.querySelector("#bmwc-emoji-pack-select");
+    if (packSelect) packSelect.onchange = () => rerenderPack(packSelect.value || "default");
+
+    const uploadFileInput = content.querySelector("#bmwc-emoji-upload-file");
+    const uploadFileName = content.querySelector("#bmwc-emoji-upload-file-name");
+    const updateEmojiUploadFileName = () => {
+      if (!uploadFileName) return;
+      const file = uploadFileInput && uploadFileInput.files && uploadFileInput.files[0];
+      const name = file ? file.name : t("admin.emojiNoFileSelected", "No file selected");
+      uploadFileName.textContent = name;
+      uploadFileName.title = name;
+    };
+    if (uploadFileInput) {
+      uploadFileInput.onchange = updateEmojiUploadFileName;
+      updateEmojiUploadFileName();
+    }
+
+    const createBtn = content.querySelector("#bmwc-emoji-pack-create");
+    if (createBtn) {
+      createBtn.onclick = async () => {
+        const next = prompt(t("prompt.createEmojiPack", "New folder name"), "");
+        if (next == null) return;
+        const pack = String(next || "").trim();
+        if (!pack) return alert(t("alert.emojiPackNameRequired", "Enter a folder name."));
+        const res = await adminApi("/admin/emojis/create-pack", {method: "POST", body: JSON.stringify({pack})});
+        if (!res.ok) return alertResponse("alert.failed", "Failed: {error}", res);
+        state.adminEmojiSelectedPack = res.pack || pack;
+        localStorage.setItem("bmwc.adminEmojiPack", state.adminEmojiSelectedPack);
+        await loadEmojis({force: true});
+        updateEmojiButton();
+        await renderAdminEmojis(content);
+      };
+    }
+
+    const uploadBtn = content.querySelector("#bmwc-emoji-upload");
+    if (uploadBtn) {
+      uploadBtn.onclick = async () => {
+        const select = content.querySelector("#bmwc-emoji-pack-select");
+        const fileInput = content.querySelector("#bmwc-emoji-upload-file");
+        const file = fileInput && fileInput.files && fileInput.files[0];
+        if (!file) return alert(t("alert.emojiFileRequired", "Choose an emoji file."));
+        const pack = select ? select.value : selectedPack;
+        const form = new FormData();
+        form.append("pack", pack || "default");
+        form.append("file", file, file.name);
+        uploadBtn.disabled = true;
+        try {
+          const res = await adminApi("/admin/emojis/upload", {method: "POST", body: form});
+          if (!res.ok) return alertResponse("alert.uploadFailed", "Upload failed: {error}", res);
+          state.adminEmojiSelectedPack = res.pack || pack || "default";
+          localStorage.setItem("bmwc.adminEmojiPack", state.adminEmojiSelectedPack);
+          await loadEmojis({force: true});
+          updateEmojiButton();
+          await renderAdminEmojis(content);
+        } catch (err) {
+          const res = err && err.response ? err.response : {ok: false, error: err && err.bmwcTimeout ? "timeout" : (err && err.message ? err.message : "network")};
+          alertResponse("alert.uploadFailed", "Upload failed: {error}", res);
+          try { await renderAdminEmojis(content); } catch (_) {}
+        } finally {
+          uploadBtn.disabled = false;
+        }
+      };
+    }
+
+    const deleteOne = async id => {
+      if (!id) return;
+      if (!confirm(t("alert.confirmDeleteEmoji", "Delete this emoji?"))) return;
+      const res = await adminApi("/admin/emojis/delete", {method: "POST", body: JSON.stringify({type: "item", id})});
+      if (!res.ok) return alertResponse("alert.failed", "Failed: {error}", res);
+      await loadEmojis({force: true});
+      updateEmojiButton();
+      await renderAdminEmojis(content);
+    };
+
+    const renameOne = async (id, currentName) => {
+      if (!id) return;
+      const next = prompt(t("prompt.renameEmoji", "New emoji name"), currentName || "");
+      if (next == null) return;
+      const name = String(next || "").trim();
+      if (!name) return alert(t("alert.emojiRenameNameRequired", "Enter a new name."));
+      if (!confirm(fmt("alert.confirmRenameEmoji", "Rename this emoji to {name}? Existing emoji tokens using the old name will no longer match.", {name}))) return;
+      const res = await adminApi("/admin/emojis/rename", {method: "POST", body: JSON.stringify({type: "item", id, name})});
+      if (!res.ok) return alertResponse("alert.renameFailed", "Rename failed: {error}", res);
+      await loadEmojis({force: true});
+      updateEmojiButton();
+      await renderAdminEmojis(content);
+    };
+
+    content.querySelectorAll("[data-emoji-delete-one]").forEach(btn => {
+      btn.onclick = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteOne(btn.dataset.emojiDeleteOne || "");
+      };
+    });
+
+    content.querySelectorAll("[data-emoji-rename-one]").forEach(btn => {
+      btn.onclick = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        renameOne(btn.dataset.emojiRenameOne || "", btn.dataset.emojiCurrentName || "");
+      };
+    });
+
+    const emojiChecks = () => Array.from(content.querySelectorAll(".bmwc-admin-emoji-check"));
+    const updateSelectAllButton = () => {
+      const btn = content.querySelector("#bmwc-emoji-select-all");
+      if (!btn) return;
+      const checks = emojiChecks();
+      const allChecked = checks.length > 0 && checks.every(check => check.checked);
+      btn.textContent = allChecked ? t("button.deselectAll", "Clear all") : t("button.selectAll", "Select all");
+      btn.setAttribute("aria-pressed", allChecked ? "true" : "false");
+    };
+
+    const selectAll = content.querySelector("#bmwc-emoji-select-all");
+    if (selectAll) {
+      content.querySelectorAll(".bmwc-admin-emoji-check").forEach(check => {
+        check.onchange = updateSelectAllButton;
+      });
+      updateSelectAllButton();
+      selectAll.onclick = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const checks = emojiChecks();
+        const allChecked = checks.length > 0 && checks.every(check => check.checked);
+        checks.forEach(check => { check.checked = !allChecked; });
+        updateSelectAllButton();
+      };
+    }
+
+    const deleteSelected = content.querySelector("#bmwc-emoji-delete-selected");
+    if (deleteSelected) {
+      deleteSelected.onclick = async () => {
+        const ids = Array.from(content.querySelectorAll(".bmwc-admin-emoji-check:checked")).map(el => el.dataset.emojiDeleteId).filter(Boolean);
+        if (!ids.length) return alert(t("alert.emojiSelectRequired", "Select emojis to delete."));
+        if (!confirm(fmt("alert.confirmDeleteSelectedEmoji", "Delete {count} selected emojis?", {count: ids.length}))) return;
+        deleteSelected.disabled = true;
+        try {
+          for (const id of ids) {
+            const res = await adminApi("/admin/emojis/delete", {method: "POST", body: JSON.stringify({type: "item", id})});
+            if (!res.ok) return alertResponse("alert.failed", "Failed: {error}", res);
+          }
+          await loadEmojis({force: true});
+          updateEmojiButton();
+          await renderAdminEmojis(content);
+        } finally {
+          deleteSelected.disabled = false;
+        }
+      };
+    }
+
+    const renamePack = content.querySelector("#bmwc-emoji-rename-pack");
+    if (renamePack) {
+      renamePack.onclick = async () => {
+        const next = prompt(t("prompt.renameEmojiPack", "New folder name"), selectedPackInfo.label || selectedPack);
+        if (next == null) return;
+        const name = String(next || "").trim();
+        if (!name) return alert(t("alert.emojiRenameNameRequired", "Enter a new name."));
+        if (!confirm(fmt("alert.confirmRenameEmojiPack", "Rename folder {pack} to {name}? Emoji tokens in this folder will change.", {pack: selectedPackInfo.label || selectedPack, name}))) return;
+        const res = await adminApi("/admin/emojis/rename", {method: "POST", body: JSON.stringify({type: "pack", pack: selectedPack, name})});
+        if (!res.ok) return alertResponse("alert.renameFailed", "Rename failed: {error}", res);
+        state.adminEmojiSelectedPack = res.pack || name;
+        localStorage.setItem("bmwc.adminEmojiPack", state.adminEmojiSelectedPack);
+        await loadEmojis({force: true});
+        updateEmojiButton();
+        await renderAdminEmojis(content);
+      };
+    }
+
+    const deletePack = content.querySelector("#bmwc-emoji-delete-pack");
+    if (deletePack) {
+      deletePack.onclick = async () => {
+        if (!confirm(fmt("alert.confirmDeleteEmojiPack", "Delete folder {pack} and all emojis inside?", {pack: selectedPack}))) return;
+        const res = await adminApi("/admin/emojis/delete", {method: "POST", body: JSON.stringify({type: "pack", pack: selectedPack})});
+        if (!res.ok) return alertResponse("alert.failed", "Failed: {error}", res);
+        state.adminEmojiSelectedPack = "default";
+        localStorage.setItem("bmwc.adminEmojiPack", "default");
+        await loadEmojis({force: true});
+        updateEmojiButton();
+        await renderAdminEmojis(content);
+      };
+    }
   }
 
   async function renderAdminSessions(content) {
@@ -6591,8 +8766,8 @@
       },
       opacityPercent: Math.round(Number(effectiveOpacity()) * 100),
       defaultOpacityPercent: Math.round(Number(clampOpacity(state.config.uiOpacity)) * 100),
-      fontSizePx: Math.round(Number(effectiveBaseFontSize()) || 13),
-      defaultFontSizePx: Math.round(Number(state.config.uiFontSize || 13)),
+      fontSizePx: Number(formatDecimalNumber(Number(effectiveBaseFontSize()) || 13, 2)),
+      defaultFontSizePx: Number(formatDecimalNumber(Number(state.config.uiFontSize || 13), 2)),
       fontFamily: savedUserFontFamily(),
       textColor: effectiveUserTextColor(),
       uiTextColor: effectiveUserUiTextColor(),
@@ -6641,8 +8816,8 @@
         <input class="bmwc-pref-range" id="bmwc-prefs-opacity" type="range" min="10" max="100" step="1" value="${Math.round(payload.opacityPercent || 100)}">
         <div class="bmwc-pref-hints"><span>10%</span><span>100%</span></div>
 
-        <label class="bmwc-pref-label"><span>${esc(labels.fontSize || "Font size")}</span><strong id="bmwc-prefs-font-size-value">${Math.round(payload.fontSizePx || 13)}px</strong></label>
-        <input class="bmwc-pref-range" id="bmwc-prefs-font-size" type="range" min="8" max="36" step="1" value="${Math.round(payload.fontSizePx || 13)}">
+        <label class="bmwc-pref-label"><span>${esc(labels.fontSize || "Font size")}</span><strong id="bmwc-prefs-font-size-value">${pxLabel(payload.fontSizePx || 13)}</strong></label>
+        <input class="bmwc-pref-range" id="bmwc-prefs-font-size" type="range" min="8" max="36" step="0.1" value="${formatDecimalNumber(payload.fontSizePx || 13, 2)}">
         <div class="bmwc-pref-hints"><span>8px</span><span>36px</span></div>
 
         <label class="bmwc-pref-label"><span>${esc(labels.fontFamily || "Font")}</span></label>
@@ -6672,11 +8847,11 @@
         <div class="bmwc-shadow-custom-panel" id="bmwc-prefs-text-shadow-custom-panel">
           <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomColor || "Shadow color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-text-shadow-color" type="color"></label>
           <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomX || "X offset")}</span><strong id="bmwc-prefs-text-shadow-x-value">0px</strong></label>
-          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-x" type="range" min="-12" max="12" step="1">
+          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-x" type="range" min="-12" max="12" step="0.1">
           <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomY || "Y offset")}</span><strong id="bmwc-prefs-text-shadow-y-value">1px</strong></label>
-          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-y" type="range" min="-12" max="12" step="1">
+          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-y" type="range" min="-12" max="12" step="0.1">
           <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomBlur || "Blur")}</span><strong id="bmwc-prefs-text-shadow-blur-value">2px</strong></label>
-          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-blur" type="range" min="0" max="24" step="1">
+          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-blur" type="range" min="0" max="24" step="0.1">
           <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomOpacity || "Opacity")}</span><strong id="bmwc-prefs-text-shadow-opacity-value">85%</strong></label>
           <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-opacity" type="range" min="0" max="100" step="1">
           <div class="bmwc-shadow-preview" id="bmwc-prefs-text-shadow-preview">${esc(labels.textShadowCustomPreview || "Shadow preview")}</div>
@@ -6738,7 +8913,7 @@
 
     sizeInput.addEventListener("input", () => {
       const v = Math.max(8, Math.min(36, Number(sizeInput.value) || payload.defaultFontSizePx || 13));
-      sizeValue.textContent = Math.round(v) + "px";
+      sizeValue.textContent = pxLabel(v);
       setUserFontSize(v, false);
     });
     sizeInput.addEventListener("change", () => setUserFontSize(Number(sizeInput.value) || payload.defaultFontSizePx || 13, true));
@@ -6788,13 +8963,13 @@
     });
     const syncShadowControls = (parts = parseTextShadowParts(payload.textShadowCustom)) => {
       if (textShadowColorInput) textShadowColorInput.value = parts.color;
-      if (textShadowXInput) textShadowXInput.value = String(parts.x);
-      if (textShadowYInput) textShadowYInput.value = String(parts.y);
-      if (textShadowBlurInput) textShadowBlurInput.value = String(parts.blur);
+      if (textShadowXInput) textShadowXInput.value = formatDecimalNumber(parts.x, 2);
+      if (textShadowYInput) textShadowYInput.value = formatDecimalNumber(parts.y, 2);
+      if (textShadowBlurInput) textShadowBlurInput.value = formatDecimalNumber(parts.blur, 2);
       if (textShadowOpacityInput) textShadowOpacityInput.value = String(parts.opacity);
-      if (textShadowXValue) textShadowXValue.textContent = parts.x + "px";
-      if (textShadowYValue) textShadowYValue.textContent = parts.y + "px";
-      if (textShadowBlurValue) textShadowBlurValue.textContent = parts.blur + "px";
+      if (textShadowXValue) textShadowXValue.textContent = pxLabel(parts.x);
+      if (textShadowYValue) textShadowYValue.textContent = pxLabel(parts.y);
+      if (textShadowBlurValue) textShadowBlurValue.textContent = pxLabel(parts.blur);
       if (textShadowOpacityValue) textShadowOpacityValue.textContent = parts.opacity + "%";
       const css = buildTextShadowFromParts(parts);
       if (textShadowPreview) textShadowPreview.style.textShadow = css;
@@ -7113,6 +9288,7 @@
     await loadConfig();
     await loadLang();
     makeRoot();
+    await loadEmojis();
     installTimeDisplayDelegation();
     updateFrameSize();
     updateGuestVisibility();

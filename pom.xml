@@ -5,7 +5,7 @@
 
     <groupId>dev.kokoto</groupId>
     <artifactId>bluemap-web-chat</artifactId>
-    <version>3.1.0</version>
+    <version>4.0.0</version>
     <packaging>jar</packaging>
 
     <name>BlueMapWebChat</name>

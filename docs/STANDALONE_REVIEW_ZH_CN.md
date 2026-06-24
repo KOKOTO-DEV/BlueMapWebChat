@@ -24,6 +24,8 @@ standalone-web:
   api-base-url: ""
 ```
 
+`standalone-web.api-base-url` 可以留空以自动检测。如果 standalone 页面与 BlueMap 内嵌聊天共用同一个反向代理 API 路径，也可以设置为与 `web-addon.api-base-url` 相同的值，例如 `/bmwc/api`。
+
 直接 HTTP URL：
 
 ```text
@@ -54,3 +56,7 @@ web-addon:
 ## 透明窗口限制
 
 standalone 浏览器窗口和 Document Picture-in-Picture 窗口无法仅通过普通 Web API 变成操作系统级的真正透明窗口。CSS 可以让聊天面板本身半透明，但浏览器/PIP 窗口背景和桌面透视由浏览器或操作系统控制。
+
+### URL 设置解析规则
+
+`web-addon.api-base-url` 是 HTTPS 公开 API 路径的基准。除非需要兼容覆盖，`standalone-web.api-base-url`、`upload.public-base-url`、`emoji.public-base-url` 通常留空。standalone 留空会使用 `web-addon.api-base-url`；upload/emoji 留空会分别追加 `/uploads` 和 `/emojis`。`/bmwc/api` 这类绝对浏览器路径会原样使用。不带前导 `/` 的相对值会在 `http.cors-origin` 为实际 origin 时基于该 origin 解析。完整 `https://...` URL 原样使用。

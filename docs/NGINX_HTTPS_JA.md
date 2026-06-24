@@ -120,13 +120,19 @@ http:
 standalone-web:
   enabled: true
   path: "/chat"
+  # 任意です。web-addon.api-base-url と同じ値で構いません。
   api-base-url: "/bmwc/api"
 
 web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
-  public-base-url: "/bmwc/api/uploads"
+  # 推奨は空です。必要なら "/bmwc/api" または "/bmwc/api/uploads" も使えます。
+  public-base-url: ""
+
+emoji:
+  # 推奨は空です。必要なら "/bmwc/api" または "/bmwc/api/emojis" も使えます。
+  public-base-url: ""
 
 ui:
   image-preview-max-height: 720
@@ -153,8 +159,8 @@ nginx と Minecraft が同じホストにある場合、BlueMapWebChat API は `
 4. `sudo certbot --nginx -d map.example.com` で証明書を取得するか、証明書を手動配置します。
 5. nginx 設定を適用し、`sudo nginx -t` が成功することを確認します。
 6. `web-addon.api-base-url` を `/bmwc/api` に設定します。
-7. スタンドアロンページを `https://map.example.com/bmwc/chat` で開く場合は、`standalone-web.api-base-url` も `/bmwc/api` に設定します。
-8. アップロードを使う場合は `upload.public-base-url` を `/bmwc/api/uploads` に設定します。
+7. スタンドアロンページを `https://map.example.com/bmwc/chat` で開く場合、`standalone-web.api-base-url` は空のままでも、`web-addon.api-base-url` と同じ `/bmwc/api` を指定しても構いません。
+8. アップロード/絵文字の公開 URL は通常空にします。従来の明示設定が必要な場合、`upload.public-base-url` は `/bmwc/api` または `/bmwc/api/uploads`、`emoji.public-base-url` は `/bmwc/api` または `/bmwc/api/emojis` を使用できます。
 9. `/bmchat reload` またはサーバー再起動で Web addon ファイルを再生成します。
 10. BlueMap が自動で Web アセットを更新しない場合は `/bluemap reload` を実行します。
 11. ブラウザーで `https://map.example.com/` または `https://map.example.com/bmwc/chat` を開きます。
@@ -162,3 +168,7 @@ nginx と Minecraft が同じホストにある場合、BlueMapWebChat API は `
 ## 6. HTTP ページ + HTTPS API の注意
 
 BlueMap ページを HTTP のまま配信し、チャット API だけ HTTPS にする構成は完全なセキュリティ境界ではありません。公開サーバーでは BlueMap と BlueMapWebChat の両方を同じ HTTPS origin で配信してください。
+
+### URL 設定の解決規則
+
+`web-addon.api-base-url` が HTTPS 公開 API 経路の基準です。`standalone-web.api-base-url`、`upload.public-base-url`、`emoji.public-base-url` は互換目的がなければ空のままにします。standalone の空値は `web-addon.api-base-url` を使い、upload/emoji の空値は `/uploads` と `/emojis` を追加します。`/bmwc/api` のような絶対ブラウザパスはそのまま使います。先頭 `/` のない相対値は `http.cors-origin` が実際の origin のときその origin に対して解決されます。`https://...` の完全 URL はそのまま使います。

@@ -14,6 +14,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import javax.imageio.ImageIO;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.math.BigInteger;
+import java.security.MessageDigest;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -25,6 +30,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -38,6 +45,8 @@ public class WebChatServer {
     private final Deque<ChatMessage> history = new ArrayDeque<>();
     private final Set<SseClient> clients = ConcurrentHashMap.newKeySet();
     private static final Pattern URL_PATTERN = Pattern.compile("(?i)\\b((?:https?://|www\\.)[^\\s<>\"]+)");
+    private static final Pattern EMOJI_TOKEN_PATTERN = Pattern.compile("(?<![A-Za-z0-9+.-]):(?:emoji:)?([^:\\s\\r\\n]{1,200}):");
+    private static final Pattern IMAGEEMOJIS_ALIAS_TOKEN_PATTERN = Pattern.compile(":([^:/\\r\\n]{1,128}):");
     private static final Set<String> DANGEROUS_UPLOAD_EXTENSIONS = Set.of(
             "exe", "msi", "bat", "cmd", "com", "scr", "ps1", "vbs",
             "sh", "bash", "jar", "war", "class",
@@ -48,6 +57,21 @@ public class WebChatServer {
     private HttpServer server;
     private ExecutorService executor;
     private volatile boolean running;
+    private volatile ImageEmojisFontCache imageEmojisFontCache;
+
+    private static class ImageEmojisFontCache {
+        final Path path;
+        final long modifiedAt;
+        final long size;
+        final Map<String, String> symbols;
+
+        ImageEmojisFontCache(Path path, long modifiedAt, long size, Map<String, String> symbols) {
+            this.path = path;
+            this.modifiedAt = modifiedAt;
+            this.size = size;
+            this.symbols = symbols == null ? Map.of() : symbols;
+        }
+    }
 
     public WebChatServer(BlueMapWebChatPlugin plugin, Storage storage, AuthManager auth, CaptchaManager captcha) {
         this.plugin = plugin;
@@ -66,19 +90,38 @@ public class WebChatServer {
         });
         server.setExecutor(executor);
 
-        String p = config.pathPrefix;
         if (config.standaloneWebEnabled) {
-            server.createContext(config.standaloneWebPath, this::handleStandaloneWeb);
+            for (String standalonePath : standaloneContextPaths(config)) {
+                server.createContext(standalonePath, this::handleStandaloneWeb);
+            }
         }
+        for (String apiPrefix : apiContextPrefixes(config)) {
+            createApiContexts(apiPrefix);
+        }
+
+        loadPersistedHistory();
+        cleanupOldUploads();
+        cleanupOldExternalMediaCache();
+        syncExistingImageEmojisPngSidecarsOnStartup();
+
+        running = true;
+        server.start();
+        plugin.getLogger().info("HTTP chat server started on " + config.httpHost + ":" + config.httpPort + config.pathPrefix);
+    }
+
+    private void createApiContexts(String p) {
         server.createContext(p + "/config", this::handleConfig);
         server.createContext(p + "/lang", this::handleLang);
         server.createContext(p + "/history", this::handleHistory);
+        server.createContext(p + "/history/around", this::handleHistoryAround);
         server.createContext(p + "/pins", this::handlePins);
         server.createContext(p + "/stream", this::handleStream);
         server.createContext(p + "/send", this::handleSend);
         server.createContext(p + "/commands", this::handleCommands);
         server.createContext(p + "/commands/run", this::handleCommandRun);
         server.createContext(p + "/upload", this::handleUpload);
+        server.createContext(p + "/emojis", this::handleEmojis);
+        server.createContext(p + "/e", this::handleShortEmoji);
         server.createContext(p + "/uploads", this::handleUploadedFile);
         server.createContext(p + "/fonts", this::handleFontFile);
         server.createContext(p + "/external-media", this::handleExternalMedia);
@@ -101,14 +144,107 @@ public class WebChatServer {
         server.createContext(p + "/admin/pin-message", this::handleAdminPinMessage);
         server.createContext(p + "/admin/unpin-message", this::handleAdminUnpinMessage);
         server.createContext(p + "/admin/clear-history", this::handleAdminClearHistory);
+        server.createContext(p + "/admin/emojis", this::handleAdminEmojis);
+        server.createContext(p + "/admin/emojis/create-pack", this::handleAdminEmojiCreatePack);
+        server.createContext(p + "/admin/emojis/upload", this::handleAdminEmojiUpload);
+        server.createContext(p + "/admin/emojis/delete", this::handleAdminEmojiDelete);
+        server.createContext(p + "/admin/emojis/rename", this::handleAdminEmojiRename);
+    }
 
-        loadPersistedHistory();
-        cleanupOldUploads();
-        cleanupOldExternalMediaCache();
+    private Set<String> apiContextPrefixes(ConfigValues config) {
+        Set<String> out = new LinkedHashSet<>();
+        String internalPrefix = normalizeContextPrefix(config.pathPrefix, "/api");
+        out.add(internalPrefix);
+        addApiContextPrefix(out, config, config.apiBaseUrl);
+        addApiContextPrefix(out, config, config.standaloneWebApiBaseUrl);
+        addApiContextPrefix(out, config, config.uploadPublicBaseUrl);
+        addApiContextPrefix(out, config, config.emojiPublicBaseUrl);
+        return out;
+    }
 
-        running = true;
-        server.start();
-        plugin.getLogger().info("HTTP chat server started on " + config.httpHost + ":" + config.httpPort + config.pathPrefix);
+    private void addApiContextPrefix(Set<String> out, ConfigValues config, String configured) {
+        String prefix = apiContextPrefixFromConfigured(config, configured);
+        if (!prefix.isBlank()) out.add(prefix);
+    }
+
+    private Set<String> standaloneContextPaths(ConfigValues config) {
+        Set<String> out = new LinkedHashSet<>();
+        String standalonePath = normalizeContextPrefix(config.standaloneWebPath, "/chat");
+        out.add(standalonePath);
+
+        String internalApiPrefix = normalizeContextPrefix(config.pathPrefix, "/api");
+        for (String apiPrefix : apiContextPrefixes(config)) {
+            if (apiPrefix.equals(internalApiPrefix) || !apiPrefix.endsWith(internalApiPrefix)) continue;
+            String publicPrefix = trimTrailingSlash(apiPrefix.substring(0, apiPrefix.length() - internalApiPrefix.length()));
+            if (publicPrefix.isBlank()) continue;
+            if (standalonePath.equals(publicPrefix) || standalonePath.startsWith(publicPrefix + "/")) continue;
+            out.add(normalizeContextPrefix(publicPrefix + standalonePath, standalonePath));
+        }
+        return out;
+    }
+
+    private String matchingStandaloneContextPath(ConfigValues config, String path) {
+        for (String base : standaloneContextPaths(config)) {
+            if (path.equals(base) || path.startsWith(base + "/")) return base;
+        }
+        return "";
+    }
+
+    private String matchingApiContextPrefix(ConfigValues config, String path) {
+        String best = "";
+        for (String prefix : apiContextPrefixes(config)) {
+            if ((path.equals(prefix) || path.startsWith(prefix + "/")) && prefix.length() > best.length()) {
+                best = prefix;
+            }
+        }
+        return best.isBlank() ? normalizeContextPrefix(config.pathPrefix, "/api") : best;
+    }
+
+    private String apiContextPrefixFromConfigured(ConfigValues config, String configured) {
+        String path = pathFromConfiguredPublicUrl(configured);
+        if (path.isBlank()) return "";
+        path = stripKnownResourceSuffix(trimTrailingSlash(path));
+        String internalPrefix = normalizeContextPrefix(config.pathPrefix, "/api");
+        if (path.equals(internalPrefix) || path.endsWith(internalPrefix) || path.equals("/api") || path.endsWith("/api")) {
+            return normalizeContextPrefix(path, internalPrefix);
+        }
+        return "";
+    }
+
+    private String pathFromConfiguredPublicUrl(String configured) {
+        String value = String.valueOf(configured == null ? "" : configured).trim();
+        if (value.isBlank()) return "";
+        try {
+            URI uri = URI.create(value);
+            if (uri.getScheme() != null || value.startsWith("//")) {
+                String path = uri.getPath();
+                return path == null ? "" : path;
+            }
+        } catch (IllegalArgumentException ignored) {
+        }
+        if (!value.startsWith("/")) value = "/" + value;
+        int query = value.indexOf('?');
+        if (query >= 0) value = value.substring(0, query);
+        int hash = value.indexOf('#');
+        if (hash >= 0) value = value.substring(0, hash);
+        return value;
+    }
+
+    private String stripKnownResourceSuffix(String path) {
+        String out = trimTrailingSlash(String.valueOf(path == null ? "" : path));
+        for (String suffix : new String[]{"/uploads", "/emojis", "/external-media", "/fonts"}) {
+            if (out.equals(suffix) || out.endsWith(suffix)) {
+                return trimTrailingSlash(out.substring(0, out.length() - suffix.length()));
+            }
+        }
+        return out;
+    }
+
+    private String normalizeContextPrefix(String value, String fallback) {
+        String out = String.valueOf(value == null || value.isBlank() ? fallback : value).trim();
+        if (!out.startsWith("/")) out = "/" + out;
+        out = trimTrailingSlash(out);
+        return out.isBlank() ? fallback : out;
     }
 
     public void stop() {
@@ -136,9 +272,9 @@ public class WebChatServer {
         }
 
         ConfigValues config = plugin.configValues();
-        String base = config.standaloneWebPath;
         String path = ex.getRequestURI().getPath();
-        if (!path.equals(base) && !path.startsWith(base + "/")) {
+        String base = matchingStandaloneContextPath(config, path);
+        if (base.isBlank()) {
             sendBytes(ex, 404, "text/plain; charset=utf-8", "not_found".getBytes(StandardCharsets.UTF_8));
             return;
         }
@@ -158,21 +294,37 @@ public class WebChatServer {
     private void sendStandaloneIndex(HttpExchange ex, ConfigValues config) throws IOException {
         String version = plugin.getDescription().getVersion();
         String apiBase = config.standaloneWebApiBaseUrl == null ? "" : config.standaloneWebApiBaseUrl.trim();
+        String webAddonApiBase = config.apiBaseUrl == null ? "" : config.apiBaseUrl.trim();
         String apiBaseJs;
         if (!apiBase.isEmpty()) {
-            apiBaseJs = JsonUtil.quote(apiBase);
+            String resolved = stripKnownResourceSuffix(normalizePublicBaseUrl(ex, apiBase));
+            apiBaseJs = JsonUtil.quote(resolved);
+        } else if (!webAddonApiBase.isEmpty()) {
+            // Empty standalone-web.api-base-url follows web-addon.api-base-url.
+            String resolved = stripKnownResourceSuffix(normalizePublicBaseUrl(ex, webAddonApiBase));
+            apiBaseJs = JsonUtil.quote(resolved);
         } else {
-            String webAddonApiBase = config.apiBaseUrl == null ? "" : config.apiBaseUrl.trim();
-            if (!webAddonApiBase.isEmpty()) {
-                // In a same-domain HTTPS reverse proxy deployment, users commonly
-                // configure only web-addon.api-base-url, for example /bmwc/api.
-                // Reuse it for HTTPS standalone pages, while keeping direct
-                // http://host:8899/chat usable without the proxy.
-                apiBaseJs = "((location.protocol === 'https:') ? "
-                        + JsonUtil.quote(webAddonApiBase)
-                        + " : (location.origin + " + JsonUtil.quote(config.pathPrefix) + "))";
+            String inferred = inferPublicStandaloneApiBasePath(ex, config);
+            if (!inferred.isBlank()) {
+                apiBaseJs = JsonUtil.quote(inferred);
             } else {
-                apiBaseJs = "location.origin + " + JsonUtil.quote(config.pathPrefix);
+                String directApiBase = "location.origin + " + JsonUtil.quote(config.pathPrefix);
+                // Fallback for unusual standalone paths. Direct HTTP /chat uses /api;
+                // proxied /bmwc/chat infers /bmwc/api from the current path.
+                apiBaseJs = "(function(){"
+                        + "function clean(v){v=String(v||'').trim();if(!v)return '';v=v.replace(/\\/+$/,'');v=v.replace(/\\/(?:uploads|emojis)$/i,'');return v;}"
+                        + "function slash(v){v=String(v||'').trim();if(!v)return '';return v.charAt(0)==='/'?v:'/'+v;}"
+                        + "function samePath(a,b){return String(a||'').replace(/\\/+$/,'')===String(b||'').replace(/\\/+$/,'');}"
+                        + "var standalonePath=slash(" + JsonUtil.quote(config.standaloneWebPath) + ");"
+                        + "var apiPath=slash(" + JsonUtil.quote(config.pathPrefix) + ");"
+                        + "var directBase=" + directApiBase + ";"
+                        + "var path=location.pathname||'';"
+                        + "if(samePath(path,standalonePath)||path.indexOf(standalonePath+'/')===0)return clean(directBase);"
+                        + "var prefix=path;"
+                        + "if(standalonePath&&path.endsWith(standalonePath))prefix=path.slice(0,path.length-standalonePath.length);"
+                        + "else{var idx=path.lastIndexOf('/');prefix=idx>=0?path.slice(0,idx):'';}"
+                        + "return clean(location.origin + slash(prefix).replace(/\\/+$/,'') + apiPath);"
+                        + "})()";
             }
         }
 
@@ -197,7 +349,7 @@ public class WebChatServer {
                 + "<body data-bmwc-version=\"" + htmlEsc(version) + "\">\n"
                 + "  <noscript>JavaScript is required to use the web chat.</noscript>\n"
                 + "  <div class=\"bmwc-standalone-note\">BlueMapWebChat standalone mode</div>\n"
-                + "  <script>window.BlueMapWebChatConfig={apiBase:" + apiBaseJs + ",apiBaseUrl:" + apiBaseJs + ",standalone:true};</script>\n"
+                + "  <script>window.BlueMapWebChatConfig={apiBase:" + apiBaseJs + ",apiBaseUrl:" + apiBaseJs + ",standalone:true,standalonePath:" + JsonUtil.quote(config.standaloneWebPath) + "};</script>\n"
                 + "  <script>\n" + standaloneScript + "\n  </script>\n"
                 + "</body>\n"
                 + "</html>\n";
@@ -231,7 +383,8 @@ public class WebChatServer {
 
     public void publishFromGame(String player, String realPlayerName, String playerUuid, String message) {
         ConfigValues config = plugin.configValues();
-        String text = stripChatMessage(message, config);
+        String normalizedMessage = normalizeGameEmojiForWeb(message, config);
+        String text = stripChatMessage(normalizedMessage, config);
         if (text.isBlank()) return;
         if (plugin.discordBridge() != null && plugin.discordBridge().shouldSuppressGameEcho(player, text)) {
             return;
@@ -354,6 +507,15 @@ public class WebChatServer {
         m.put("youtubeRememberExpanded", c.youtubeRememberExpanded);
         m.put("youtubeAutoplayOnOpen", c.youtubeAutoplayOnOpen);
         m.put("youtubeMaxEmbedsPerMessage", c.youtubeMaxEmbedsPerMessage);
+        m.put("socialEmbedsEnabled", c.socialEmbedsEnabled);
+        m.put("socialEmbedsClickToLoad", c.socialEmbedsClickToLoad);
+        m.put("socialEmbedsMaxPerMessage", c.socialEmbedsMaxPerMessage);
+        m.put("tiktokEmbedEnabled", c.tiktokEmbedEnabled);
+        m.put("xEmbedEnabled", c.xEmbedEnabled);
+        m.put("xEmbedTheme", c.xEmbedTheme);
+        m.put("xEmbedDnt", c.xEmbedDnt);
+        m.put("xEmbedHideMedia", c.xEmbedHideMedia);
+        m.put("xEmbedHideThread", c.xEmbedHideThread);
         m.put("uploadEnabled", c.uploadEnabled);
         m.put("uploadAllowGuest", c.uploadAllowGuest);
         m.put("uploadAllowUser", c.uploadAllowUser);
@@ -368,6 +530,13 @@ public class WebChatServer {
         m.put("uploadPreviewImages", c.uploadPreviewImages);
         m.put("uploadPreviewVideos", c.uploadPreviewVideos);
         m.put("uploadPreviewAudio", c.uploadPreviewAudio);
+
+        m.put("emojiEnabled", c.emojiEnabled);
+        m.put("emojiShowButton", c.emojiShowButton);
+        m.put("emojiRenderSizePx", c.emojiRenderSizePx);
+        m.put("emojiPickerSizePx", c.emojiPickerSizePx);
+        m.put("emojiMessageTokenLimit", c.emojiMessageTokenLimit);
+        m.put("emojiTokenFormat", c.emojiTokenFormat == null ? "short" : c.emojiTokenFormat);
         m.put("pinnedEnabled", c.pinnedEnabled);
         m.put("pinnedMaxPins", c.pinnedMaxPins);
         m.put("pinnedShowToLoggedOut", c.pinnedShowToLoggedOut);
@@ -415,33 +584,56 @@ public class WebChatServer {
         int limit = boundedInt(q.get("limit"), config.historyPageSize, 0, 0);
         String before = q.get("before");
         if (before != null && before.isBlank()) before = null;
+        String after = q.get("after");
+        if (after != null && after.isBlank()) after = null;
 
         List<ChatMessage> page = new ArrayList<>();
-        boolean hasMore;
+        boolean hasBefore;
+        boolean hasAfter;
         String oldestId = "";
+        String newestId = "";
 
         boolean pruned;
         synchronized (history) {
             pruned = pruneHistoryLocked();
             List<ChatMessage> all = new ArrayList<>(history);
 
-            int end = all.size();
-            if (before != null) {
-                for (int i = all.size() - 1; i >= 0; i--) {
-                    if (before.equals(all.get(i).id)) {
-                        end = i;
+            int startIndex;
+            int endIndex;
+            if (after != null) {
+                startIndex = all.size();
+                for (int i = 0; i < all.size(); i++) {
+                    if (after.equals(all.get(i).id)) {
+                        startIndex = i + 1;
                         break;
                     }
                 }
+                endIndex = limit <= 0 ? all.size() : Math.min(all.size(), startIndex + limit);
+            } else {
+                endIndex = all.size();
+                if (before != null) {
+                    for (int i = all.size() - 1; i >= 0; i--) {
+                        if (before.equals(all.get(i).id)) {
+                            endIndex = i;
+                            break;
+                        }
+                    }
+                }
+                startIndex = limit <= 0 ? 0 : Math.max(0, endIndex - limit);
             }
 
-            int start = limit <= 0 ? 0 : Math.max(0, end - limit);
-            for (int i = start; i < end; i++) {
+            startIndex = Math.max(0, Math.min(startIndex, all.size()));
+            endIndex = Math.max(startIndex, Math.min(endIndex, all.size()));
+            for (int i = startIndex; i < endIndex; i++) {
                 page.add(all.get(i));
             }
 
-            hasMore = start > 0;
-            if (!page.isEmpty()) oldestId = page.get(0).id;
+            hasBefore = startIndex > 0;
+            hasAfter = endIndex < all.size();
+            if (!page.isEmpty()) {
+                oldestId = page.get(0).id;
+                newestId = page.get(page.size() - 1).id;
+            }
         }
 
         if (pruned && config.historyPersist) {
@@ -456,11 +648,62 @@ public class WebChatServer {
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("ok", true);
         res.put("messages", items);
-        res.put("hasMore", hasMore);
+        res.put("hasMore", hasBefore);
+        res.put("hasBefore", hasBefore);
+        res.put("hasAfter", hasAfter);
         res.put("oldestId", oldestId);
+        res.put("newestId", newestId);
 
         // messages are already JSON strings, so build this response manually.
-        sendJson(ex, 200, "{\"ok\":true,\"messages\":[" + String.join(",", items) + "],\"hasMore\":" + hasMore + ",\"oldestId\":" + JsonUtil.quote(oldestId) + "}");
+        sendJson(ex, 200, "{\"ok\":true,\"messages\":[" + String.join(",", items) + "]"
+                + ",\"hasMore\":" + hasBefore
+                + ",\"hasBefore\":" + hasBefore
+                + ",\"hasAfter\":" + hasAfter
+                + ",\"oldestId\":" + JsonUtil.quote(oldestId)
+                + ",\"newestId\":" + JsonUtil.quote(newestId)
+                + "}");
+    }
+
+    private void handleHistoryAround(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+
+        ConfigValues config = plugin.configValues();
+        Map<String, String> q = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
+        String targetId = stripControl(q.get("id"), 96);
+        if (targetId.isBlank()) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"missing_id\"}");
+            return;
+        }
+
+        int before = boundedInt(q.get("before"), 40, 0, 200);
+        int after = boundedInt(q.get("after"), 40, 0, 200);
+        AroundHistoryResult around = findHistoryAround(targetId, before, after);
+        if (around.pruned && config.historyPersist) {
+            savePersistedHistory();
+        }
+        if (around.targetIndex < 0) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\",\"targetId\":" + JsonUtil.quote(targetId) + "}");
+            return;
+        }
+
+        List<String> items = new ArrayList<>();
+        for (ChatMessage m : around.messages) {
+            items.add(m.toJson());
+        }
+        String oldestId = around.messages.isEmpty() ? "" : around.messages.get(0).id;
+        String newestId = around.messages.isEmpty() ? "" : around.messages.get(around.messages.size() - 1).id;
+        sendJson(ex, 200, "{\"ok\":true"
+                + ",\"targetId\":" + JsonUtil.quote(targetId)
+                + ",\"messages\":[" + String.join(",", items) + "]"
+                + ",\"hasBefore\":" + around.hasBefore
+                + ",\"hasAfter\":" + around.hasAfter
+                + ",\"oldestId\":" + JsonUtil.quote(oldestId)
+                + ",\"newestId\":" + JsonUtil.quote(newestId)
+                + "}");
     }
 
     private void handlePins(HttpExchange ex) throws IOException {
@@ -564,15 +807,41 @@ public class WebChatServer {
         }
 
         SessionContext ctx = storage.getSession(body.get("token"));
+        String replyToId = body.get("replyToId");
+        String replyToSender = body.get("replyToSender");
+        String replyToPreview = body.get("replyToPreview");
         if (ctx != null) {
-            handleUserSend(ex, ctx, message);
+            handleUserSend(ex, ctx, message, replyToId, replyToSender, replyToPreview);
             return;
         }
 
-        handleGuestSend(ex, body, ip, message);
+        handleGuestSend(ex, body, ip, message, replyToId, replyToSender, replyToPreview);
     }
 
-    private void handleUserSend(HttpExchange ex, SessionContext ctx, String message) throws IOException {
+
+    private boolean emojiTokenLimitExceeded(String message, ConfigValues config) {
+        if (config == null || !config.emojiEnabled || config.emojiMessageTokenLimit <= 0) return false;
+        EmojiCatalog catalog = scanEmojiCatalog(config);
+        Map<String, EmojiItem> emojiById = new HashMap<>();
+        for (EmojiItem item : catalog.items) {
+            emojiById.put(item.id, item);
+        }
+        Map<String, String> aliasToId = emojiAliasToWebId(catalog, config);
+        int count = 0;
+        Matcher matcher = EMOJI_TOKEN_PATTERN.matcher(String.valueOf(message == null ? "" : message));
+        while (matcher.find()) {
+            if (emojiItemForToken(matcher.group(1), emojiById, aliasToId) == null) continue;
+            count++;
+            if (count > config.emojiMessageTokenLimit) return true;
+        }
+        return false;
+    }
+
+    private void handleUserSend(HttpExchange ex, SessionContext ctx, String message, String replyToId, String replyToSender, String replyToPreview) throws IOException {
+        if (emojiTokenLimitExceeded(message, plugin.configValues())) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"emoji_limit\"}");
+            return;
+        }
         if (!ctx.account.role.atLeast(Role.USER)) {
             sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}");
             return;
@@ -580,6 +849,7 @@ public class WebChatServer {
         prewarmExternalMediaCache(message);
         ChatMessage msg = new ChatMessage(System.currentTimeMillis(), "web", plugin.displayNameForAccount(ctx.account), ctx.account.role.name(), message)
                 .withRealSender(stripControl(ctx.account.safeUsername(), 64), stripControl(ctx.account.uuid, 64));
+        attachReplyIfPresent(msg, replyToId, replyToSender, replyToPreview);
         sendToGame(msg, ctx.account.role == Role.ADMIN
                 ? plugin.configValues().webAdminToGameFormat
                 : plugin.configValues().webUserToGameFormat);
@@ -591,8 +861,12 @@ public class WebChatServer {
         sendJson(ex, 200, "{\"ok\":true}");
     }
 
-    private void handleGuestSend(HttpExchange ex, Map<String, String> body, String ip, String message) throws IOException {
+    private void handleGuestSend(HttpExchange ex, Map<String, String> body, String ip, String message, String replyToId, String replyToSender, String replyToPreview) throws IOException {
         ConfigValues config = plugin.configValues();
+        if (emojiTokenLimitExceeded(message, config)) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"emoji_limit\"}");
+            return;
+        }
         if (!config.guestEnabled) {
             sendJson(ex, 403, "{\"ok\":false,\"error\":\"guest_disabled\"}");
             return;
@@ -641,6 +915,7 @@ public class WebChatServer {
 
         prewarmExternalMediaCache(message);
         ChatMessage msg = new ChatMessage(System.currentTimeMillis(), "guest", guestName, "GUEST", message);
+        attachReplyIfPresent(msg, replyToId, replyToSender, replyToPreview);
         sendToGame(msg, config.webGuestToGameFormat);
         if (config.broadcastWebChatToWeb) {
             addHistory(msg);
@@ -762,9 +1037,13 @@ public class WebChatServer {
         }
 
         if (config.commandsBroadcastToWebChat) {
+            String executor = commandExecutorLabel(ctx.account);
             Map<String, String> values = new LinkedHashMap<>();
             values.put("label", resultLabel);
-            publishSystemEvent("Command", "Executed web command: " + resultLabel, "system.command-executed", JsonUtil.obj(values));
+            values.put("executor", executor);
+            String message = plugin.langManager().text("system.command-executed-by",
+                    executor + " executed web command: " + resultLabel, values);
+            publishSystemEvent("Command", message, "system.command-executed-by", JsonUtil.obj(values));
         }
 
         sendJson(ex, 200, "{\"ok\":true,\"accepted\":" + accepted
@@ -779,6 +1058,19 @@ public class WebChatServer {
         }
         return null;
     }
+
+    private String commandExecutorLabel(Account account) {
+        if (account == null) return "Unknown";
+        String display = stripControl(plugin.displayNameForAccount(account), 64).trim();
+        String username = stripControl(account.safeUsername(), 64).trim();
+        if (display.isBlank()) display = username;
+        if (display.isBlank()) display = "Unknown";
+        if (!username.isBlank() && !username.equals(display)) {
+            return display + " (" + username + ")";
+        }
+        return display;
+    }
+
 
     private String commandPresetJson(ConfigValues.CommandPreset preset) {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -885,6 +1177,664 @@ public class WebChatServer {
     }
 
 
+
+    private Path emojiDir() {
+        String dir = plugin.configValues().emojiDirectory;
+        if (dir == null || dir.isBlank()) dir = "emojis";
+        Path path = Path.of(dir);
+        if (!path.isAbsolute()) path = plugin.getDataFolder().toPath().resolve(path);
+        return path.normalize();
+    }
+
+
+    private void ensureEmojiDirectoryExists() throws IOException {
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.emojiEnabled) return;
+        Files.createDirectories(emojiDir());
+    }
+
+    private Path emojiPackDir(String packId) {
+        Path dir = emojiDir();
+        String pack = sanitizeEmojiSegment(packId);
+        if (pack.isBlank() || "default".equalsIgnoreCase(pack)) return dir;
+        return dir.resolve(pack).normalize();
+    }
+
+    private String normalizeEmojiPackId(String packId) {
+        String pack = sanitizeEmojiSegment(packId);
+        return pack.isBlank() ? "default" : pack;
+    }
+
+    private boolean validEmojiPackTarget(Path dir, Path target) {
+        return target != null && target.normalize().startsWith(dir.normalize());
+    }
+
+    private long emojiTotalSize(ConfigValues config) {
+        Path dir = emojiDir();
+        if (!Files.isDirectory(dir)) return 0L;
+        final long[] total = new long[]{0L};
+        try (java.util.stream.Stream<Path> stream = Files.walk(dir, 2)) {
+            stream.filter(Files::isRegularFile).forEach(path -> {
+                String ext = extension(path.getFileName().toString()).toLowerCase(Locale.ROOT);
+                if (!emojiExtensionAllowed(ext, config)) return;
+                try { total[0] += Files.size(path); } catch (IOException ignored) {}
+            });
+        } catch (IOException ignored) {
+        }
+        return total[0];
+    }
+
+    private String uniqueEmojiFilename(Path dir, String base, String ext) {
+        String safeBase = sanitizeEmojiFilenameBase(base);
+        if (safeBase.isBlank()) safeBase = "emoji";
+        safeBase = limitCodePoints(safeBase, 80);
+        String suffix = "." + ext.toLowerCase(Locale.ROOT);
+        Path candidate = dir.resolve(safeBase + suffix).normalize();
+        if (!Files.exists(candidate)) return safeBase + suffix;
+        for (int i = 1; i < 10000; i++) {
+            String name = safeBase + "-" + i + suffix;
+            if (!Files.exists(dir.resolve(name).normalize())) return name;
+        }
+        return safeBase + "-" + System.currentTimeMillis() + suffix;
+    }
+
+    private String emojiRenameFilename(String requested, String currentExt) {
+        String cleaned = safeUploadedFilename(requested, "emoji");
+        String ext = extension(cleaned).toLowerCase(Locale.ROOT);
+        String base = cleaned;
+        if (!ext.isBlank() && ext.equalsIgnoreCase(currentExt)) {
+            base = cleaned.substring(0, cleaned.lastIndexOf('.'));
+        } else if (!ext.isBlank() && emojiExtensionAllowed(ext, plugin.configValues())) {
+            // Renaming changes the file name only; changing the actual file format
+            // extension is intentionally not supported from the admin panel.
+            return "";
+        }
+        String safeBase = sanitizeEmojiFilenameBase(base);
+        if (safeBase.isBlank()) return "";
+        return safeBase + "." + currentExt.toLowerCase(Locale.ROOT);
+    }
+
+
+    private void handleEmojis(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod()) && !"HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+
+        ConfigValues config = plugin.configValues();
+        if (!config.emojiEnabled) {
+            sendJson(ex, 200, "{\"ok\":true,\"enabled\":false,\"packs\":[],\"items\":[]}");
+            return;
+        }
+
+        String path = ex.getRequestURI().getPath();
+        String prefix = matchingApiContextPrefix(config, path) + "/emojis";
+        if (path.equals(prefix) || path.equals(prefix + "/")) {
+            handleEmojiList(ex, config);
+            return;
+        }
+        handleEmojiFile(ex, config, prefix, path);
+    }
+
+    private void handleEmojiList(HttpExchange ex, ConfigValues config) throws IOException {
+        EmojiCatalog catalog = scanEmojiCatalog(config);
+        Map<String, List<String>> imageEmojiSymbolsById = imageEmojiSymbolsByWebId(catalog, config);
+        List<Object> packObjects = new ArrayList<>();
+        for (EmojiPack pack : catalog.packs) {
+            Map<String, Object> pm = new LinkedHashMap<>();
+            pm.put("id", pack.id);
+            pm.put("label", pack.label);
+            pm.put("count", pack.items.size());
+            packObjects.add(pm);
+        }
+        String emojiBaseUrl = publicEmojiBaseUrl(ex);
+        List<Object> itemObjects = new ArrayList<>();
+        for (EmojiItem item : catalog.items) {
+            Map<String, Object> im = new LinkedHashMap<>();
+            im.put("id", item.id);
+            im.put("pack", item.pack);
+            im.put("name", item.name);
+            im.put("label", item.label);
+            im.put("path", item.relativePath);
+            im.put("filename", Path.of(item.relativePath).getFileName().toString());
+            im.put("url", emojiBaseUrl + "/" + urlPath(item.relativePath));
+            im.put("aliases", emojiPublicAliases(item, config));
+            im.put("symbols", imageEmojiSymbolsById.getOrDefault(item.id, List.of()));
+            im.put("ext", item.ext);
+            im.put("size", item.size);
+            im.put("animated", "gif".equalsIgnoreCase(item.ext));
+            itemObjects.add(im);
+        }
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("ok", true);
+        res.put("enabled", true);
+        res.put("renderSizePx", config.emojiRenderSizePx);
+        res.put("pickerSizePx", config.emojiPickerSizePx);
+        res.put("messageTokenLimit", config.emojiMessageTokenLimit);
+        res.put("tokenFormat", config.emojiTokenFormat == null ? "short" : config.emojiTokenFormat);
+        res.put("packs", packObjects);
+        res.put("items", itemObjects);
+        sendJson(ex, 200, JsonUtil.obj(res));
+    }
+
+    private List<String> emojiPublicAliases(EmojiItem item, ConfigValues config) {
+        if (item == null) return List.of();
+        LinkedHashSet<String> aliases = new LinkedHashSet<>();
+        for (String alias : new String[]{
+                item.id,
+                item.name,
+                item.label,
+                emojiTokenFallbackLabel(item.id),
+                emojiGameLabel(item, config),
+                item.pack == null || item.pack.isBlank() ? "" : item.pack + "/" + item.name,
+                item.pack == null || item.pack.isBlank() ? "" : item.pack + "/" + item.label
+        }) {
+            for (String key : emojiAliasKeys(alias)) {
+                if (!key.isBlank()) aliases.add(key);
+            }
+        }
+        return new ArrayList<>(aliases);
+    }
+
+    private void handleEmojiFile(HttpExchange ex, ConfigValues config, String prefix, String path) throws IOException {
+        String raw = path.startsWith(prefix + "/") ? path.substring((prefix + "/").length()) : "";
+        String name = URLDecoder.decode(raw, StandardCharsets.UTF_8).replace("\\", "/");
+        if (name.isBlank() || name.startsWith("/") || name.contains("..") || name.contains("\0")) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_file\"}");
+            return;
+        }
+        String ext = extension(name).toLowerCase(Locale.ROOT);
+        if (!emojiExtensionAllowed(ext, config)) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_file\"}");
+            return;
+        }
+        Path dir = emojiDir();
+        Path file = dir.resolve(name).normalize();
+        if (!file.startsWith(dir) || !Files.exists(file) || !Files.isRegularFile(file)) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+        long len = Files.size(file);
+        long max = config.emojiMaxFileSizeKb > 0 ? config.emojiMaxFileSizeKb * 1024L : 0L;
+        if (max > 0 && len > max) {
+            sendJson(ex, 413, "{\"ok\":false,\"error\":\"file_too_large\"}");
+            return;
+        }
+
+        Headers h = ex.getResponseHeaders();
+        addCors(ex);
+        addSecurityHeaders(ex);
+        h.set("Content-Type", contentTypeForExtension(ext));
+        h.set("X-Content-Type-Options", "nosniff");
+        h.set("Cache-Control", "public, max-age=604800");
+        setInlineContentDisposition(h, Path.of(name).getFileName().toString());
+        h.set("Content-Length", String.valueOf(len));
+
+        boolean head = "HEAD".equalsIgnoreCase(ex.getRequestMethod());
+        ex.sendResponseHeaders(200, head ? -1 : len);
+        if (!head) {
+            try (OutputStream os = ex.getResponseBody()) {
+                Files.copy(file, os);
+            }
+        } else {
+            ex.close();
+        }
+    }
+
+
+    private void handleShortEmoji(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod()) && !"HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (!config.emojiEnabled) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+
+        String path = ex.getRequestURI().getPath();
+        String prefix = matchingApiContextPrefix(config, path) + "/e/";
+        if (!path.startsWith(prefix)) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+        String id = URLDecoder.decode(path.substring(prefix.length()), StandardCharsets.UTF_8).trim().toLowerCase(Locale.ROOT);
+        if (!id.matches("[0-9a-f]{8}")) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+
+        EmojiItem found = null;
+        for (EmojiItem item : scanEmojiCatalog(config).items) {
+            if (id.equals(shortEmojiId(item.id))) {
+                found = item;
+                break;
+            }
+        }
+        if (found == null) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+        sendEmojiItemFile(ex, config, found);
+    }
+
+    private void sendEmojiItemFile(HttpExchange ex, ConfigValues config, EmojiItem item) throws IOException {
+        Path dir = emojiDir();
+        Path file = dir.resolve(item.relativePath).normalize();
+        if (!file.startsWith(dir) || !Files.exists(file) || !Files.isRegularFile(file)) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+        String ext = item.ext.toLowerCase(Locale.ROOT);
+        if (!emojiExtensionAllowed(ext, config)) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_file\"}");
+            return;
+        }
+        long len = Files.size(file);
+        long max = config.emojiMaxFileSizeKb > 0 ? config.emojiMaxFileSizeKb * 1024L : 0L;
+        if (max > 0 && len > max) {
+            sendJson(ex, 413, "{\"ok\":false,\"error\":\"file_too_large\"}");
+            return;
+        }
+
+        Headers h = ex.getResponseHeaders();
+        addCors(ex);
+        addSecurityHeaders(ex);
+        h.set("Content-Type", contentTypeForExtension(ext));
+        h.set("X-Content-Type-Options", "nosniff");
+        h.set("Cache-Control", "public, max-age=604800");
+        setInlineContentDisposition(h, Path.of(item.relativePath).getFileName().toString());
+        h.set("Content-Length", String.valueOf(len));
+
+        boolean head = "HEAD".equalsIgnoreCase(ex.getRequestMethod());
+        ex.sendResponseHeaders(200, head ? -1 : len);
+        if (!head) {
+            try (OutputStream os = ex.getResponseBody()) {
+                Files.copy(file, os);
+            }
+        } else {
+            ex.close();
+        }
+    }
+
+    private EmojiCatalog scanEmojiCatalog(ConfigValues config) {
+        EmojiCatalog catalog = new EmojiCatalog();
+        Path dir = emojiDir();
+        if (!Files.isDirectory(dir)) return catalog;
+
+        long maxOne = config.emojiMaxFileSizeKb > 0 ? config.emojiMaxFileSizeKb * 1024L : 0L;
+        long maxTotal = config.emojiMaxTotalSizeMb > 0 ? config.emojiMaxTotalSizeMb * 1024L * 1024L : 0L;
+        long[] total = new long[]{0L};
+
+        try {
+            // Root files are individual/default emojis.
+            EmojiPack rootPack = scanEmojiPack(config, dir, "default", "Default", "", maxOne, maxTotal, total);
+            if (!rootPack.items.isEmpty()) {
+                catalog.packs.add(rootPack);
+                catalog.items.addAll(rootPack.items);
+            }
+
+            List<Path> packs = new ArrayList<>();
+            try (java.util.stream.Stream<Path> stream = Files.list(dir)) {
+                stream.filter(Files::isDirectory).forEach(packs::add);
+            }
+            packs.sort((a, b) -> compareNatural(a.getFileName().toString(), b.getFileName().toString()));
+            for (Path packDir : packs) {
+                String rawName = packDir.getFileName().toString();
+                String packId = sanitizeEmojiSegment(rawName);
+                if (packId.isBlank()) continue;
+                EmojiPack pack = scanEmojiPack(config, packDir, packId, rawName, packId + "/", maxOne, maxTotal, total);
+                if (!pack.items.isEmpty()) {
+                    catalog.packs.add(pack);
+                    catalog.items.addAll(pack.items);
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        return catalog;
+    }
+
+    private int emojiWebPreferenceRank(String ext) {
+        String e = String.valueOf(ext == null ? "" : ext).replace(".", "").trim().toLowerCase(Locale.ROOT);
+        if (e.equals("gif")) return 0;
+        if (e.equals("webp")) return 1;
+        if (e.equals("jpg") || e.equals("jpeg")) return 2;
+        if (e.equals("png")) return 3;
+        return 9;
+    }
+
+    private boolean shouldReplaceEmojiCatalogChoice(Path current, Path candidate) {
+        String currentExt = extension(current.getFileName().toString()).toLowerCase(Locale.ROOT);
+        String candidateExt = extension(candidate.getFileName().toString()).toLowerCase(Locale.ROOT);
+        int currentRank = emojiWebPreferenceRank(currentExt);
+        int candidateRank = emojiWebPreferenceRank(candidateExt);
+        if (candidateRank != currentRank) return candidateRank < currentRank;
+        return compareNatural(candidate.getFileName().toString(), current.getFileName().toString()) < 0;
+    }
+
+    private String uniqueEmojiBase(Path packDir, String desiredBase) {
+        String clean = sanitizeEmojiFilenameBase(desiredBase);
+        if (clean.isBlank()) clean = "emoji";
+        String base = clean;
+        int i = 1;
+        while (emojiBaseExists(packDir, base)) {
+            base = clean + "-" + i++;
+        }
+        return base;
+    }
+
+    private boolean emojiBaseExists(Path packDir, String base) {
+        if (packDir == null || base == null || base.isBlank()) return false;
+        String prefix = base + ".";
+        try (java.util.stream.Stream<Path> stream = Files.list(packDir)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .map(p -> p.getFileName() == null ? "" : p.getFileName().toString())
+                    .anyMatch(name -> name.equals(base) || name.startsWith(prefix));
+        } catch (IOException ignored) {
+            return false;
+        }
+    }
+
+    private EmojiPack scanEmojiPack(ConfigValues config, Path packDir, String packId, String label, String relativePrefix, long maxOne, long maxTotal, long[] total) throws IOException {
+        EmojiPack pack = new EmojiPack(packId, label);
+        Map<String, Path> chosenByBase = new LinkedHashMap<>();
+        List<Path> files = new ArrayList<>();
+        try (java.util.stream.Stream<Path> stream = Files.list(packDir)) {
+            stream.filter(Files::isRegularFile).forEach(files::add);
+        }
+        files.sort((a, b) -> compareNatural(a.getFileName().toString(), b.getFileName().toString()));
+
+        for (Path file : files) {
+            String fileName = file.getFileName().toString();
+            String ext = extension(fileName).toLowerCase(Locale.ROOT);
+            if (!emojiExtensionAllowed(ext, config)) continue;
+            String base = fileName.contains(".") ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+            String itemName = sanitizeEmojiSegment(base);
+            if (itemName.isBlank()) continue;
+
+            Path current = chosenByBase.get(itemName);
+            if (current == null || shouldReplaceEmojiCatalogChoice(current, file)) {
+                chosenByBase.put(itemName, file);
+            }
+        }
+
+        for (Path file : chosenByBase.values()) {
+            String fileName = file.getFileName().toString();
+            String ext = extension(fileName).toLowerCase(Locale.ROOT);
+            long len;
+            try { len = Files.size(file); } catch (IOException e) { continue; }
+            if (maxOne > 0 && len > maxOne) continue;
+            if (maxTotal > 0 && total[0] + len > maxTotal) continue;
+            String base = fileName.contains(".") ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+            String itemName = sanitizeEmojiSegment(base);
+            if (itemName.isBlank()) continue;
+            String id = packId + "/" + itemName;
+            String rel = relativePrefix + fileName;
+            EmojiItem item = new EmojiItem(id, packId, itemName, base, rel, ext, len);
+            pack.items.add(item);
+            total[0] += len;
+        }
+        return pack;
+    }
+
+    private boolean emojiExtensionAllowed(String ext, ConfigValues config) {
+        if (ext == null || ext.isBlank()) return false;
+        if (config.emojiAllowedExtensions == null || config.emojiAllowedExtensions.isEmpty()) {
+            return Set.of("png", "jpg", "jpeg", "gif", "webp").contains(ext.toLowerCase(Locale.ROOT));
+        }
+        String e = ext.toLowerCase(Locale.ROOT);
+        for (String allowed : config.emojiAllowedExtensions) {
+            if (e.equals(String.valueOf(allowed).replace(".", "").trim().toLowerCase(Locale.ROOT))) return true;
+        }
+        return false;
+    }
+
+    private boolean emojiNeedsGamePng(String ext) {
+        String e = String.valueOf(ext == null ? "" : ext).replace(".", "").trim().toLowerCase(Locale.ROOT);
+        return e.equals("png") || e.equals("gif") || e.equals("jpg") || e.equals("jpeg") || e.equals("webp");
+    }
+
+    private boolean imageEmojisSidecarActive(ConfigValues config) {
+        if (config == null || !config.emojiEnabled || !config.emojiGameLinkEnabled) return false;
+        String mode = String.valueOf(config.emojiGameLinkMode == null ? "" : config.emojiGameLinkMode).trim().toLowerCase(Locale.ROOT);
+        return mode.equals("imageemojis") || mode.equals("imageemojis-link");
+    }
+
+    private boolean emojiHasPngSidecarSource(String ext) {
+        String e = String.valueOf(ext == null ? "" : ext).replace(".", "").trim().toLowerCase(Locale.ROOT);
+        return e.equals("gif") || e.equals("jpg") || e.equals("jpeg") || e.equals("webp");
+    }
+
+    private byte[] convertImageBytesToPng(byte[] data) throws IOException {
+        if (data == null || data.length == 0) return null;
+        BufferedImage image;
+        try (InputStream in = new java.io.ByteArrayInputStream(data)) {
+            image = ImageIO.read(in);
+        }
+        if (image == null) return null;
+        BufferedImage out = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = out.createGraphics();
+        try {
+            g.drawImage(image, 0, 0, null);
+        } finally {
+            g.dispose();
+        }
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        if (!ImageIO.write(out, "png", baos)) return null;
+        return baos.toByteArray();
+    }
+
+    private Path emojiPngSidecarPath(Path originalFile) {
+        if (originalFile == null) return null;
+        Path root = emojiDir();
+        Path normalized = originalFile.normalize();
+        if (!normalized.startsWith(root)) return null;
+        String fileName = normalized.getFileName() == null ? "" : normalized.getFileName().toString();
+        int dot = fileName.lastIndexOf('.');
+        String base = dot >= 0 ? fileName.substring(0, dot) : fileName;
+        if (base.isBlank() || normalized.getParent() == null) return null;
+        Path sidecar = normalized.getParent().resolve(base + ".png").normalize();
+        return sidecar.startsWith(root) ? sidecar : null;
+    }
+
+    private boolean createPngSidecarForFile(Path originalFile, byte[] sourceData, boolean overwrite) {
+        if (originalFile == null) return false;
+        String ext = extension(originalFile.getFileName() == null ? "" : originalFile.getFileName().toString()).toLowerCase(Locale.ROOT);
+        if (!emojiHasPngSidecarSource(ext)) return false;
+        Path sidecar = emojiPngSidecarPath(originalFile);
+        if (sidecar == null) return false;
+        try {
+            if (Files.exists(sidecar) && !overwrite) return true;
+            byte[] input = sourceData != null ? sourceData : Files.readAllBytes(originalFile);
+            byte[] pngData = convertImageBytesToPng(input);
+            if (pngData == null || pngData.length == 0) return false;
+            Files.write(sidecar, pngData, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            imageEmojisFontCache = null;
+            return true;
+        } catch (Exception ex) {
+            plugin.getLogger().warning("Failed to create PNG sidecar for emoji " + originalFile + ": " + ex.getMessage());
+            return false;
+        }
+    }
+
+    private void syncExistingImageEmojisPngSidecarsOnStartup() {
+        ConfigValues config = plugin.configValues();
+        if (!imageEmojisSidecarActive(config)) return;
+        Path root = emojiDir();
+        if (!Files.isDirectory(root)) return;
+        int created = 0;
+        int already = 0;
+        int failed = 0;
+        try (java.util.stream.Stream<Path> stream = Files.walk(root)) {
+            for (Path file : stream.filter(Files::isRegularFile).toList()) {
+                String ext = extension(file.getFileName() == null ? "" : file.getFileName().toString()).toLowerCase(Locale.ROOT);
+                if (!emojiHasPngSidecarSource(ext)) continue;
+                Path sidecar = emojiPngSidecarPath(file);
+                if (sidecar != null && Files.isRegularFile(sidecar)) {
+                    already++;
+                    continue;
+                }
+                if (createPngSidecarForFile(file, null, false)) created++;
+                else failed++;
+            }
+        } catch (IOException ex) {
+            plugin.getLogger().warning("Failed to scan emoji directory for PNG sidecars: " + ex.getMessage());
+        }
+        plugin.getLogger().info("ImageEmojis PNG sidecar sync complete: created " + created
+                + ", already present " + already + ", failed " + failed + ".");
+    }
+
+    private String sanitizeEmojiSegment(String value) {
+        String raw = java.text.Normalizer.normalize(String.valueOf(value == null ? "" : value), java.text.Normalizer.Form.NFC).trim();
+        if (raw.isBlank()) return "";
+        StringBuilder out = new StringBuilder();
+        boolean lastSpace = false;
+        for (int i = 0; i < raw.length(); ) {
+            int cp = raw.codePointAt(i);
+            i += Character.charCount(cp);
+            if (cp == '/' || cp == '\\' || cp == ':' || cp == 0 || Character.isISOControl(cp)) {
+                if (!lastSpace) {
+                    out.append('-');
+                    lastSpace = true;
+                }
+                continue;
+            }
+            if (Character.isWhitespace(cp)) {
+                if (!lastSpace) {
+                    out.append(' ');
+                    lastSpace = true;
+                }
+                continue;
+            }
+            out.appendCodePoint(cp);
+            lastSpace = false;
+        }
+        String result = out.toString().trim();
+        while (result.startsWith("-")) result = result.substring(1).trim();
+        while (result.endsWith("-")) result = result.substring(0, result.length() - 1).trim();
+        return limitCodePoints(result, 96);
+    }
+
+    private String sanitizeEmojiFilenameBase(String value) {
+        String raw = java.text.Normalizer.normalize(String.valueOf(value == null ? "" : value), java.text.Normalizer.Form.NFC).trim();
+        if (raw.isBlank()) return "";
+        StringBuilder out = new StringBuilder();
+        boolean lastSpace = false;
+        for (int i = 0; i < raw.length(); ) {
+            int cp = raw.codePointAt(i);
+            i += Character.charCount(cp);
+            boolean invalidPathChar = cp == '/' || cp == '\\' || cp == ':' || cp == '*' || cp == '?' || cp == '"' || cp == '<' || cp == '>' || cp == '|' || cp == 0 || Character.isISOControl(cp);
+            if (invalidPathChar) {
+                if (!lastSpace) {
+                    out.append('-');
+                    lastSpace = true;
+                }
+                continue;
+            }
+            if (Character.isWhitespace(cp)) {
+                if (!lastSpace) {
+                    out.append(' ');
+                    lastSpace = true;
+                }
+                continue;
+            }
+            out.appendCodePoint(cp);
+            lastSpace = false;
+        }
+        String result = out.toString().trim();
+        while (result.startsWith("-")) result = result.substring(1).trim();
+        while (result.endsWith("-")) result = result.substring(0, result.length() - 1).trim();
+        return limitCodePoints(result, 80);
+    }
+
+    private int compareNatural(String a, String b) {
+        String aa = String.valueOf(a == null ? "" : a);
+        String bb = String.valueOf(b == null ? "" : b);
+        int ia = 0, ib = 0;
+        while (ia < aa.length() && ib < bb.length()) {
+            int ca = aa.codePointAt(ia);
+            int cb = bb.codePointAt(ib);
+            if (Character.isDigit(ca) && Character.isDigit(cb)) {
+                int sa = ia;
+                int sb = ib;
+                while (ia < aa.length() && Character.isDigit(aa.codePointAt(ia))) ia += Character.charCount(aa.codePointAt(ia));
+                while (ib < bb.length() && Character.isDigit(bb.codePointAt(ib))) ib += Character.charCount(bb.codePointAt(ib));
+                String na = aa.substring(sa, ia).replaceFirst("^0+(?!$)", "");
+                String nb = bb.substring(sb, ib).replaceFirst("^0+(?!$)", "");
+                int len = Integer.compare(na.length(), nb.length());
+                if (len != 0) return len;
+                int cmp = na.compareTo(nb);
+                if (cmp != 0) return cmp;
+                continue;
+            }
+            String la = new String(Character.toChars(ca)).toLowerCase(Locale.ROOT);
+            String lb = new String(Character.toChars(cb)).toLowerCase(Locale.ROOT);
+            int cmp = la.compareTo(lb);
+            if (cmp != 0) return cmp;
+            ia += Character.charCount(ca);
+            ib += Character.charCount(cb);
+        }
+        return Integer.compare(aa.length(), bb.length());
+    }
+
+    private String limitCodePoints(String value, int maxCodePoints) {
+        String text = String.valueOf(value == null ? "" : value);
+        if (maxCodePoints <= 0 || text.codePointCount(0, text.length()) <= maxCodePoints) return text;
+        return text.substring(0, text.offsetByCodePoints(0, maxCodePoints));
+    }
+
+    private void setInlineContentDisposition(Headers headers, String filename) {
+        String safeAscii = String.valueOf(filename == null ? "emoji" : filename).replace("\"", "").replace("\r", "").replace("\n", "");
+        String encoded = java.net.URLEncoder.encode(safeAscii, StandardCharsets.UTF_8).replace("+", "%20");
+        headers.set("Content-Disposition", "inline; filename=\"" + safeAscii.replaceAll("[^\\x20-\\x7e]", "_") + "\"; filename*=UTF-8''" + encoded);
+    }
+
+    private String urlPath(String path) {
+        return Arrays.stream(String.valueOf(path == null ? "" : path).replace("\\", "/").split("/"))
+                .filter(part -> !part.isBlank())
+                .map(part -> java.net.URLEncoder.encode(part, StandardCharsets.UTF_8).replace("+", "%20"))
+                .reduce((a, b) -> a + "/" + b)
+                .orElse("");
+    }
+
+    private static final class EmojiCatalog {
+        final List<EmojiPack> packs = new ArrayList<>();
+        final List<EmojiItem> items = new ArrayList<>();
+    }
+
+    private static final class EmojiPack {
+        final String id;
+        final String label;
+        final List<EmojiItem> items = new ArrayList<>();
+        EmojiPack(String id, String label) {
+            this.id = id == null ? "" : id;
+            this.label = label == null ? this.id : label;
+        }
+    }
+
+    private static final class EmojiItem {
+        final String id;
+        final String pack;
+        final String name;
+        final String label;
+        final String relativePath;
+        final String ext;
+        final long size;
+        EmojiItem(String id, String pack, String name, String label, String relativePath, String ext, long size) {
+            this.id = id == null ? "" : id;
+            this.pack = pack == null ? "" : pack;
+            this.name = name == null ? "" : name;
+            this.label = label == null ? this.name : label;
+            this.relativePath = relativePath == null ? "" : relativePath;
+            this.ext = ext == null ? "" : ext;
+            this.size = size;
+        }
+    }
+
     private Path webFontDir() {
         String dir = plugin.configValues().webFontsDirectory;
         if (dir == null || dir.isBlank()) dir = "fonts";
@@ -906,8 +1856,8 @@ public class WebChatServer {
             return;
         }
 
-        String prefix = config.pathPrefix + "/fonts/";
         String path = ex.getRequestURI().getPath();
+        String prefix = matchingApiContextPrefix(config, path) + "/fonts/";
         if (!path.startsWith(prefix)) {
             sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
             return;
@@ -977,8 +1927,8 @@ public class WebChatServer {
             return;
         }
 
-        String prefix = config.pathPrefix + "/uploads/";
         String path = ex.getRequestURI().getPath();
+        String prefix = matchingApiContextPrefix(config, path) + "/uploads/";
         int idx = path.indexOf(prefix);
         if (idx < 0) {
             sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
@@ -1560,32 +2510,130 @@ public class WebChatServer {
     }
 
     private String publicUploadBaseUrl(HttpExchange ex) {
-        String configured = plugin.configValues().uploadPublicBaseUrl;
-        String proto = ex.getRequestHeaders().getFirst("X-Forwarded-Proto");
-        if (proto == null || proto.isBlank()) proto = "http";
-
-        String host = ex.getRequestHeaders().getFirst("X-Forwarded-Host");
-        if (host == null || host.isBlank()) host = ex.getRequestHeaders().getFirst("Host");
-        if (host == null || host.isBlank()) host = plugin.configValues().httpHost + ":" + plugin.configValues().httpPort;
-
+        ConfigValues config = plugin.configValues();
+        String configured = config.uploadPublicBaseUrl;
         if (configured != null && !configured.isBlank()) {
-            configured = configured.trim();
-            if (configured.startsWith("http://") || configured.startsWith("https://")) {
-                return trimTrailingSlash(configured);
-            }
-            if (configured.startsWith("//")) {
-                return trimTrailingSlash(proto + ":" + configured);
-            }
-            if (configured.startsWith("/")) {
-                // Same-origin path for reverse proxies, e.g. /bmwc/api/uploads.
-                // Return the path as-is instead of expanding it to http://host/...
-                // so HTTPS deployments do not depend on X-Forwarded-Proto.
-                return trimTrailingSlash(configured);
-            }
-            return trimTrailingSlash("/" + configured);
+            return normalizeResourceBaseUrl(ex, configured, "uploads");
+        }
+        return publicApiBaseUrl(ex) + "/uploads";
+    }
+
+    private String publicEmojiBaseUrl(HttpExchange ex) {
+        ConfigValues config = plugin.configValues();
+        String configured = config.emojiPublicBaseUrl;
+        if (configured != null && !configured.isBlank()) {
+            return normalizeResourceBaseUrl(ex, configured, "emojis");
+        }
+        return publicApiBaseUrl(ex) + "/emojis";
+    }
+
+    private String normalizeResourceBaseUrl(HttpExchange ex, String configured, String resource) {
+        String base = normalizePublicBaseUrl(ex, configured);
+        String suffix = "/" + resource;
+        if (base.equals(suffix) || base.endsWith(suffix)) return base;
+        if (looksLikeApiBase(base, plugin.configValues())) return base + suffix;
+        return base;
+    }
+
+    private boolean looksLikeApiBase(String value, ConfigValues config) {
+        String v = trimTrailingSlash(String.valueOf(value == null ? "" : value).trim());
+        if (v.isBlank()) return false;
+        String path = v;
+        try {
+            URI uri = URI.create(v);
+            if (uri.getScheme() != null && uri.getPath() != null) path = uri.getPath();
+        } catch (IllegalArgumentException ignored) {
+        }
+        path = trimTrailingSlash(path);
+        String pathPrefix = trimTrailingSlash(config.pathPrefix == null || config.pathPrefix.isBlank() ? "/api" : config.pathPrefix);
+        if (path.equals(pathPrefix) || path.endsWith(pathPrefix)) return true;
+        String webBase = trimTrailingSlash(config.apiBaseUrl == null ? "" : config.apiBaseUrl.trim());
+        String standaloneBase = trimTrailingSlash(config.standaloneWebApiBaseUrl == null ? "" : config.standaloneWebApiBaseUrl.trim());
+        return (!webBase.isBlank() && v.equals(webBase)) || (!standaloneBase.isBlank() && v.equals(standaloneBase));
+    }
+
+    private String publicApiBaseUrl(HttpExchange ex) {
+        ConfigValues config = plugin.configValues();
+        String configured = config.apiBaseUrl;
+        if (configured == null || configured.isBlank()) configured = config.standaloneWebApiBaseUrl;
+        if (configured != null && !configured.isBlank()) {
+            return stripKnownResourceSuffix(normalizePublicBaseUrl(ex, configured));
         }
 
-        return trimTrailingSlash(proto + "://" + host + plugin.configValues().pathPrefix + "/uploads");
+        String proto = forwardedProto(ex);
+        String host = forwardedHost(ex, config);
+
+        String inferredPath = inferPublicApiBasePath(ex, config);
+        if (!inferredPath.isBlank()) return trimTrailingSlash(proto + "://" + host + inferredPath);
+
+        return trimTrailingSlash(proto + "://" + host + config.pathPrefix);
+    }
+
+    private String inferPublicApiBasePath(HttpExchange ex, ConfigValues config) {
+        String requestPath = ex.getRequestURI().getPath();
+        String internalPrefix = normalizeContextPrefix(config.pathPrefix, "/api");
+        int idx = requestPath.indexOf(internalPrefix);
+        if (idx < 0) return "";
+        return trimTrailingSlash(requestPath.substring(0, idx) + internalPrefix);
+    }
+
+    private String inferPublicStandaloneApiBasePath(HttpExchange ex, ConfigValues config) {
+        String requestPath = ex.getRequestURI().getPath();
+        String standalonePath = normalizeContextPrefix(config.standaloneWebPath, "/chat");
+        String internalPrefix = normalizeContextPrefix(config.pathPrefix, "/api");
+        if (requestPath.equals(standalonePath) || requestPath.startsWith(standalonePath + "/")) {
+            return internalPrefix;
+        }
+        if (requestPath.endsWith(standalonePath)) {
+            String publicPrefix = requestPath.substring(0, requestPath.length() - standalonePath.length());
+            return trimTrailingSlash(publicPrefix + internalPrefix);
+        }
+        return "";
+    }
+
+    private String normalizePublicBaseUrl(HttpExchange ex, String configured) {
+        String value = String.valueOf(configured == null ? "" : configured).trim();
+        if (value.isBlank()) return publicApiBaseUrl(ex);
+
+        String proto = forwardedProto(ex);
+
+        if (value.startsWith("http://") || value.startsWith("https://")) {
+            return trimTrailingSlash(value);
+        }
+        if (value.startsWith("//")) {
+            return trimTrailingSlash(proto + ":" + value);
+        }
+        if (value.startsWith("/")) {
+            // Same-origin absolute browser path for reverse proxies, e.g. /bmwc/api.
+            return trimTrailingSlash(value);
+        }
+
+        // Relative values without a leading slash are compatibility shorthand.
+        // Use http.cors-origin when it names a real origin; otherwise fall back to
+        // a same-origin absolute path so direct HTTP remains usable.
+        String origin = configuredCorsOrigin(plugin.configValues());
+        if (!origin.isBlank()) return trimTrailingSlash(origin + "/" + value.replaceFirst("^/+", ""));
+        return trimTrailingSlash("/" + value);
+    }
+
+    private String forwardedProto(HttpExchange ex) {
+        String proto = ex.getRequestHeaders().getFirst("X-Forwarded-Proto");
+        if (proto == null || proto.isBlank()) proto = "http";
+        return proto;
+    }
+
+    private String forwardedHost(HttpExchange ex, ConfigValues config) {
+        String host = ex.getRequestHeaders().getFirst("X-Forwarded-Host");
+        if (host == null || host.isBlank()) host = ex.getRequestHeaders().getFirst("Host");
+        if (host == null || host.isBlank()) host = config.httpHost + ":" + config.httpPort;
+        return host;
+    }
+
+    private String configuredCorsOrigin(ConfigValues config) {
+        String origin = String.valueOf(config == null || config.corsOrigin == null ? "" : config.corsOrigin).trim();
+        if (origin.isBlank() || "*".equals(origin)) return "";
+        if (origin.startsWith("http://") || origin.startsWith("https://")) return trimTrailingSlash(origin);
+        return "";
     }
 
     private String trimTrailingSlash(String s) {
@@ -1738,9 +2786,38 @@ public class WebChatServer {
     }
 
     private String dispositionValue(String headers, String key) {
+        if (headers == null || key == null) return null;
+        Pattern star = Pattern.compile("(?i)" + Pattern.quote(key + "*") + "=([^;\\r\\n]+)");
+        Matcher sm = star.matcher(headers);
+        if (sm.find()) {
+            String raw = sm.group(1).trim();
+            if (raw.startsWith("\"") && raw.endsWith("\"") && raw.length() >= 2) raw = raw.substring(1, raw.length() - 1);
+            int marker = raw.indexOf("''");
+            if (marker >= 0) raw = raw.substring(marker + 2);
+            try { return URLDecoder.decode(raw, StandardCharsets.UTF_8); } catch (Exception ignored) {}
+        }
         Pattern p = Pattern.compile("(?i)" + Pattern.quote(key) + "=\"([^\"]*)\"");
         Matcher m = p.matcher(headers);
-        return m.find() ? m.group(1) : null;
+        if (!m.find()) return null;
+        String raw = m.group(1);
+        try {
+            return new String(raw.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+            return raw;
+        }
+    }
+
+    private String safeUploadedFilename(String filename, String fallback) {
+        String raw = java.text.Normalizer.normalize(String.valueOf(filename == null ? "" : filename), java.text.Normalizer.Form.NFC).replace("\\", "/");
+        int slash = raw.lastIndexOf('/');
+        if (slash >= 0) raw = raw.substring(slash + 1);
+        raw = raw.replace("\0", "").trim();
+        if (raw.isBlank()) raw = fallback == null || fallback.isBlank() ? "file" : fallback;
+        String ext = extension(raw).toLowerCase(Locale.ROOT);
+        String base = raw.contains(".") ? raw.substring(0, raw.lastIndexOf('.')) : raw;
+        String safeBase = sanitizeEmojiFilenameBase(base);
+        if (safeBase.isBlank()) safeBase = fallback == null || fallback.isBlank() ? "file" : fallback;
+        return ext.isBlank() ? safeBase : safeBase + "." + ext;
     }
 
     private static final class MultipartData {
@@ -2059,6 +3136,388 @@ public class WebChatServer {
         sendJson(ex, 200, "{\"ok\":" + ok + "}");
     }
 
+
+    private void handleAdminEmojis(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        SessionContext ctx = requireRole(ex, Role.ADMIN);
+        if (ctx == null) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (!config.emojiEnabled) {
+            sendJson(ex, 200, "{\"ok\":true,\"enabled\":false,\"packs\":[],\"items\":[]}");
+            return;
+        }
+        ensureEmojiDirectoryExists();
+        EmojiCatalog catalog = scanEmojiCatalog(config);
+        Map<String, EmojiPack> byId = new LinkedHashMap<>();
+        byId.put("default", new EmojiPack("default", "Default"));
+        for (EmojiPack pack : catalog.packs) byId.put(pack.id, pack);
+        Path dir = emojiDir();
+        if (Files.isDirectory(dir)) {
+            try (java.util.stream.Stream<Path> stream = Files.list(dir)) {
+                stream.filter(Files::isDirectory).sorted((a, b) -> compareNatural(a.getFileName().toString(), b.getFileName().toString())).forEach(p -> {
+                    String raw = p.getFileName().toString();
+                    String id = sanitizeEmojiSegment(raw);
+                    if (!id.isBlank()) byId.putIfAbsent(id, new EmojiPack(id, raw));
+                });
+            } catch (IOException ignored) {}
+        }
+        List<Object> packs = new ArrayList<>();
+        for (EmojiPack pack : byId.values()) {
+            Map<String, Object> pm = new LinkedHashMap<>();
+            pm.put("id", pack.id);
+            pm.put("label", pack.label);
+            pm.put("count", pack.items.size());
+            pm.put("default", "default".equals(pack.id));
+            packs.add(pm);
+        }
+        List<Object> items = new ArrayList<>();
+        for (EmojiItem item : catalog.items) {
+            Map<String, Object> im = new LinkedHashMap<>();
+            im.put("id", item.id);
+            im.put("pack", item.pack);
+            im.put("name", item.name);
+            im.put("label", item.label);
+            im.put("path", item.relativePath);
+            im.put("filename", Path.of(item.relativePath).getFileName().toString());
+            im.put("ext", item.ext);
+            im.put("size", item.size);
+            items.add(im);
+        }
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("ok", true);
+        res.put("enabled", true);
+        res.put("packs", packs);
+        res.put("items", items);
+        res.put("maxFileSizeKb", config.emojiMaxFileSizeKb);
+        res.put("maxTotalSizeMb", config.emojiMaxTotalSizeMb);
+        res.put("maxTotalSize", config.emojiMaxTotalSizeMb > 0 ? config.emojiMaxTotalSizeMb * 1024L * 1024L : 0L);
+        res.put("showStorageUsage", config.emojiShowStorageUsage);
+        res.put("showStorageLimit", config.emojiShowStorageLimit);
+        res.put("totalSize", emojiTotalSize(config));
+        sendJson(ex, 200, JsonUtil.obj(res));
+    }
+
+    private void handleAdminEmojiCreatePack(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        SessionContext ctx = requireRole(ex, Role.ADMIN);
+        if (ctx == null) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (!config.emojiEnabled) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"emoji_disabled\"}");
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, String> body = (Map<String, String>) ex.getAttribute("parsedBody");
+        if (body == null) body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        String requested = body.getOrDefault("pack", body.getOrDefault("name", ""));
+        String packId = normalizeEmojiPackId(requested);
+        if ("default".equals(packId)) {
+            ensureEmojiDirectoryExists();
+            sendJson(ex, 200, "{\"ok\":true,\"pack\":\"default\"}");
+            return;
+        }
+        Path root = emojiDir();
+        Path dir = emojiPackDir(packId);
+        if (!validEmojiPackTarget(root, dir)) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_pack\"}");
+            return;
+        }
+        Files.createDirectories(dir);
+        sendJson(ex, 200, "{\"ok\":true,\"pack\":" + JsonUtil.quote(packId) + "}");
+    }
+
+    private void handleAdminEmojiUpload(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        SessionContext ctx = requireRole(ex, Role.ADMIN);
+        if (ctx == null) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (!config.emojiEnabled) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"emoji_disabled\"}");
+            return;
+        }
+        String contentType = ex.getRequestHeaders().getFirst("Content-Type");
+        String boundary = multipartBoundary(contentType);
+        if (boundary == null || boundary.isBlank()) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"multipart_required\"}");
+            return;
+        }
+        long maxOne = config.emojiMaxFileSizeKb > 0 ? config.emojiMaxFileSizeKb * 1024L : 0L;
+        long maxBody = maxOne > 0 ? maxOne + 256 * 1024L : 64L * 1024L * 1024L;
+        byte[] body;
+        try {
+            body = readLimitedBytes(ex.getRequestBody(), maxBody);
+        } catch (UploadTooLargeException e) {
+            sendJson(ex, 413, "{\"ok\":false,\"error\":\"file_too_large\"}");
+            return;
+        }
+        MultipartData multipart = parseMultipart(body, boundary);
+        UploadedPart file = multipart.file;
+        if (file == null || file.data == null || file.data.length == 0) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"missing_file\"}");
+            return;
+        }
+        if (maxOne > 0 && file.data.length > maxOne) {
+            sendJson(ex, 413, "{\"ok\":false,\"error\":\"file_too_large\"}");
+            return;
+        }
+        String original = safeUploadedFilename(file.filename, "emoji");
+        String ext = extension(original).toLowerCase(Locale.ROOT);
+        if (!emojiExtensionAllowed(ext, config)) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_extension\"}");
+            return;
+        }
+        byte[] sidecarPngData = null;
+        if (imageEmojisSidecarActive(config) && emojiHasPngSidecarSource(ext)) {
+            sidecarPngData = convertImageBytesToPng(file.data);
+            if (sidecarPngData == null || sidecarPngData.length == 0) {
+                sendJson(ex, 400, "{\"ok\":false,\"error\":\"png_conversion_failed\"}");
+                return;
+            }
+        }
+
+        long sidecarSize = sidecarPngData == null ? 0L : sidecarPngData.length;
+        long maxTotal = config.emojiMaxTotalSizeMb > 0 ? config.emojiMaxTotalSizeMb * 1024L * 1024L : 0L;
+        long currentTotal = emojiTotalSize(config);
+        if (maxTotal > 0 && currentTotal + file.data.length + sidecarSize > maxTotal) {
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("ok", false);
+            err.put("error", "total_size_exceeded");
+            err.put("currentSize", currentTotal);
+            err.put("fileSize", file.data.length);
+            err.put("sidecarSize", sidecarSize);
+            err.put("maxTotalSize", maxTotal);
+            err.put("maxTotalSizeMb", config.emojiMaxTotalSizeMb);
+            sendJson(ex, 413, JsonUtil.obj(err));
+            return;
+        }
+        String packId = normalizeEmojiPackId(multipart.fields.getOrDefault("pack", "default"));
+        Path root = emojiDir();
+        Path packDir = emojiPackDir(packId);
+        if (!validEmojiPackTarget(root, packDir)) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_pack\"}");
+            return;
+        }
+        Files.createDirectories(packDir);
+        String base = original.contains(".") ? original.substring(0, original.lastIndexOf('.')) : original;
+        String uniqueBase = uniqueEmojiBase(packDir, base);
+        String stored = uniqueBase + "." + ext;
+        Path target = packDir.resolve(stored).normalize();
+        if (!target.startsWith(root)) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_path\"}");
+            return;
+        }
+        Files.write(target, file.data, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        Path sidecar = null;
+        if (sidecarPngData != null) {
+            sidecar = emojiPngSidecarPath(target);
+            if (sidecar != null) {
+                Files.write(sidecar, sidecarPngData, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                imageEmojisFontCache = null;
+            }
+        }
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("ok", true);
+        res.put("pack", packId);
+        res.put("filename", stored);
+        res.put("originalFilename", original);
+        res.put("size", file.data.length);
+        res.put("pngSidecar", sidecar != null);
+        res.put("pngSidecarFilename", sidecar == null ? "" : sidecar.getFileName().toString());
+        sendJson(ex, 200, JsonUtil.obj(res));
+    }
+
+
+    private void handleAdminEmojiRename(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        SessionContext ctx = requireRole(ex, Role.ADMIN);
+        if (ctx == null) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (!config.emojiEnabled) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"emoji_disabled\"}");
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, String> body = (Map<String, String>) ex.getAttribute("parsedBody");
+        if (body == null) body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        String type = String.valueOf(body.getOrDefault("type", "item")).trim().toLowerCase(Locale.ROOT);
+        String newName = String.valueOf(body.getOrDefault("name", body.getOrDefault("newName", ""))).trim();
+        if (newName.isBlank()) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_name\"}");
+            return;
+        }
+
+        Path root = emojiDir();
+        Files.createDirectories(root);
+
+        if ("pack".equals(type)) {
+            String oldPack = normalizeEmojiPackId(body.getOrDefault("pack", ""));
+            String newPack = normalizeEmojiPackId(newName);
+            if (oldPack.isBlank() || newPack.isBlank() || "default".equalsIgnoreCase(oldPack) || "default".equalsIgnoreCase(newPack)) {
+                sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_pack\"}");
+                return;
+            }
+            Path oldDir = emojiPackDir(oldPack);
+            Path newDir = emojiPackDir(newPack);
+            if (!validEmojiPackTarget(root, oldDir) || !validEmojiPackTarget(root, newDir)) {
+                sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_pack\"}");
+                return;
+            }
+            if (!Files.isDirectory(oldDir)) {
+                sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+                return;
+            }
+            if (oldDir.equals(newDir)) {
+                sendJson(ex, 200, "{\"ok\":true,\"pack\":" + JsonUtil.quote(newPack) + "}");
+                return;
+            }
+            if (Files.exists(newDir)) {
+                sendJson(ex, 409, "{\"ok\":false,\"error\":\"already_exists\"}");
+                return;
+            }
+            Files.move(oldDir, newDir);
+            sendJson(ex, 200, "{\"ok\":true,\"pack\":" + JsonUtil.quote(newPack) + "}");
+            return;
+        }
+
+        String id = String.valueOf(body.getOrDefault("id", "")).trim();
+        if (id.isBlank()) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_file\"}");
+            return;
+        }
+        EmojiCatalog catalog = scanEmojiCatalog(config);
+        EmojiItem found = null;
+        for (EmojiItem item : catalog.items) {
+            if (id.equals(item.id)) {
+                found = item;
+                break;
+            }
+        }
+        if (found == null) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+        String renamed = emojiRenameFilename(newName, found.ext);
+        if (renamed.isBlank()) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_name\"}");
+            return;
+        }
+        Path oldFile = root.resolve(found.relativePath).normalize();
+        if (!oldFile.startsWith(root) || !Files.isRegularFile(oldFile)) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+        Path target = oldFile.getParent().resolve(renamed).normalize();
+        if (!target.startsWith(root)) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_path\"}");
+            return;
+        }
+        if (oldFile.equals(target)) {
+            sendJson(ex, 200, "{\"ok\":true,\"id\":" + JsonUtil.quote(found.id) + "}");
+            return;
+        }
+        if (Files.exists(target)) {
+            sendJson(ex, 409, "{\"ok\":false,\"error\":\"already_exists\"}");
+            return;
+        }
+        Path oldSidecar = emojiPngSidecarPath(oldFile);
+        Files.move(oldFile, target);
+        if (oldSidecar != null && Files.isRegularFile(oldSidecar)) {
+            Path newSidecar = emojiPngSidecarPath(target);
+            if (newSidecar != null && !oldSidecar.equals(newSidecar) && !Files.exists(newSidecar)) {
+                Files.move(oldSidecar, newSidecar);
+            }
+        }
+        String base = renamed.contains(".") ? renamed.substring(0, renamed.lastIndexOf('.')) : renamed;
+        String newItemName = sanitizeEmojiSegment(base);
+        String newId = found.pack + "/" + newItemName;
+        sendJson(ex, 200, "{\"ok\":true,\"id\":" + JsonUtil.quote(newId) + ",\"filename\":" + JsonUtil.quote(renamed) + "}");
+    }
+
+
+    private void handleAdminEmojiDelete(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        SessionContext ctx = requireRole(ex, Role.ADMIN);
+        if (ctx == null) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (!config.emojiEnabled) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"emoji_disabled\"}");
+            return;
+        }
+        Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        String type = String.valueOf(body.getOrDefault("type", "item")).trim().toLowerCase(Locale.ROOT);
+        Path root = emojiDir();
+
+        if ("pack".equals(type) || body.containsKey("pack")) {
+            String packId = normalizeEmojiPackId(body.getOrDefault("pack", ""));
+            if (packId.isBlank() || "default".equalsIgnoreCase(packId)) {
+                sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_pack\"}");
+                return;
+            }
+            Path packDir = emojiPackDir(packId);
+            if (!validEmojiPackTarget(root, packDir) || !Files.isDirectory(packDir)) {
+                sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+                return;
+            }
+            try (java.util.stream.Stream<Path> stream = Files.walk(packDir)) {
+                List<Path> paths = stream.sorted(Comparator.reverseOrder()).toList();
+                for (Path path : paths) {
+                    Path normalized = path.normalize();
+                    if (!normalized.startsWith(root)) continue;
+                    Files.deleteIfExists(normalized);
+                }
+            }
+            sendJson(ex, 200, "{\"ok\":true}");
+            return;
+        }
+
+        String id = String.valueOf(body.getOrDefault("id", "")).trim();
+        if (id.isBlank()) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_file\"}");
+            return;
+        }
+        EmojiCatalog catalog = scanEmojiCatalog(config);
+        EmojiItem found = null;
+        for (EmojiItem item : catalog.items) {
+            if (id.equals(item.id)) {
+                found = item;
+                break;
+            }
+        }
+        if (found == null) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+        Path file = root.resolve(found.relativePath).normalize();
+        if (!file.startsWith(root) || !Files.isRegularFile(file)) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+        Path sidecar = emojiPngSidecarPath(file);
+        boolean ok = Files.deleteIfExists(file);
+        if (ok && sidecar != null && Files.isRegularFile(sidecar)) Files.deleteIfExists(sidecar);
+        sendJson(ex, 200, "{\"ok\":" + ok + "}");
+    }
+
     private void handleAdminClearHistory(HttpExchange ex) throws IOException {
         if (preflight(ex)) return;
         SessionContext ctx = requireRole(ex, Role.ADMIN);
@@ -2102,6 +3561,868 @@ public class WebChatServer {
         }
     }
 
+
+    private String messageForGameChat(String message, ConfigValues config) {
+        return messageForGameChat(message, config, false);
+    }
+
+    private String messageForGameChat(String message, ConfigValues config, boolean forceImageEmojisSymbolOutput) {
+        String text = String.valueOf(message == null ? "" : message);
+        if (config == null || !config.emojiEnabled || !config.emojiGameLinkEnabled) return text;
+        Matcher matcher = EMOJI_TOKEN_PATTERN.matcher(text);
+        if (!matcher.find()) return text;
+
+        EmojiCatalog catalog = scanEmojiCatalog(config);
+        Map<String, EmojiItem> emojiById = new HashMap<>();
+        for (EmojiItem item : catalog.items) {
+            emojiById.put(item.id, item);
+        }
+        Map<String, String> aliasToId = emojiAliasToWebId(catalog, config);
+        matcher.reset();
+
+        String mode = String.valueOf(config.emojiGameLinkMode == null ? "link" : config.emojiGameLinkMode).trim().toLowerCase(Locale.ROOT);
+        boolean imageEmojisMode = mode.equals("imageemojis") || mode.equals("imageemojis-link");
+        boolean imageEmojisLinkMode = mode.equals("imageemojis-link");
+        boolean fallbackLink = imageEmojisMode && config.emojiImageEmojisFallbackToLink;
+        String imageEmojisOutput = normalizedImageEmojisOutput(config);
+        String effectiveImageEmojisOutput = (imageEmojisMode && forceImageEmojisSymbolOutput) ? "symbol" : imageEmojisOutput;
+        boolean needImageEmojisSymbols = imageEmojisMode && (effectiveImageEmojisOutput.equals("symbol") || effectiveImageEmojisOutput.equals("auto"));
+        Map<String, String> imageEmojiSymbols = needImageEmojisSymbols ? loadImageEmojisSymbols(config) : Map.of();
+
+        String shortBase = publicShortEmojiBaseUrlForGame(config);
+        int maxLinks = Math.max(0, config.emojiGameLinkMaxLinksPerMessage);
+        int linked = 0;
+        StringBuffer out = new StringBuffer();
+        while (matcher.find()) {
+            String token = matcher.group(1);
+            EmojiItem item = emojiItemForToken(token, emojiById, aliasToId);
+            if (item == null) {
+                // Unknown :name: tokens might belong to another plugin. Keep them unchanged.
+                matcher.appendReplacement(out, Matcher.quoteReplacement(matcher.group(0)));
+                continue;
+            }
+
+            String label = emojiGameLabel(item, config);
+            String imageEmojisTemplate = emojiImageEmojisTemplateLabel(item, config);
+            String replacement = imageEmojisMode ? imageEmojisTemplate : label;
+            boolean convertedByImageEmojis = false;
+            boolean canUseImageEmojisTemplate = imageEmojisTemplateCompatible(item);
+
+            if (imageEmojisMode) {
+                String symbol = (effectiveImageEmojisOutput.equals("symbol") || effectiveImageEmojisOutput.equals("auto"))
+                        ? imageEmojiSymbolFor(item.id, item, imageEmojiSymbols)
+                        : "";
+                if (!symbol.isBlank()) {
+                    replacement = symbol;
+                    convertedByImageEmojis = true;
+                } else if ((effectiveImageEmojisOutput.equals("template") || effectiveImageEmojisOutput.equals("auto")) && canUseImageEmojisTemplate) {
+                    // ImageEmojis' public template format is :<emoji>:. Do not append a URL here;
+                    // a trailing link can prevent the external formatter from recognizing the template.
+                    replacement = imageEmojisTemplate;
+                    convertedByImageEmojis = true;
+                } else {
+                    replacement = imageEmojisTemplate;
+                }
+            }
+
+            boolean shouldAppendLink = item != null
+                    && !shortBase.isBlank()
+                    && (maxLinks <= 0 || linked < maxLinks)
+                    && (mode.equals("link")
+                        || imageEmojisLinkMode
+                        || (fallbackLink && !convertedByImageEmojis && !forceImageEmojisSymbolOutput));
+            if (shouldAppendLink) {
+                replacement = replacement + " " + shortBase + "/" + shortEmojiId(item.id);
+                linked++;
+            }
+            matcher.appendReplacement(out, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(out);
+        return out.toString();
+    }
+
+    private EmojiItem emojiItemForToken(String token, Map<String, EmojiItem> emojiById, Map<String, String> aliasToId) {
+        String raw = String.valueOf(token == null ? "" : token).trim();
+        if (raw.isBlank()) return null;
+        EmojiItem item = emojiById == null ? null : emojiById.get(raw);
+        if (item != null) return item;
+        String id = emojiAliasLookup(aliasToId, raw);
+        if (id != null && emojiById != null) return emojiById.get(id);
+        return null;
+    }
+
+    private String normalizedImageEmojisOutput(ConfigValues config) {
+        String v = String.valueOf(config == null || config.emojiImageEmojisOutput == null ? "template" : config.emojiImageEmojisOutput)
+                .trim().toLowerCase(Locale.ROOT);
+        if (v.equals("symbol") || v.equals("actual") || v.equals("unicode")) return "symbol";
+        if (v.equals("auto")) return "auto";
+        return "template";
+    }
+
+    private boolean imageEmojisTemplateCompatible(EmojiItem item) {
+        if (item == null) return false;
+        return emojiNeedsGamePng(item.ext);
+    }
+
+    private String normalizeGameEmojiForWeb(String message, ConfigValues config) {
+        String text = String.valueOf(message == null ? "" : message);
+        if (config == null || !config.emojiEnabled || text.isBlank()) return text;
+        EmojiCatalog catalog = scanEmojiCatalog(config);
+        if (catalog.items.isEmpty()) return text;
+
+        Map<String, String> aliasToId = emojiAliasToWebId(catalog, config);
+        if (!aliasToId.isEmpty()) {
+            Map<String, String> symbols = loadImageEmojisSymbols(config);
+            text = replaceImageEmojiSymbolsWithWebTokens(text, catalog, symbols, config, aliasToId);
+            text = replaceImageEmojiAliasTokensWithWebTokens(text, aliasToId);
+        }
+        return text;
+    }
+
+    private Map<String, String> emojiAliasToWebId(EmojiCatalog catalog, ConfigValues config) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (catalog == null) return out;
+
+        // Explicit mapping has the highest priority. This is important when ImageEmojis uses
+        // flat :name: aliases while BM Web Chat keeps emojis in pack/name folders.
+        if (config != null && config.emojiImageEmojisAliases != null) {
+            for (Map.Entry<String, String> entry : config.emojiImageEmojisAliases.entrySet()) {
+                String alias = String.valueOf(entry.getKey() == null ? "" : entry.getKey()).trim();
+                String id = String.valueOf(entry.getValue() == null ? "" : entry.getValue()).trim();
+                if (alias.isBlank() || id.isBlank()) continue;
+                EmojiItem item = emojiItemById(catalog, id);
+                if (item != null) addEmojiAlias(out, alias, item.id);
+            }
+        }
+
+        // Fully-qualified IDs are always unambiguous.
+        for (EmojiItem item : catalog.items) {
+            addEmojiAlias(out, item.id, item.id);
+            addEmojiAlias(out, emojiTokenFallbackLabel(item.id), item.id);
+            if (item.pack != null && !item.pack.isBlank()) {
+                addEmojiAlias(out, item.pack + "/" + item.name, item.id);
+                addEmojiAlias(out, item.pack + "/" + item.label, item.id);
+            }
+        }
+
+        // If a default ImageEmojis pack is configured, prefer that pack for flat :name: aliases.
+        String defaultPack = normalizedEmojiPackName(config == null ? "" : config.emojiImageEmojisDefaultPack);
+        if (!defaultPack.isBlank()) {
+            for (EmojiItem item : catalog.items) {
+                if (!normalizedEmojiPackName(item.pack).equals(defaultPack)
+                        && !normalizedEmojiPackName(item.label).equals(defaultPack)) continue;
+                addEmojiAlias(out, item.name, item.id);
+                addEmojiAlias(out, item.label, item.id);
+                addEmojiAlias(out, emojiGameLabel(item, config), item.id);
+            }
+        }
+
+        // For non-conflicting names, let :name: work automatically. Ambiguous aliases are
+        // intentionally skipped to avoid mapping ImageEmojis glyphs to the wrong web emoji.
+        Map<String, List<EmojiItem>> byAlias = new LinkedHashMap<>();
+        for (EmojiItem item : catalog.items) {
+            collectEmojiAliasCandidate(byAlias, item.name, item);
+            collectEmojiAliasCandidate(byAlias, item.label, item);
+            collectEmojiAliasCandidate(byAlias, emojiGameLabel(item, config), item);
+        }
+        for (Map.Entry<String, List<EmojiItem>> entry : byAlias.entrySet()) {
+            List<EmojiItem> matches = entry.getValue();
+            if (matches.size() == 1) addEmojiAlias(out, entry.getKey(), matches.get(0).id);
+        }
+        return out;
+    }
+
+    private EmojiItem emojiItemById(EmojiCatalog catalog, String id) {
+        String raw = stripControl(id, 200).trim();
+        if (catalog == null || raw.isBlank()) return null;
+        for (EmojiItem item : catalog.items) {
+            if (item.id.equals(raw)) return item;
+        }
+        return null;
+    }
+
+    private String normalizedEmojiPackName(String value) {
+        String raw = stripControl(value, 200).trim();
+        if (raw.isBlank()) return "";
+        try {
+            raw = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFC);
+        } catch (Throwable ignored) {
+        }
+        return raw.toLowerCase(Locale.ROOT);
+    }
+
+    private void collectEmojiAliasCandidate(Map<String, List<EmojiItem>> byAlias, String alias, EmojiItem item) {
+        if (byAlias == null || item == null) return;
+        for (String key : emojiAliasKeys(alias)) {
+            String cleaned = key.trim();
+            if (cleaned.isBlank()) continue;
+            byAlias.computeIfAbsent(cleaned, ignored -> new ArrayList<>()).add(item);
+            String lower = cleaned.toLowerCase(Locale.ROOT);
+            if (!lower.equals(cleaned)) byAlias.computeIfAbsent(lower, ignored -> new ArrayList<>()).add(item);
+        }
+    }
+
+    private void addEmojiAlias(Map<String, String> out, String alias, String id) {
+        String value = stripControl(id, 200).trim();
+        if (value.isBlank()) return;
+        for (String key : emojiAliasKeys(alias)) {
+            if (key.isBlank()) continue;
+            out.putIfAbsent(key, value);
+            out.putIfAbsent(key.toLowerCase(Locale.ROOT), value);
+        }
+    }
+
+    private List<String> emojiAliasKeys(String alias) {
+        String raw = stripControl(alias, 200).trim();
+        if (raw.isBlank()) return List.of();
+        List<String> keys = new ArrayList<>();
+        addEmojiAliasKey(keys, raw);
+        if (raw.startsWith(":") && raw.endsWith(":") && raw.length() > 2) {
+            String inner = raw.substring(1, raw.length() - 1).trim();
+            if (inner.startsWith("emoji:") && inner.length() > "emoji:".length()) {
+                inner = inner.substring("emoji:".length()).trim();
+            }
+            addEmojiAliasKey(keys, inner);
+        }
+        if (raw.startsWith("emoji:") && raw.length() > "emoji:".length()) {
+            addEmojiAliasKey(keys, raw.substring("emoji:".length()).trim());
+        }
+        return keys;
+    }
+
+    private void addEmojiAliasKey(List<String> keys, String value) {
+        String key = String.valueOf(value == null ? "" : value).trim();
+        if (key.isBlank()) return;
+        keys.add(key);
+        try {
+            String nfc = java.text.Normalizer.normalize(key, java.text.Normalizer.Form.NFC);
+            String nfkc = java.text.Normalizer.normalize(key, java.text.Normalizer.Form.NFKC);
+            if (!nfc.equals(key)) keys.add(nfc);
+            if (!nfkc.equals(key) && !nfkc.equals(nfc)) keys.add(nfkc);
+        } catch (Throwable ignored) {
+        }
+    }
+
+
+    private String emojiAliasLookup(Map<String, String> aliasToId, String alias) {
+        if (aliasToId == null || aliasToId.isEmpty()) return null;
+        for (String key : emojiAliasKeys(alias)) {
+            String id = aliasToId.get(key);
+            if (id == null) id = aliasToId.get(key.toLowerCase(Locale.ROOT));
+            if (id != null && !id.isBlank()) return id;
+        }
+        return null;
+    }
+
+    private String replaceImageEmojiAliasTokensWithWebTokens(String text, Map<String, String> aliasToId) {
+        Matcher matcher = IMAGEEMOJIS_ALIAS_TOKEN_PATTERN.matcher(text);
+        StringBuffer out = new StringBuffer();
+        while (matcher.find()) {
+            String alias = String.valueOf(matcher.group(1));
+            String id = emojiAliasLookup(aliasToId, alias);
+            if (id == null || id.isBlank()) {
+                matcher.appendReplacement(out, Matcher.quoteReplacement(matcher.group(0)));
+            } else {
+                matcher.appendReplacement(out, Matcher.quoteReplacement(":" + id + ":"));
+            }
+        }
+        matcher.appendTail(out);
+        return out.toString();
+    }
+
+    private String replaceImageEmojiSymbolsWithWebTokens(String text, EmojiCatalog catalog, Map<String, String> symbols,
+                                                          ConfigValues config, Map<String, String> aliasToId) {
+        Map<String, String> symbolToId = imageEmojiSymbolToWebId(catalog, symbols, config, aliasToId);
+        if (symbolToId.isEmpty()) return text;
+        List<Map.Entry<String, String>> entries = new ArrayList<>(symbolToId.entrySet());
+        entries.sort((a, b) -> Integer.compare(b.getKey().length(), a.getKey().length()));
+        String out = text;
+        for (Map.Entry<String, String> entry : entries) {
+            String symbol = entry.getKey();
+            String id = entry.getValue();
+            if (symbol == null || symbol.isBlank() || id == null || id.isBlank()) continue;
+            out = out.replace(symbol, ":" + id + ":");
+        }
+        return out;
+    }
+
+    private Map<String, List<String>> imageEmojiSymbolsByWebId(EmojiCatalog catalog, ConfigValues config) {
+        LinkedHashMap<String, LinkedHashSet<String>> grouped = new LinkedHashMap<>();
+        if (catalog == null || catalog.items.isEmpty()) return Map.of();
+        Map<String, String> aliasToId = emojiAliasToWebId(catalog, config);
+        Map<String, String> symbols = loadImageEmojisSymbols(config);
+        Map<String, String> symbolToId = imageEmojiSymbolToWebId(catalog, symbols, config, aliasToId);
+        for (Map.Entry<String, String> entry : symbolToId.entrySet()) {
+            String symbol = firstUnicodeSymbol(entry.getKey());
+            String id = String.valueOf(entry.getValue() == null ? "" : entry.getValue()).trim();
+            if (symbol.isBlank() || id.isBlank()) continue;
+            grouped.computeIfAbsent(id, ignored -> new LinkedHashSet<>()).add(symbol);
+        }
+        LinkedHashMap<String, List<String>> out = new LinkedHashMap<>();
+        for (Map.Entry<String, LinkedHashSet<String>> entry : grouped.entrySet()) {
+            out.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
+        return out;
+    }
+
+    private Map<String, String> imageEmojiSymbolToWebId(EmojiCatalog catalog, Map<String, String> symbols,
+                                                        ConfigValues config, Map<String, String> aliasToId) {
+        LinkedHashMap<String, String> out = new LinkedHashMap<>();
+        if (catalog == null || catalog.items.isEmpty()) return out;
+        Map<String, String> aliases = aliasToId == null || aliasToId.isEmpty() ? emojiAliasToWebId(catalog, config) : aliasToId;
+
+        // 1) Prefer the generated resource-pack font map when available.
+        // ImageEmojis writes providers like minecraft:font/<filename>.png -> ["\\u...."].
+        // The key can be "font/name", "textures/font/name", or just "name" depending on the parser/source.
+        if (symbols != null && !symbols.isEmpty()) {
+            for (Map.Entry<String, String> entry : symbols.entrySet()) {
+                String symbol = firstUnicodeSymbol(entry.getValue());
+                if (symbol.isBlank()) continue;
+                for (String key : imageEmojiSymbolKeyAliases(entry.getKey())) {
+                    String id = emojiAliasLookup(aliases, key);
+                    if (id != null && !id.isBlank()) {
+                        putImageEmojiSymbolToId(out, symbol, id);
+                    }
+                }
+            }
+            for (EmojiItem item : catalog.items) {
+                String symbol = firstUnicodeSymbol(imageEmojiSymbolFor(item.id, item, symbols));
+                if (!symbol.isBlank()) putImageEmojiSymbolToId(out, symbol, item.id);
+            }
+        }
+
+        // 2) Optional unsafe fallback: reproduce ImageEmojis' hash algorithm from file names.
+        // This is disabled by default because the ImageEmojis range can collide, and BM Web Chat
+        // may have duplicate file names across packs. When it guesses wrong, the web UI shows a
+        // different emoji than Minecraft. Prefer runtime/zip mappings plus explicit aliases.
+        if (config != null && config.emojiImageEmojisGeneratedSymbolFallback) {
+            for (EmojiItem item : catalog.items) {
+                for (String fileName : imageEmojiFileNameCandidates(item)) {
+                    for (String symbol : imageEmojiGeneratedSymbols(fileName)) {
+                        putImageEmojiSymbolToId(out, symbol, item.id);
+                    }
+                }
+            }
+
+            Path emojiDir = imageEmojisEmojiDirectory(config);
+            if (emojiDir != null && Files.isDirectory(emojiDir)) {
+                try (java.util.stream.Stream<Path> stream = Files.list(emojiDir)) {
+                    stream.filter(Files::isRegularFile).forEach(path -> {
+                        String fileName = path.getFileName() == null ? "" : path.getFileName().toString();
+                        if (!"png".equalsIgnoreCase(extension(fileName))) return;
+                        String base = fileName.contains(".") ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+                        String id = emojiAliasLookup(aliases, base);
+                        if (id == null || id.isBlank()) return;
+                        for (String symbol : imageEmojiGeneratedSymbols(fileName)) {
+                            putImageEmojiSymbolToId(out, symbol, id);
+                        }
+                    });
+                } catch (IOException ignored) {
+                }
+            }
+        }
+
+        return out;
+    }
+
+    private void putImageEmojiSymbolToId(Map<String, String> out, String symbol, String id) {
+        String s = firstUnicodeSymbol(symbol);
+        if (s.isBlank() || id == null || id.isBlank()) return;
+        out.putIfAbsent(s, id);
+    }
+
+    private List<String> imageEmojiSymbolKeyAliases(String key) {
+        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        String raw = String.valueOf(key == null ? "" : key).replace('\\', '/').trim();
+        if (raw.isBlank()) return new ArrayList<>(keys);
+        addImageEmojiAliasCandidate(keys, raw);
+        int colon = raw.indexOf(':');
+        if (colon >= 0 && colon + 1 < raw.length()) addImageEmojiAliasCandidate(keys, raw.substring(colon + 1));
+        String noNamespace = colon >= 0 && colon + 1 < raw.length() ? raw.substring(colon + 1) : raw;
+        String noExt = noNamespace.replaceFirst("(?i)\\.(png|webp|gif|jpg|jpeg)$", "");
+        addImageEmojiAliasCandidate(keys, noExt);
+        for (String prefix : new String[]{"textures/font/", "textures/", "font/", "emojis/"}) {
+            if (noExt.regionMatches(true, 0, prefix, 0, prefix.length())) {
+                addImageEmojiAliasCandidate(keys, noExt.substring(prefix.length()));
+            }
+            String marker = "/" + prefix;
+            int idx = noExt.toLowerCase(Locale.ROOT).indexOf(marker.toLowerCase(Locale.ROOT));
+            if (idx >= 0 && idx + marker.length() < noExt.length()) {
+                addImageEmojiAliasCandidate(keys, noExt.substring(idx + marker.length()));
+            }
+        }
+        int slash = noExt.lastIndexOf('/');
+        if (slash >= 0 && slash + 1 < noExt.length()) addImageEmojiAliasCandidate(keys, noExt.substring(slash + 1));
+        return new ArrayList<>(keys);
+    }
+
+    private void addImageEmojiAliasCandidate(Set<String> keys, String value) {
+        String v = stripControl(String.valueOf(value == null ? "" : value), 200).trim();
+        if (v.isBlank()) return;
+        keys.add(v);
+        String noExt = v.replaceFirst("(?i)\\.(png|webp|gif|jpg|jpeg)$", "");
+        if (!noExt.isBlank()) keys.add(noExt);
+    }
+
+    private List<String> imageEmojiFileNameCandidates(EmojiItem item) {
+        LinkedHashSet<String> files = new LinkedHashSet<>();
+        if (item == null) return new ArrayList<>(files);
+        for (String candidate : new String[]{item.name, item.label, emojiTokenFallbackLabel(item.id).replace(":", "")}) {
+            String base = stripControl(candidate, 160).trim();
+            if (base.isBlank()) continue;
+            base = base.replace('\\', '/');
+            int slash = base.lastIndexOf('/');
+            if (slash >= 0 && slash + 1 < base.length()) base = base.substring(slash + 1);
+            if (base.isBlank()) continue;
+            files.add(base + ".png");
+            files.add(base.toLowerCase(Locale.ROOT) + ".png");
+        }
+        return new ArrayList<>(files);
+    }
+
+    private List<String> imageEmojiGeneratedSymbols(String fileName) {
+        String name = String.valueOf(fileName == null ? "" : fileName).trim();
+        if (name.isBlank()) return List.of();
+        if (!name.toLowerCase(Locale.ROOT).endsWith(".png")) name = name + ".png";
+        name = name.toLowerCase(Locale.ROOT);
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        String fileNameHash = sha256Hex(name);
+        if (!fileNameHash.isBlank()) {
+            out.add(String.valueOf((char) hashToRange(fileNameHash, 0xEFF2L, 0xEFF2L + 2000L)));
+            out.add(String.valueOf((char) hashToRange(fileNameHash, 0xE000L, 0xE000L + 6400L)));
+        }
+        return new ArrayList<>(out);
+    }
+
+    private long hashToRange(String input, long start, long end) {
+        if (start >= end) return start;
+        String hex = sha256Hex(input);
+        if (hex.isBlank()) return start;
+        BigInteger hashValue = new BigInteger(hex, 16);
+        return start + hashValue.mod(BigInteger.valueOf(end - start)).longValue();
+    }
+
+    private String sha256Hex(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = digest.digest(String.valueOf(input == null ? "" : input).getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hashBytes.length * 2);
+            for (byte b : hashBytes) hex.append(String.format("%02x", b));
+            return hex.toString();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    private String firstUnicodeSymbol(String value) {
+        String s = String.valueOf(value == null ? "" : value);
+        if (s.isBlank()) return "";
+        int cp = s.codePointAt(0);
+        if (cp <= 0) return "";
+        return new String(Character.toChars(cp));
+    }
+
+    private Path imageEmojisEmojiDirectory(ConfigValues config) {
+        Path zip = imageEmojisResourcePackPath(config);
+        if (zip != null && zip.getParent() != null) return zip.getParent().resolve("emojis").normalize();
+        return plugin.getDataFolder().toPath().resolve("../ImageEmojis/emojis").normalize();
+    }
+
+    private String emojiGameLabel(EmojiItem item, ConfigValues config) {
+        String name = stripControl(item == null ? "" : item.name, 40).trim();
+        if (name.isBlank() && item != null) name = stripControl(item.label, 40).trim();
+        if (name.isBlank()) name = "emoji";
+        String pack = stripControl(item == null ? "" : item.pack, 40).trim();
+        String format = config == null ? "" : String.valueOf(config.emojiGameLinkLabelFormat == null ? "" : config.emojiGameLinkLabelFormat);
+        if (format.isBlank()) format = ":{id}:";
+        return stripControl(format
+                .replace("{name}", name)
+                .replace("{pack}", pack)
+                .replace("{id}", item == null ? name : item.id), 96).trim();
+    }
+
+
+    private String emojiImageEmojisTemplateLabel(EmojiItem item, ConfigValues config) {
+        String format = config == null ? "" : String.valueOf(config.emojiImageEmojisTemplateFormat == null ? "" : config.emojiImageEmojisTemplateFormat);
+        if (format.isBlank()) format = ":{id}:";
+        String name = stripControl(item == null ? "" : item.name, 80).trim();
+        if (name.isBlank() && item != null) name = stripControl(item.label, 80).trim();
+        if (name.isBlank()) name = "emoji";
+        String pack = stripControl(item == null ? "" : item.pack, 80).trim();
+        String id = stripControl(item == null ? name : item.id, 160).trim();
+        if (id.isBlank()) id = pack.isBlank() ? name : pack + "/" + name;
+        return stripControl(format
+                .replace("{name}", name)
+                .replace("{pack}", pack)
+                .replace("{id}", id), 192).trim();
+    }
+
+    private String emojiTokenFallbackLabel(String id) {
+        String raw = String.valueOf(id == null ? "" : id).replace("\\", "/");
+        int slash = raw.lastIndexOf('/');
+        String name = slash >= 0 ? raw.substring(slash + 1) : raw;
+        name = stripControl(name, 40).trim();
+        if (name.isBlank()) name = "emoji";
+        return ":" + name + ":";
+    }
+
+    private String imageEmojiSymbolFor(String id, EmojiItem item, Map<String, String> symbols) {
+        if (symbols == null || symbols.isEmpty()) return "";
+        List<String> keys = new ArrayList<>();
+        String rawId = String.valueOf(id == null ? "" : id).replace("\\", "/").trim();
+        if (!rawId.isBlank()) keys.add(rawId);
+        int slash = rawId.lastIndexOf('/');
+        if (slash >= 0 && slash + 1 < rawId.length()) keys.add(rawId.substring(slash + 1));
+        if (item != null) {
+            if (item.id != null && !item.id.isBlank()) keys.add(item.id);
+            if (item.name != null && !item.name.isBlank()) keys.add(item.name);
+            if (item.label != null && !item.label.isBlank()) keys.add(item.label);
+        }
+        for (String key : keys) {
+            String symbol = symbols.get(key);
+            if (symbol == null) symbol = symbols.get(key.toLowerCase(Locale.ROOT));
+            if (symbol != null && !symbol.isBlank()) return symbol;
+        }
+        return "";
+    }
+
+    private Map<String, String> loadImageEmojisSymbols(ConfigValues config) {
+        LinkedHashMap<String, String> merged = new LinkedHashMap<>();
+
+        // Best source: the running ImageEmojis plugin already knows the exact name -> glyph mapping.
+        // This avoids guessing the character from file hashes and also works when ImageEmojis settings
+        // such as extendedUnicodeRange differ from BM Web Chat's defaults.
+        Map<String, String> runtimeSymbols = readImageEmojisRuntimeSymbols();
+        if (runtimeSymbols != null && !runtimeSymbols.isEmpty()) merged.putAll(runtimeSymbols);
+
+        Path path = imageEmojisResourcePackPath(config);
+        if (path != null) {
+            try {
+                if (Files.isRegularFile(path)) {
+                    long modifiedAt = Files.getLastModifiedTime(path).toMillis();
+                    long size = Files.size(path);
+                    ImageEmojisFontCache cache = imageEmojisFontCache;
+                    Map<String, String> zipSymbols;
+                    if (cache != null && path.equals(cache.path) && modifiedAt == cache.modifiedAt && size == cache.size) {
+                        zipSymbols = cache.symbols;
+                    } else {
+                        zipSymbols = readImageEmojisSymbols(path);
+                        imageEmojisFontCache = new ImageEmojisFontCache(path, modifiedAt, size, zipSymbols);
+                    }
+                    if (zipSymbols != null && !zipSymbols.isEmpty()) {
+                        for (Map.Entry<String, String> entry : zipSymbols.entrySet()) {
+                            merged.putIfAbsent(entry.getKey(), entry.getValue());
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        return merged.isEmpty() ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(merged));
+    }
+
+    private Map<String, String> readImageEmojisRuntimeSymbols() {
+        LinkedHashMap<String, String> out = new LinkedHashMap<>();
+        try {
+            Object imageEmojisPlugin = Bukkit.getPluginManager().getPlugin("ImageEmojis");
+            if (imageEmojisPlugin == null) return Map.of();
+            Object repository = invokeNoArg(imageEmojisPlugin, "getEmojiRepository");
+            if (repository == null) return Map.of();
+            Object emojisObject = invokeNoArg(repository, "getEmojis");
+            if (!(emojisObject instanceof Iterable<?> emojis)) return Map.of();
+            for (Object emoji : emojis) {
+                if (emoji == null) continue;
+                String symbol = firstUnicodeSymbol(reflectString(emoji, "getAsUtf8Symbol"));
+                if (symbol.isBlank()) symbol = firstImageEmojiRuntimeSymbol(invokeNoArg(emoji, "getChars"));
+                if (symbol.isBlank()) continue;
+                String name = reflectString(emoji, "getName");
+                String fileName = reflectString(emoji, "getFileName");
+                String template = reflectString(emoji, "getTemplate");
+                putImageEmojiSymbolKey(out, name, symbol);
+                putImageEmojiSymbolKey(out, template, symbol);
+                if (!fileName.isBlank()) addImageEmojiSymbolKeys(out, fileName, symbol);
+            }
+        } catch (Throwable ignored) {
+            return Map.of();
+        }
+        return out.isEmpty() ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(out));
+    }
+
+    private Object invokeNoArg(Object target, String methodName) {
+        if (target == null || methodName == null || methodName.isBlank()) return null;
+        try {
+            java.lang.reflect.Method method = target.getClass().getMethod(methodName);
+            method.setAccessible(true);
+            return method.invoke(target);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private String reflectString(Object target, String methodName) {
+        Object value = invokeNoArg(target, methodName);
+        return stripControl(String.valueOf(value == null ? "" : value), 200).trim();
+    }
+
+    private String firstImageEmojiRuntimeSymbol(Object charsObject) {
+        if (charsObject instanceof Iterable<?> chars) {
+            for (Object value : chars) {
+                String symbol = decodeImageEmojiSymbol(String.valueOf(value == null ? "" : value));
+                if (!symbol.isBlank()) return symbol;
+            }
+            return "";
+        }
+        return decodeImageEmojiSymbol(String.valueOf(charsObject == null ? "" : charsObject));
+    }
+
+    private String decodeImageEmojiSymbol(String value) {
+        String raw = String.valueOf(value == null ? "" : value).trim();
+        if (raw.isBlank()) return "";
+        // ImageEmojis stores chars as strings like "\uF234" in EmojiModel,
+        // while already-serialized JSON may contain the actual PUA glyph.
+        String decoded = decodeJsonString(raw);
+        return firstUnicodeSymbol(decoded);
+    }
+
+    private Path imageEmojisResourcePackPath(ConfigValues config) {
+        String configured = config == null ? "" : String.valueOf(config.emojiImageEmojisResourcePackZip == null ? "" : config.emojiImageEmojisResourcePackZip).trim();
+        if (configured.isBlank()) configured = "../ImageEmojis/emojis.zip";
+        Path path = Path.of(configured);
+        if (!path.isAbsolute()) path = plugin.getDataFolder().toPath().resolve(path);
+        return path.normalize();
+    }
+
+    private Map<String, String> readImageEmojisSymbols(Path zipPath) throws IOException {
+        Map<String, String> out = new HashMap<>();
+        Pattern providerBlockPattern = Pattern.compile("\\{[\\s\\S]{0,8000}?\"type\"\\s*:\\s*\"bitmap\"[\\s\\S]{0,8000}?\\}", Pattern.CASE_INSENSITIVE);
+        Pattern filePattern = Pattern.compile("\"file\"\\s*:\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+        Pattern charsPattern = Pattern.compile("\"chars\"\\s*:\\s*\\[\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+        try (ZipInputStream zin = new ZipInputStream(Files.newInputStream(zipPath))) {
+            ZipEntry entry;
+            while ((entry = zin.getNextEntry()) != null) {
+                String name = entry.getName();
+                if (entry.isDirectory() || name == null || !name.endsWith(".json") || !name.contains("/font/")) continue;
+                String json = new String(readAllBytesLimited(zin, 16 * 1024 * 1024), StandardCharsets.UTF_8);
+                Matcher blockMatcher = providerBlockPattern.matcher(json);
+                while (blockMatcher.find()) {
+                    String block = blockMatcher.group(0);
+                    Matcher fileMatcher = filePattern.matcher(block);
+                    Matcher charsMatcher = charsPattern.matcher(block);
+                    if (!fileMatcher.find() || !charsMatcher.find()) continue;
+                    String file = decodeJsonString(fileMatcher.group(1));
+                    String symbol = firstUnicodeSymbol(decodeJsonString(charsMatcher.group(1)));
+                    if (file.isBlank() || symbol.isBlank()) continue;
+                    addImageEmojiSymbolKeys(out, file, symbol);
+                }
+            }
+        }
+        return out.isEmpty() ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(out));
+    }
+
+    private byte[] readAllBytesLimited(InputStream in, int maxBytes) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int total = 0;
+        int n;
+        while ((n = in.read(buf)) >= 0) {
+            total += n;
+            if (total > maxBytes) break;
+            out.write(buf, 0, n);
+        }
+        return out.toByteArray();
+    }
+
+    private void addImageEmojiSymbolKeys(Map<String, String> out, String file, String symbol) {
+        String normalized = String.valueOf(file == null ? "" : file).replace('\\', '/');
+        int colon = normalized.indexOf(':');
+        if (colon >= 0 && colon + 1 < normalized.length()) normalized = normalized.substring(colon + 1);
+        normalized = normalized.replaceFirst("(?i)\\.(png|webp|gif|jpg|jpeg)$", "");
+        normalized = normalized.replaceFirst("^/", "");
+        normalized = normalized.replaceFirst("^(?:assets/minecraft/)?", "");
+        normalized = normalized.replaceFirst("^(?:textures/)?", "");
+        normalized = normalized.replaceFirst("^(?:font/)?", "");
+        if (normalized.isBlank()) return;
+        putImageEmojiSymbolKey(out, normalized, symbol);
+        int slash = normalized.lastIndexOf('/');
+        if (slash >= 0 && slash + 1 < normalized.length()) {
+            putImageEmojiSymbolKey(out, normalized.substring(slash + 1), symbol);
+        }
+        String marker = "/emojis/";
+        int idx = normalized.indexOf(marker);
+        if (idx >= 0 && idx + marker.length() < normalized.length()) {
+            putImageEmojiSymbolKey(out, normalized.substring(idx + marker.length()), symbol);
+        }
+    }
+
+    private void putImageEmojiSymbolKey(Map<String, String> out, String key, String symbol) {
+        String cleaned = stripControl(String.valueOf(key == null ? "" : key), 160).trim();
+        if (cleaned.isBlank() || symbol == null || symbol.isBlank()) return;
+        out.putIfAbsent(cleaned, symbol);
+        out.putIfAbsent(cleaned.toLowerCase(Locale.ROOT), symbol);
+    }
+
+    private String decodeJsonString(String value) {
+        String s = String.valueOf(value == null ? "" : value);
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch != '\\' || i + 1 >= s.length()) {
+                out.append(ch);
+                continue;
+            }
+            char n = s.charAt(++i);
+            switch (n) {
+                case 'n' -> out.append('\n');
+                case 'r' -> out.append('\r');
+                case 't' -> out.append('\t');
+                case 'b' -> out.append('\b');
+                case 'f' -> out.append('\f');
+                case '\\' -> out.append('\\');
+                case '"' -> out.append('"');
+                case '/' -> out.append('/');
+                case 'u' -> {
+                    if (i + 4 <= s.length() - 1) {
+                        String hex = s.substring(i + 1, i + 5);
+                        try {
+                            out.append((char) Integer.parseInt(hex, 16));
+                            i += 4;
+                        } catch (NumberFormatException ex) {
+                            out.append("\\u").append(hex);
+                            i += 4;
+                        }
+                    } else {
+                        out.append("\\u");
+                    }
+                }
+                default -> out.append(n);
+            }
+        }
+        return out.toString();
+    }
+
+    private String applyReplyGamePrefix(ChatMessage msg, String gameMessage, ConfigValues config) {
+        String text = String.valueOf(gameMessage == null ? "" : gameMessage);
+        if (msg == null || config == null || !config.replyGamePrefixEnabled) return text;
+        if (msg.replyToId == null || msg.replyToId.isBlank()) return text;
+        String prefix = String.valueOf(config.replyGamePrefixText == null ? "" : config.replyGamePrefixText);
+        if (prefix.isBlank()) return text;
+        String sender = stripControl(msg.replyToSender, 64);
+        String preview = stripControl(msg.replyToPreview, 120);
+        prefix = prefix
+                .replace("{sender}", sender)
+                .replace("{preview}", preview)
+                .replace("{id}", stripControl(msg.replyToId, 96));
+        // Keep intentional trailing spaces in values such as "[Reply] ". stripControl()
+        // trims, so sanitize the prefix locally instead.
+        StringBuilder sanitizedPrefix = new StringBuilder(prefix.length());
+        for (int i = 0; i < prefix.length(); i++) {
+            char ch = prefix.charAt(i);
+            if (ch == '\n' || ch == '\r') {
+                sanitizedPrefix.append(' ');
+            } else if (ch == '\t' || !Character.isISOControl(ch)) {
+                sanitizedPrefix.append(ch);
+            }
+        }
+        prefix = sanitizedPrefix.toString();
+        if (prefix.length() > 160) prefix = prefix.substring(0, 160);
+        return prefix.isBlank() ? text : prefix + text;
+    }
+
+    private String publicShortEmojiBaseUrlForGame(ConfigValues config) {
+        String api = publicApiBaseUrlForGame(config);
+        return api.isBlank() ? "" : api + "/e";
+    }
+
+    private String publicApiBaseUrlForGame(ConfigValues config) {
+        if (config == null) return "";
+        for (String candidate : new String[]{
+                config.emojiGameLinkPublicApiBaseUrl,
+                config.apiBaseUrl,
+                config.standaloneWebApiBaseUrl,
+                config.emojiPublicBaseUrl
+        }) {
+            String resolved = normalizeGamePublicApiBaseUrl(candidate, config);
+            if (!resolved.isBlank()) return stripKnownResourceSuffix(resolved);
+        }
+        String origin = configuredCorsOrigin(config);
+        if (!origin.isBlank()) {
+            return trimTrailingSlash(origin + normalizeContextPrefix(config.pathPrefix, "/api"));
+        }
+        return "";
+    }
+
+    private String normalizeGamePublicApiBaseUrl(String configured, ConfigValues config) {
+        String value = String.valueOf(configured == null ? "" : configured).trim();
+        if (value.isBlank()) return "";
+        if (value.startsWith("http://") || value.startsWith("https://")) {
+            return trimTrailingSlash(value);
+        }
+        if (value.startsWith("//")) {
+            return trimTrailingSlash("https:" + value);
+        }
+        String origin = configuredCorsOrigin(config);
+        if (origin.isBlank()) return "";
+        if (value.startsWith("/")) return trimTrailingSlash(origin + value);
+        return trimTrailingSlash(origin + "/" + value.replaceFirst("^/+", ""));
+    }
+
+    private String shortEmojiId(String emojiId) {
+        return SecurityUtil.sha256Hex(String.valueOf(emojiId == null ? "" : emojiId)).substring(0, 8);
+    }
+
+
+    private boolean shouldTryClickableUrlsAfterImageEmojisConversion(ChatMessage msg, ConfigValues config) {
+        if (config == null || !config.emojiEnabled || !config.emojiGameLinkEnabled) return false;
+        if (!config.emojiImageEmojisClickableUrlsAfterConversion) return false;
+        if (!config.clickableUrlsInGame) return false;
+        String rawMessage = String.valueOf(msg == null || msg.message == null ? "" : msg.message);
+        if (!containsUrl(rawMessage)) return false;
+        String mode = String.valueOf(config.emojiGameLinkMode == null ? "" : config.emojiGameLinkMode).trim().toLowerCase(Locale.ROOT);
+        if (!mode.equals("imageemojis") && !mode.equals("imageemojis-link")) return false;
+        return containsKnownImageEmojisTemplate(rawMessage, config);
+    }
+
+    private boolean shouldPreservePlainBroadcastForImageEmojis(ChatMessage msg, String renderedLine, ConfigValues config) {
+        if (config == null || !config.emojiEnabled || !config.emojiGameLinkEnabled) return false;
+        if (!config.emojiImageEmojisPlainBroadcastWithUrls) return false;
+        if (!config.clickableUrlsInGame || !containsUrl(renderedLine)) return false;
+        String mode = String.valueOf(config.emojiGameLinkMode == null ? "" : config.emojiGameLinkMode).trim().toLowerCase(Locale.ROOT);
+        if (!mode.equals("imageemojis") && !mode.equals("imageemojis-link")) return false;
+        String output = normalizedImageEmojisOutput(config);
+        if (!output.equals("template") && !output.equals("auto")) return false;
+        // When clickable-urls-after-conversion is enabled, messageForGameChat() already
+        // tried to replace ImageEmojis templates with the actual generated symbols before
+        // this check. Only fall back to plain broadcast if a known template still remains
+        // in the final rendered line. Checking the original web message here would force
+        // plain broadcast even after successful conversion, which prevents clickable URLs.
+        if (config.emojiImageEmojisClickableUrlsAfterConversion) {
+            return containsKnownImageEmojisTemplate(String.valueOf(renderedLine == null ? "" : renderedLine), config);
+        }
+        return containsKnownImageEmojisTemplate(String.valueOf(msg == null ? "" : msg.message), config)
+                || containsKnownImageEmojisTemplate(String.valueOf(renderedLine == null ? "" : renderedLine), config);
+    }
+
+    private boolean containsKnownImageEmojisTemplate(String text, ConfigValues config) {
+        String raw = String.valueOf(text == null ? "" : text);
+        if (raw.isBlank()) return false;
+        Matcher matcher = EMOJI_TOKEN_PATTERN.matcher(raw);
+        if (!matcher.find()) return false;
+        EmojiCatalog catalog = scanEmojiCatalog(config);
+        if (catalog.items.isEmpty()) return false;
+        Map<String, EmojiItem> emojiById = new HashMap<>();
+        for (EmojiItem item : catalog.items) {
+            emojiById.put(item.id, item);
+        }
+        Map<String, String> aliasToId = emojiAliasToWebId(catalog, config);
+        matcher.reset();
+        while (matcher.find()) {
+            EmojiItem item = emojiItemForToken(matcher.group(1), emojiById, aliasToId);
+            if (item != null && imageEmojisTemplateCompatible(item)) return true;
+        }
+        return false;
+    }
+
     private void sendToGame(ChatMessage msg, String format) {
         ConfigValues config = plugin.configValues();
         if (!config.sendWebChatToGame) return;
@@ -2109,14 +4430,17 @@ public class WebChatServer {
         // Translate color/format codes only in the configured template, not in user text.
         // This keeps user-provided literals such as "&n", "&l", "&a" intact when relayed to game chat.
         String template = ChatColor.translateAlternateColorCodes('&', format);
+        boolean forceImageEmojisSymbolOutput = shouldTryClickableUrlsAfterImageEmojisConversion(msg, config);
+        String gameMessage = applyReplyGamePrefix(msg, messageForGameChat(msg.message, config, forceImageEmojisSymbolOutput), config);
         String line = template
                 .replace("{player}", msg.sender)
                 .replace("{guest}", msg.sender)
-                .replace("{message}", msg.message);
+                .replace("{message}", gameMessage);
 
         final String finalLine = line;
+        boolean preservePlainForImageEmojis = shouldPreservePlainBroadcastForImageEmojis(msg, finalLine, config);
         Bukkit.getScheduler().runTask(plugin, () -> {
-            if (config.clickableUrlsInGame && containsUrl(finalLine)) {
+            if (config.clickableUrlsInGame && containsUrl(finalLine) && !preservePlainForImageEmojis) {
                 broadcastClickableLine(finalLine);
             } else {
                 Bukkit.broadcastMessage(finalLine);
@@ -2199,6 +4523,118 @@ public class WebChatServer {
             }
         }
         return new String[]{url, trailing.toString()};
+    }
+
+    private static final class AroundHistoryResult {
+        final List<ChatMessage> messages = new ArrayList<>();
+        int targetIndex = -1;
+        boolean hasBefore;
+        boolean hasAfter;
+        boolean pruned;
+    }
+
+    private AroundHistoryResult findHistoryAround(String targetId, int before, int after) {
+        AroundHistoryResult result = new AroundHistoryResult();
+        if (targetId == null || targetId.isBlank()) return result;
+
+        synchronized (history) {
+            result.pruned = pruneHistoryLocked();
+            List<ChatMessage> all = new ArrayList<>(history);
+            fillAroundResult(result, all, targetId, before, after);
+            if (result.targetIndex >= 0) return result;
+        }
+
+        ConfigValues config = plugin.configValues();
+        if (!config.historyPersist) return result;
+        Path path = historyPath();
+        if (!Files.exists(path)) return result;
+
+        long persistCutoff = retentionCutoffMillis(config.historyPersistRetentionDays);
+        List<ChatMessage> all = new ArrayList<>();
+        try {
+            for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+                if (line == null || line.isBlank()) continue;
+                ChatMessage msg = ChatMessage.fromMap(JsonUtil.parseFlatObject(line));
+                if (msg.message == null || msg.message.isBlank()) continue;
+                if (isOlderThan(msg, persistCutoff)) continue;
+                all.add(msg);
+            }
+        } catch (IOException ex) {
+            plugin.getLogger().warning("Failed to search chat history file " + path + ": " + ex.getMessage());
+            return result;
+        }
+        fillAroundResult(result, all, targetId, before, after);
+        return result;
+    }
+
+    private void fillAroundResult(AroundHistoryResult result, List<ChatMessage> all, String targetId, int before, int after) {
+        if (result == null || all == null || targetId == null || targetId.isBlank()) return;
+        result.messages.clear();
+        result.targetIndex = -1;
+        result.hasBefore = false;
+        result.hasAfter = false;
+        for (int i = 0; i < all.size(); i++) {
+            ChatMessage msg = all.get(i);
+            if (msg != null && targetId.equals(msg.id)) {
+                result.targetIndex = i;
+                break;
+            }
+        }
+        if (result.targetIndex < 0) return;
+        int start = Math.max(0, result.targetIndex - Math.max(0, before));
+        int endExclusive = Math.min(all.size(), result.targetIndex + Math.max(0, after) + 1);
+        result.hasBefore = start > 0;
+        result.hasAfter = endExclusive < all.size();
+        for (int i = start; i < endExclusive; i++) {
+            ChatMessage msg = all.get(i);
+            if (msg != null) result.messages.add(msg);
+        }
+    }
+
+    private ChatMessage findHistoryMessageById(String id) {
+        if (id == null || id.isBlank()) return null;
+        synchronized (history) {
+            for (ChatMessage msg : history) {
+                if (msg != null && id.equals(msg.id)) return msg;
+            }
+        }
+        AroundHistoryResult around = findHistoryAround(id, 0, 0);
+        if (around.targetIndex >= 0 && !around.messages.isEmpty()) return around.messages.get(0);
+        return null;
+    }
+
+    private String messageReplyPreview(ChatMessage msg) {
+        if (msg == null) return "";
+        String text = msg.hidden ? "[deleted]" : String.valueOf(msg.message == null ? "" : msg.message);
+        text = stripControl(text, 180).replace('\n', ' ').replace('\r', ' ').trim();
+        if (text.length() > 120) text = text.substring(0, 117) + "...";
+        return text;
+    }
+
+    private void attachReplyIfPresent(ChatMessage msg, String replyToId, String fallbackSender, String fallbackPreview) {
+        if (msg == null || replyToId == null || replyToId.isBlank()) return;
+        String id = stripControl(replyToId, 96);
+        if (id.isBlank()) return;
+        ChatMessage target = findHistoryMessageById(id);
+        String sender = "";
+        String preview = "";
+        if (target != null) {
+            id = target.id;
+            sender = stripControl(target.sender, 64);
+            preview = messageReplyPreview(target);
+        } else {
+            // The frontend only allows replying to messages it has already loaded,
+            // but the server-side in-memory history may not always contain that
+            // exact target yet (for example after pruning/reload or when a proxy
+            // reconnect races with history refresh). Preserve the reply relation
+            // using the client-provided preview instead of silently dropping it.
+            sender = stripControl(fallbackSender, 64);
+            preview = stripControl(fallbackPreview, 180).replace("\n", " ").replace("\r", " ").trim();
+            if (preview.length() > 120) preview = preview.substring(0, 117) + "...";
+        }
+        if (sender.isBlank()) sender = "Unknown";
+        if (preview.isBlank()) preview = "...";
+        msg.withReply(id, sender, preview);
     }
 
     private void addHistory(ChatMessage msg) {
@@ -2496,7 +4932,7 @@ public class WebChatServer {
     private void addSecurityHeaders(HttpExchange ex) {
         Headers h = ex.getResponseHeaders();
         h.set("X-Content-Type-Options", "nosniff");
-        h.set("Referrer-Policy", "no-referrer");
+        h.set("Referrer-Policy", "strict-origin-when-cross-origin");
         h.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()");
     }
 

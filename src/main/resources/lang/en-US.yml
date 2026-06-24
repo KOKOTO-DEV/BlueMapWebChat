@@ -8,9 +8,11 @@ web:
     reconnecting: reconnecting...
     loggedIn: logged in
   button:
+    emoji: "Emoji"
     admin: Admin
     login: Login
     upload: Attach
+    resizeEmojiPanel: 'Drag to resize emoji picker'
     resize: Resize
     send: Send
     reset: Reset
@@ -26,6 +28,7 @@ web:
     unmute: Unmute
     revoke: Revoke
     delete: delete
+    reply: "reply"
     pin: pin
     moderationActionsEnable: Enable pin/delete
     moderationActionsDisable: Disable pin/delete
@@ -34,6 +37,15 @@ web:
     pip: PIP
     run: Run
     jumpLatest: Jump to latest
+    createPack: 'Create folder'
+    uploadEmoji: 'Upload'
+    deselectAll: 'Clear all'
+    selectAll: 'Select all'
+    deleteSelected: 'Delete selected'
+    deletePack: 'Delete folder'
+    change: 'Change'
+    rename: 'Change'
+    renamePack: 'Rename folder'
   placeholder:
     guestName: Guest name
     captchaAnswer: answer
@@ -44,9 +56,18 @@ web:
     muteTarget: Guest name or IP
     minutes: minutes
     reason: reason
+    emojiPack: 'new pack/folder name'
+  reply:
+    composing: "Replying to {sender}"
+    jump: "Jump to replied message"
+    notFound: "The referenced message could not be found."
   message:
     deleted: '[deleted]'
+  emoji:
+    empty: "No emojis configured."
+    emptyPack: 'No emojis here.'
   alert:
+    emojiTooMany: "Only {max} emoji(s) can be used in one message."
     rateLimited: You are sending messages too quickly. Please wait.
     sendFailed: 'Send failed: {error}'
     serverUnavailable: Cannot connect to chat server.
@@ -64,6 +85,16 @@ web:
     saveFailed: 'Save failed: {error}'
     pinFailed: 'Pin failed: {error}'
     unpinFailed: 'Unpin failed: {error}'
+    emojiPackNameRequired: 'Enter a folder name.'
+    emojiFileRequired: 'Choose an emoji file.'
+    confirmDeleteEmoji: 'Delete this emoji?'
+    emojiSelectRequired: 'Select emojis to delete.'
+    confirmDeleteSelectedEmoji: 'Delete {count} selected emojis?'
+    confirmDeleteEmojiPack: 'Delete folder {pack} and all emojis inside?'
+    emojiRenameNameRequired: 'Enter a new name.'
+    confirmRenameEmoji: 'Rename this emoji to {name}? Existing emoji tokens using the old name will no longer match.'
+    confirmRenameEmojiPack: 'Rename folder {pack} to {name}? Emoji tokens in this folder will change.'
+    renameFailed: 'Rename failed: {error}'
   admin:
     title: BlueMap Chat Admin
     summary: Summary
@@ -82,6 +113,22 @@ web:
     currentMutes: Current mutes
     expires: expires
     never: never
+    emojis: 'Emojis'
+    emojiTitle: 'Custom emojis'
+    emojiCurrent: 'Current emojis'
+    emojiLimits: 'Per file {file} KB / total {total} MB'
+    emojiFileLimit: 'Per file {file}'
+    emojiStorageUsage: 'Storage {current} / {total}'
+    emojiStorageCurrent: 'Storage {current}'
+    emojiStorageLimit: 'Storage limit {total}'
+    unlimited: 'unlimited'
+    emojiFolderSelect: 'Emoji folder'
+    emojiPackCount: '{count} emojis'
+    emojiNoFileSelected: 'No file selected'
+  prompt:
+    createEmojiPack: 'New folder name'
+    renameEmoji: 'New emoji name'
+    renameEmojiPack: 'New folder name'
   login:
     title: BlueMap Chat Login
     tabLogin: Login
@@ -172,8 +219,15 @@ web:
   media:
     videoUnavailable: Video preview unavailable
     audioUnavailable: Audio preview unavailable
+    imageUnavailable: Image preview unavailable
     youtube: YouTube
     youtubeTitle: YouTube video
+    youtubeShorts: YouTube Shorts
+    youtubeShortsTitle: YouTube Shorts
+    loadTikTok: ▶ TikTok
+    loadXPost: ▶ X post
+    openTikTok: Open on TikTok
+    tiktok: TikTok
     loadVideo: ▶ Video
     loadAudio: ▶ Audio
   error:
@@ -192,6 +246,8 @@ web:
     upload_disabled: File upload is disabled
     multipart_required: Upload request is invalid
     file_too_large: File is too large
+    total_size_exceeded: Total emoji storage limit exceeded
+    total_size_exceededWithUsage: 'Total emoji storage limit exceeded. Current {current}, selected {file}, maximum {max}.'
     file_missing: No file was uploaded
     upload_permission_denied: You do not have permission to upload files
     extension_not_allowed: This file type is not allowed
@@ -232,6 +288,7 @@ web:
     web-login: 🌐 {name} logged in to web chat.
     web-logout: 🌐 {name} logged out of web chat.
   sender:
+    unknown: "Unknown"
     server: Server
     discord: Discord
     originalId: 'Original ID: {name}'
@@ -302,8 +359,13 @@ web:
     tooLong: 'Command is too long. Maximum: {max} characters.'
     maxLengthHint: 'Maximum: {max} characters'
   system:
-    command-executed: 'Executed web command: {label}'
+    command-executed: '{executor} executed web command: {label}'
+    command-executed-by: '{executor} executed web command: {label}'
     note: System messages such as server events and web command results are translated in the web UI when an i18n key is available.
       Custom announcement text in config.yml remains the fallback text.
   history:
     end: No more messages to display.
+    loading: "Loading history.\nPlease wait."
+    failed: "Load failed.\nTry again shortly."
+    timeout: "Slow response.\nTry again shortly."
+    offline: "Offline.\nCheck connection."
