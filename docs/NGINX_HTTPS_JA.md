@@ -117,13 +117,14 @@ http:
   path-prefix: "/api"
   cors-origin: "https://map.example.com"
 
+web-addon:
+  api-base-url: "/bmwc/api"
+
+
 standalone-web:
   enabled: true
   path: "/chat"
   # 任意です。web-addon.api-base-url と同じ値で構いません。
-  api-base-url: "/bmwc/api"
-
-web-addon:
   api-base-url: "/bmwc/api"
 
 upload:

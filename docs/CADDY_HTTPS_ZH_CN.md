@@ -90,13 +90,14 @@ http:
   path-prefix: "/api"
   cors-origin: "https://map.example.com"
 
+web-addon:
+  api-base-url: "/bmwc/api"
+
+
 standalone-web:
   enabled: true
   path: "/chat"
   # 可选。可以与 web-addon.api-base-url 使用相同值。
-  api-base-url: "/bmwc/api"
-
-web-addon:
   api-base-url: "/bmwc/api"
 
 upload:

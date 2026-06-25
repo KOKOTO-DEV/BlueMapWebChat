@@ -119,13 +119,14 @@ http:
   path-prefix: "/api"
   cors-origin: "https://map.example.com"
 
+web-addon:
+  api-base-url: "/bmwc/api"
+
+
 standalone-web:
   enabled: true
   path: "/chat"
   # Optional. Same value as web-addon.api-base-url is valid.
-  api-base-url: "/bmwc/api"
-
-web-addon:
   api-base-url: "/bmwc/api"
 
 upload:

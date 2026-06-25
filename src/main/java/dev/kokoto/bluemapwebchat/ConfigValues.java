@@ -213,18 +213,15 @@ public class ConfigValues {
     public String emojiGameLinkPublicApiBaseUrl;
     public String emojiGameLinkLabelFormat;
     public int emojiGameLinkMaxLinksPerMessage;
-    public String emojiImageEmojisResourcePackZip;
-    public String emojiImageEmojisOutput;
-    public String emojiImageEmojisTemplateFormat;
-    public boolean emojiImageEmojisFallbackToLink;
-    public boolean emojiImageEmojisClickableUrlsAfterConversion;
-    public boolean emojiImageEmojisPlainBroadcastWithUrls;
-    public String emojiImageEmojisDefaultPack;
-    public Map<String, String> emojiImageEmojisAliases;
-    public boolean emojiImageEmojisGeneratedSymbolFallback;
+    public boolean emojiGameLinkPlainBroadcastWithUrls;
+    public String emojiGameLinkDefaultPack;
+    public Map<String, String> emojiGameLinkAliases;
 
     public boolean replyGamePrefixEnabled;
     public String replyGamePrefixText;
+    public boolean replyGamePreviewEnabled;
+    public String replyGamePreviewFormat;
+    public int replyGamePreviewMaxLength;
 
     public boolean pinnedEnabled;
     public int pinnedMaxPins;
@@ -545,11 +542,7 @@ public class ConfigValues {
         }
         v.emojiGameLinkEnabled = c.getBoolean("emoji.game-link.enabled", true);
         String emojiGameLinkMode = String.valueOf(c.getString("emoji.game-link.mode", "link")).trim().toLowerCase(Locale.ROOT);
-        if (emojiGameLinkMode.equals("imageemojis") || emojiGameLinkMode.equals("image-emojis")) {
-            v.emojiGameLinkMode = "imageemojis";
-        } else if (emojiGameLinkMode.equals("imageemojis-link") || emojiGameLinkMode.equals("image-emojis-link") || emojiGameLinkMode.equals("imageemojis_with_link") || emojiGameLinkMode.equals("imageemojis-with-link")) {
-            v.emojiGameLinkMode = "imageemojis-link";
-        } else if (emojiGameLinkMode.equals("label") || emojiGameLinkMode.equals("template") || emojiGameLinkMode.equals("text")) {
+        if (emojiGameLinkMode.equals("label") || emojiGameLinkMode.equals("template") || emojiGameLinkMode.equals("text")) {
             v.emojiGameLinkMode = "label";
         } else {
             v.emojiGameLinkMode = "link";
@@ -557,33 +550,23 @@ public class ConfigValues {
         v.emojiGameLinkPublicApiBaseUrl = c.getString("emoji.game-link.public-api-base-url", "");
         v.emojiGameLinkLabelFormat = c.getString("emoji.game-link.label-format", ":{id}:");
         v.emojiGameLinkMaxLinksPerMessage = Math.max(0, c.getInt("emoji.game-link.max-links-per-message", 4));
-        v.emojiImageEmojisResourcePackZip = c.getString("emoji.game-link.imageemojis.resource-pack-zip", "../ImageEmojis/emojis.zip");
-        String emojiImageEmojisOutput = String.valueOf(c.getString("emoji.game-link.imageemojis.output", "template")).trim().toLowerCase(Locale.ROOT);
-        if (emojiImageEmojisOutput.equals("symbol") || emojiImageEmojisOutput.equals("actual") || emojiImageEmojisOutput.equals("unicode")) {
-            v.emojiImageEmojisOutput = "symbol";
-        } else if (emojiImageEmojisOutput.equals("auto")) {
-            v.emojiImageEmojisOutput = "auto";
-        } else {
-            v.emojiImageEmojisOutput = "template";
-        }
-        v.emojiImageEmojisTemplateFormat = c.getString("emoji.game-link.imageemojis.template-format", ":{id}:");
-        v.emojiImageEmojisFallbackToLink = c.getBoolean("emoji.game-link.imageemojis.fallback-to-link", false);
-        v.emojiImageEmojisClickableUrlsAfterConversion = c.getBoolean("emoji.game-link.imageemojis.clickable-urls-after-conversion", true);
-        v.emojiImageEmojisPlainBroadcastWithUrls = c.getBoolean("emoji.game-link.imageemojis.plain-broadcast-with-urls", true);
-        v.emojiImageEmojisDefaultPack = String.valueOf(c.getString("emoji.game-link.imageemojis.default-pack", "")).trim();
-        v.emojiImageEmojisGeneratedSymbolFallback = c.getBoolean("emoji.game-link.imageemojis.generated-symbol-fallback", false);
-        v.emojiImageEmojisAliases = new LinkedHashMap<>();
-        org.bukkit.configuration.ConfigurationSection imageEmojiAliases = c.getConfigurationSection("emoji.game-link.imageemojis.aliases");
-        if (imageEmojiAliases != null) {
-            for (String key : imageEmojiAliases.getKeys(false)) {
+        v.emojiGameLinkPlainBroadcastWithUrls = c.getBoolean("emoji.game-link.plain-broadcast-with-urls", true);
+        v.emojiGameLinkDefaultPack = String.valueOf(c.getString("emoji.game-link.default-pack", "")).trim();
+        v.emojiGameLinkAliases = new LinkedHashMap<>();
+        org.bukkit.configuration.ConfigurationSection gameLinkAliases = c.getConfigurationSection("emoji.game-link.aliases");
+        if (gameLinkAliases != null) {
+            for (String key : gameLinkAliases.getKeys(false)) {
                 String alias = String.valueOf(key == null ? "" : key).trim();
-                String id = String.valueOf(imageEmojiAliases.getString(key, "")).trim();
-                if (!alias.isBlank() && !id.isBlank()) v.emojiImageEmojisAliases.put(alias, id);
+                String id = String.valueOf(gameLinkAliases.getString(key, "")).trim();
+                if (!alias.isBlank() && !id.isBlank()) v.emojiGameLinkAliases.put(alias, id);
             }
         }
 
         v.replyGamePrefixEnabled = c.getBoolean("reply.game-prefix.enabled", true);
         v.replyGamePrefixText = c.getString("reply.game-prefix.text", "[Reply] ");
+        v.replyGamePreviewEnabled = c.getBoolean("reply.game-preview.enabled", true);
+        v.replyGamePreviewFormat = c.getString("reply.game-preview.format", "&7↪ {sender}: {preview}");
+        v.replyGamePreviewMaxLength = Math.max(0, c.getInt("reply.game-preview.max-length", 120));
 
         v.pinnedEnabled = c.getBoolean("pinned.enabled", true);
         v.pinnedMaxPins = Math.max(0, c.getInt("pinned.max-pins", 20));

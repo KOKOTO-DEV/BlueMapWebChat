@@ -80,6 +80,7 @@ public class DiscordBridge {
         if (!allow) return;
 
         String text = format(c.discordWebToDiscordFormat, msg.sender, msg.role, msg.source, msg.message, c.discordChannel);
+        text = applyReplyRelayToDiscord(msg, text, c);
         if (text.isBlank()) return;
 
         sendDirectToDiscord(text);
@@ -195,6 +196,56 @@ public class DiscordBridge {
         } catch (Throwable t) {
             plugin.getLogger().warning("Failed to relay Discord message to web chat: " + t.getMessage());
         }
+    }
+
+    private String applyReplyRelayToDiscord(ChatMessage msg, String renderedLine, ConfigValues c) {
+        String line = String.valueOf(renderedLine == null ? "" : renderedLine);
+        if (msg == null || c == null || msg.replyToId == null || msg.replyToId.isBlank()) return line;
+
+        if (c.replyGamePrefixEnabled) {
+            line = replaceFirstBracketLabelOrPrepend(line, plainReplyPrefix(c), 96);
+        }
+
+        if (!c.replyGamePreviewEnabled) return line;
+        String sender = safeText(msg.replyToSender);
+        if (sender.isBlank()) sender = "Unknown";
+        String preview = truncateVisible(safeText(msg.replyToPreview), Math.max(0, c.replyGamePreviewMaxLength));
+        if (preview.isBlank()) preview = "...";
+        return "↪ " + sender + ": " + preview + "\n" + line;
+    }
+
+    private String plainReplyPrefix(ConfigValues c) {
+        String value = c == null || c.replyGamePrefixText == null ? "" : c.replyGamePrefixText;
+        value = value.replaceAll("(?i)&[0-9A-FK-ORX]", "");
+        value = value.replaceAll("§.", "");
+        return safeText(value).isBlank() ? "[Reply] " : safeText(value) + (safeText(value).endsWith(" ") ? "" : " ");
+    }
+
+    private String replaceFirstBracketLabelOrPrepend(String text, String prefix, int searchLimit) {
+        String line = String.valueOf(text == null ? "" : text);
+        String label = String.valueOf(prefix == null ? "" : prefix);
+        if (label.isBlank()) return line;
+
+        int limit = searchLimit <= 0 ? line.length() : Math.min(line.length(), searchLimit);
+        for (int i = 0; i < limit; i++) {
+            if (line.charAt(i) != '[') continue;
+            int end = line.indexOf(']', i + 1);
+            if (end < 0 || end >= limit) break;
+            int after = end + 1;
+            while (after < line.length() && Character.isWhitespace(line.charAt(after))) after++;
+            String spacer = label.endsWith(" ") || after >= line.length() ? "" : " ";
+            return line.substring(0, i) + label + spacer + line.substring(after);
+        }
+
+        String spacer = label.endsWith(" ") || line.isBlank() ? "" : " ";
+        return label + spacer + line;
+    }
+
+    private String truncateVisible(String value, int maxLength) {
+        String raw = safeText(value);
+        if (maxLength <= 0 || raw.length() <= maxLength) return raw;
+        if (maxLength <= 1) return "…";
+        return raw.substring(0, Math.max(0, maxLength - 1)).trim() + "…";
     }
 
     private boolean sendDirectToDiscord(String text) {

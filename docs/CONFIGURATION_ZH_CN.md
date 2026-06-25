@@ -17,13 +17,13 @@ web-addon:
 ### 仅 standalone
 
 ```yaml
-standalone-web:
-  enabled: true
-  path: "/chat"
-
 web-addon:
   auto-install: false
   auto-patch-webapp-conf: false
+
+standalone-web:
+  enabled: true
+  path: "/chat"
 ```
 
 访问 `http://<server-host>:8899/chat`。
@@ -37,13 +37,14 @@ http:
   path-prefix: "/api"
   cors-origin: "https://map.example.com"
 
-standalone-web:
-  enabled: true
-  # 可选。可以与 web-addon.api-base-url 使用同一个公开 API 路径。
-  api-base-url: "/bmwc/api"
-
 web-addon:
   api-base-url: "/bmwc/api"
+
+standalone-web:
+  enabled: true
+  # 推荐留空。会跟随 web-addon.api-base-url。
+  # 也可以显式设置同一个公开 API 路径，例如 "/bmwc/api"。
+  api-base-url: ""
 
 upload:
   # 推荐留空。上传 URL 会自动跟随当前 API base。
@@ -67,7 +68,6 @@ emoji:
 - 不带前导 `/` 的相对值，例如 `bmwc/api`、`bmwc/api/uploads`、`bmwc/api/emojis`，会在 `http.cors-origin` 为实际 origin 时自动加上该 origin。若 `cors-origin: "*"`，则按同源绝对路径 `/bmwc/api...` 处理。
 - `https://map.example.com/bmwc/api` 这样的完整 URL 会原样使用。
 
-
 ## 0 表示无限制/无最大值的选项
 
 - `chat.history-size`
@@ -89,6 +89,26 @@ emoji:
 - `pinned.max-pins`
 - `pinned.show-to-logged-out`
 - `commands.max-length`
+
+## Minecraft 聊天中的回复显示
+
+```yaml
+reply:
+  game-preview:
+    enabled: true
+    format: "&7↪ {sender}: {preview}"
+    max-length: 120
+
+  game-prefix:
+    enabled: true
+    text: "[Reply] "
+```
+
+当 Web 或访客消息回复另一条消息时，`game-preview.enabled` 会先在 Minecraft 聊天中单独发送一行被回复消息的预览，然后再发送实际 Web 消息。这样可以保持原有 Web→游戏聊天格式，同时让引用行和正文行中的 URL 都保持可点击。
+
+预览文本会经过与普通 Web 消息相同的 Web→游戏自定义表情路径。预览中的自定义表情 token 会按 `emoji.game-link.label-format` 格式化，较长预览会按 `max-length` 使用 `…` 省略；设为 `0` 可关闭预览专用截断。
+
+`game-prefix` 控制实际回复消息行的标签/prefix。使用默认 Web 格式时，它会把 `[Web] Player: message` 改为 `[Reply] Player: message`。BlueMapWebChat 会在已经渲染完成的转发行开头附近替换第一个方括号来源标签；如果找不到方括号标签，则会把 prefix 文本加到最前面。同样的回复预览和标签也会应用到 web-to-Discord 转发。
 
 ## 置顶消息
 
@@ -120,22 +140,30 @@ player-display:
 
 当 `strip-colors: false` 时，仅实际聊天发送者名称会渲染 Minecraft legacy 颜色代码。加入/退出/死亡/进度等 system/event 消息始终会去除颜色代码。
 
-## 自定义表情与 ImageEmojis
+## 自定义表情与游戏侧表情插件
 
 BlueMapWebChat 将自定义表情保存到 `plugins/BlueMapWebChat/emojis`。子文件夹会作为表情包处理。
 
-当 `emoji.game-link.mode` 设置为 `imageemojis` 或 `imageemojis-link` 时，GIF/JPG/JPEG/WEBP 原始文件旁边会自动生成供 ImageEmojis 使用的 PNG sidecar。例如，将 `wave.gif` 上传到 `default` 表情包后，会生成：
+`emoji.game-link.mode` 只支持 `link` 和 `label`。
 
-```text
-plugins/BlueMapWebChat/emojis/default/wave.gif
-plugins/BlueMapWebChat/emojis/default/wave.png
+- `link`: 发送 `label-format` 文本以及 BM Web Chat 的短图片链接。
+- `label`: 只发送 `label-format` 文本。
+
+BM Web Chat 不会直接调用 ImageEmojis 或其他游戏侧表情插件，也不会读取资源包或生成的 glyph。如果外部游戏侧表情插件使用相同的 token 文本，它可以在 Minecraft 聊天中渲染该 token。
+
+`plain-broadcast-with-urls` 控制同一条消息同时包含自定义表情 token 和 URL 时的处理方式。默认值 `true` 会先把原始行作为 plain Bukkit 聊天发送，让游戏侧表情插件渲染 token，然后把每个 URL 再作为单独的可点击引用行发送。无论表情在 URL 前还是后，都会按同样方式处理。
+
+`default-pack` 和 `aliases` 用于把较短的游戏侧 token 映射到 BM Web Chat 的 pack/name id。例如：
+
+```yaml
+emoji:
+  game-link:
+    default-pack: "default"
+    aliases:
+      wave: "default/wave"
 ```
 
-Web UI 会继续使用原始文件，因此 GIF 动画会保留。ImageEmojis 可以读取 PNG sidecar。如果 ImageEmojis 指向同一个表情目录，添加或修改表情后请执行 `/emojis reload`。
-
-### Social embeds
-
-YouTube Shorts 使用现有的 YouTube 预览设置。TikTok 和 X/Twitter 帖子 embed 可在 `preview.social-embeds` 下选择启用。公开服务器建议保持 `click-to-load: true`，避免用户点击前加载第三方内容。
+GIF/JPG/JPEG/WEBP 表情原始文件会自动在同一文件夹生成 PNG sidecar，以兼容只能读取 PNG 的游戏侧表情插件。Web UI 会继续使用原始文件，因此 GIF 动画会保留。
 
 ## 命令面板
 

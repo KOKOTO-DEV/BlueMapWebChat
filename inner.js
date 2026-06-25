@@ -89,7 +89,6 @@
     emojiItems: [],
     emojiById: new Map(),
     emojiByAlias: new Map(),
-    emojiBySymbol: new Map(),
     emojiPanelOpen: false,
     emojiLoading: false,
     emojiPanelHeightPx: Math.max(56, Math.min(420, Number(localStorage.getItem("bmwc.emojiPanelHeightPx") || 180) || 180)),
@@ -1391,20 +1390,25 @@
   }
 
   function customEmojiTokenRegex() {
+    // Keep this aligned with the server-side EMOJI_TOKEN_PATTERN.
+    // Do not start a custom emoji token at the ':' in URL schemes such as https://.
     try {
-      return new RegExp(":(?:emoji:)?([^:\\r\\n]{1,200}):", "gu");
+      return new RegExp("(?<![A-Za-z0-9+.-]):(?:emoji:)?([^:\\r\\n]{1,200}):", "gu");
     } catch (_) {
       return /:(?:emoji:)?([^:\r\n]{1,200}):/g;
     }
   }
 
   function customEmojiBoundaryRegex(which) {
-    const prefix = which === "start" ? "^" : "";
-    const suffix = which === "end" ? "$" : "";
+    const token = ":(?:emoji:)?[^:\\r\\n]{1,200}:";
     try {
-      return new RegExp(prefix + ":(?:emoji:)?[^:\\r\\n]{1,200}:" + suffix, "u");
+      if (which === "start") return new RegExp("^" + token, "u");
+      if (which === "end") return new RegExp("(?<![A-Za-z0-9+.-])" + token + "$", "u");
+      return new RegExp("(?<![A-Za-z0-9+.-])" + token, "u");
     } catch (_) {
-      return new RegExp(prefix + ":(?:emoji:)?[^:\\r\\n]{1,200}:" + suffix);
+      const prefix = which === "start" ? "^" : "";
+      const suffix = which === "end" ? "$" : "";
+      return new RegExp(prefix + token + suffix);
     }
   }
 
@@ -1426,16 +1430,10 @@
     if (!map.has(lower)) map.set(lower, item);
   }
 
-  function putCustomEmojiSymbol(map, symbol, item) {
-    symbol = String(symbol || "");
-    if (!symbol || !item) return;
-    if (!map.has(symbol)) map.set(symbol, item);
-  }
 
   function rebuildCustomEmojiLookups(items) {
     const byId = new Map();
     const byAlias = new Map();
-    const bySymbol = new Map();
     (Array.isArray(items) ? items : []).forEach(item => {
       if (!item) return;
       const id = String(item.id || "").trim();
@@ -1449,11 +1447,9 @@
       if (pack && name) putCustomEmojiAlias(byAlias, pack + "/" + name, item);
       if (pack && label) putCustomEmojiAlias(byAlias, pack + "/" + label, item);
       (Array.isArray(item.aliases) ? item.aliases : []).forEach(alias => putCustomEmojiAlias(byAlias, alias, item));
-      (Array.isArray(item.symbols) ? item.symbols : []).forEach(symbol => putCustomEmojiSymbol(bySymbol, symbol, item));
     });
     state.emojiById = byId;
     state.emojiByAlias = byAlias;
-    state.emojiBySymbol = bySymbol;
   }
 
   function customEmojiById(id) {
@@ -1472,19 +1468,6 @@
       if (item) return item;
     }
     return null;
-  }
-
-  function customEmojiBySymbol(symbol) {
-    symbol = String(symbol || "");
-    if (!symbol) return null;
-    const symbols = state.emojiBySymbol;
-    return symbols && typeof symbols.get === "function" ? (symbols.get(symbol) || null) : null;
-  }
-
-  function customEmojiSymbols() {
-    const symbols = state.emojiBySymbol;
-    if (!symbols || typeof symbols.keys !== "function") return [];
-    return Array.from(symbols.keys()).filter(Boolean).sort((a, b) => b.length - a.length);
   }
 
   function customEmojiImgHtml(item) {
@@ -1789,37 +1772,16 @@
     text = String(text ?? "");
     if (!state.emojiEnabled || !state.emojiById || state.emojiById.size === 0) return linkifyText(text);
     const re = customEmojiTokenRegex();
-    const symbols = customEmojiSymbols();
     let out = "";
-    let pos = 0;
-    while (pos < text.length) {
-      re.lastIndex = pos;
-      const tokenMatch = re.exec(text);
-      let bestIndex = tokenMatch ? tokenMatch.index : -1;
-      let bestLength = tokenMatch ? tokenMatch[0].length : 0;
-      let bestHtml = tokenMatch ? (() => {
-        const item = customEmojiByToken(tokenMatch[1]);
-        return item ? customEmojiImgHtml(item) : esc(tokenMatch[0]);
-      })() : "";
-
-      for (const symbol of symbols) {
-        const idx = text.indexOf(symbol, pos);
-        if (idx < 0) continue;
-        if (bestIndex < 0 || idx < bestIndex || (idx === bestIndex && symbol.length > bestLength)) {
-          const item = customEmojiBySymbol(symbol);
-          if (!item) continue;
-          bestIndex = idx;
-          bestLength = symbol.length;
-          bestHtml = customEmojiImgHtml(item);
-        }
-      }
-
-      if (bestIndex < 0) break;
-      out += linkifyText(text.slice(pos, bestIndex));
-      out += bestHtml;
-      pos = bestIndex + Math.max(1, bestLength);
+    let last = 0;
+    let match;
+    while ((match = re.exec(text)) !== null) {
+      out += linkifyText(text.slice(last, match.index));
+      const item = customEmojiByToken(match[1]);
+      out += item ? customEmojiImgHtml(item) : esc(match[0]);
+      last = match.index + match[0].length;
     }
-    out += linkifyText(text.slice(pos));
+    out += linkifyText(text.slice(last));
     return out;
   }
 
@@ -6953,7 +6915,6 @@
       state.emojiItems = [];
       state.emojiById = new Map();
       state.emojiByAlias = new Map();
-      state.emojiBySymbol = new Map();
       updateEmojiButton();
       return;
     }
@@ -6978,7 +6939,6 @@
       state.emojiItems = [];
       state.emojiById = new Map();
       state.emojiByAlias = new Map();
-      state.emojiBySymbol = new Map();
       console.warn("BlueMapWebChat emoji list failed", e);
     } finally {
       state.emojiLoading = false;

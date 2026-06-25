@@ -5,16 +5,25 @@
 
 ### Replies, history, and scrolling
 
+- Fixed Paper game-to-web chat capture so web relay uses the player's original typed message, preserving `:pack/name:` emoji tokens before any game-side emoji plugin renders them in game.
 - Added web chat replies with referenced-message previews.
 - Added jump-to-replied-message behavior, including loading older history around the target message when needed.
 - Improved virtual scrolling around media-heavy histories and reply jumps.
 - Added a safe media-preview wrapper so preview parser errors cannot break message rendering or virtual scrolling.
 
-### Custom emoji and ImageEmojis
+### Custom emoji and game-link cleanup
 
+- Changed `emoji.game-link.plain-broadcast-with-urls` to split mixed emoji/URL messages: the original line stays plain for game-side emoji rendering, and each URL is repeated on a separate clickable reference line.
+
+- Simplified web-to-game custom emoji relay to two modes: `link` and `label`.
+- Removed the misleading ImageEmojis-specific game-link subsection from the default config and documentation.
+- Moved `plain-broadcast-with-urls`, `default-pack`, and `aliases` directly under `emoji.game-link`.
+- Clarified that BM Web Chat sends token text only; game-side emoji rendering is handled independently by external plugins that know the same token names.
+- Fixed missing Java helper definitions after the resource-pack cleanup so game-link labels and game-side reply previews compile again.
+- Fixed URL-before-custom-emoji rendering so `https://example.com :pack/name:` is linkified and the emoji token still renders; the frontend now avoids treating URL scheme colons as emoji token starts.
 - Added the admin custom emoji manager for creating, uploading, renaming, and deleting emoji packs/files.
 - Added emoji storage usage/limit display and upload warnings when the total emoji size limit is exceeded.
-- Added same-folder PNG sidecars for GIF/JPG/JPEG/WEBP custom emoji files when `emoji.game-link.mode` is `imageemojis` or `imageemojis-link`.
+- Added same-folder PNG sidecars for GIF/JPG/JPEG/WEBP custom emoji files for compatibility with game-side emoji plugins that only read PNG files.
 - Kept the web UI on the original uploaded emoji file so animated GIFs remain animated in the browser.
 - Hid PNG sidecars from the web emoji catalog when a same-base non-PNG original exists.
 - Improved emoji picker resizing, scrollbar spacing, and wheel-row snapping.
@@ -41,7 +50,9 @@
 - Guarded repeated Enter sends immediately after reconnect.
 - Reduced stale web-asset problems by keeping generated asset version tokens.
 - Removed project-specific examples from default configuration and documentation.
-- Simplified ImageEmojis PNG sidecar behavior so it is automatic when ImageEmojis relay mode is selected.
+- Aligned bundled config, README, docs, and proxy override examples so `web-addon` appears before `standalone-web`.
+- Removed game-to-web glyph reverse-conversion paths; game-to-web relay now depends on original chat text capture instead of glyph lookup.
+- Simplified PNG sidecar behavior so it is a general compatibility helper for game-side emoji plugins.
 
 
 
@@ -73,9 +84,6 @@
 ### Theme and user settings
 
 * Improved light/system-light theme behavior so panel, modal, button, input, emoji/admin surfaces, and surrounding areasalone-web`, making the reverse-proxy API base setting easier to find.
-
-### Theme and user settings
-
 * Improved light use the same user-selected background and text-color variables as dark theme.
 * Changed light-theme panel, modal, button, and emoji resize-handle backgrounds from gradients to solid colors so custom colors render cleanly.
 * Allowed decimal pixel values for user settings where fractional CSS pixels are safe, including font size and custom text-shadow X/Y/blur controls.

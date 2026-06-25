@@ -17,13 +17,13 @@ web-addon:
 ### standalone のみ
 
 ```yaml
-standalone-web:
-  enabled: true
-  path: "/chat"
-
 web-addon:
   auto-install: false
   auto-patch-webapp-conf: false
+
+standalone-web:
+  enabled: true
+  path: "/chat"
 ```
 
 `http://<server-host>:8899/chat` を開きます。
@@ -37,14 +37,14 @@ http:
   path-prefix: "/api"
   cors-origin: "https://map.example.com"
 
+web-addon:
+  api-base-url: "/bmwc/api"
+
 standalone-web:
   enabled: true
   # 推奨は空です。web-addon.api-base-url に従います。
   # 同じ公開 API 経路を明示する場合は "/bmwc/api" も使えます。
   api-base-url: ""
-
-web-addon:
-  api-base-url: "/bmwc/api"
 
 upload:
   # 推奨は空です。アップロード URL は有効な API base に自動追従します。
@@ -68,7 +68,6 @@ emoji:
 - 先頭 `/` のない相対値、例: `bmwc/api`、`bmwc/api/uploads`、`bmwc/api/emojis` は、`http.cors-origin` が実際の origin のときその origin を前に付けます。`cors-origin: "*"` の場合は `/bmwc/api...` のような同一 origin の絶対パスとして扱います。
 - `https://map.example.com/bmwc/api` のような完全 URL はそのまま使います。
 
-
 ## 0 が無制限/最大値なしを意味する項目
 
 - `chat.history-size`
@@ -90,6 +89,26 @@ emoji:
 - `pinned.max-pins`
 - `pinned.show-to-logged-out`
 - `commands.max-length`
+
+## Minecraft チャットでの返信表示
+
+```yaml
+reply:
+  game-preview:
+    enabled: true
+    format: "&7↪ {sender}: {preview}"
+    max-length: 120
+
+  game-prefix:
+    enabled: true
+    text: "[Reply] "
+```
+
+Web またはゲストメッセージが別のメッセージへ返信する場合、`game-preview.enabled` は参照元メッセージのプレビューを実際の Web メッセージの前に Minecraft チャットへ別行で送信します。これにより、通常の Web→ゲーム形式を保ったまま、引用行と本文行の URL をそれぞれクリック可能にできます。
+
+プレビュー文は通常の Web メッセージと同じ Web→ゲーム用カスタム絵文字経路を通ります。プレビュー内のカスタム絵文字トークンは `emoji.game-link.label-format` に従って整形され、長いプレビューは `max-length` に従って `…` で省略されます。`0` にするとプレビュー固有の省略を無効化します。
+
+`game-prefix` は実際の返信メッセージ行のラベル/prefix を制御します。既定の Web 形式では `[Web] Player: message` を `[Reply] Player: message` に変更します。BlueMapWebChat は、すでにレンダリングされた中継行の先頭付近にある最初の角括弧ソースラベルを置き換えます。角括弧ラベルがない場合は prefix テキストを先頭に追加します。同じ返信プレビューとラベルは web-to-Discord 中継にも適用されます。
 
 ## 固定メッセージ
 
@@ -121,22 +140,30 @@ player-display:
 
 `strip-colors: false` の場合、実際のチャット送信者名だけ Minecraft legacy 色コードをレンダリングします。参加/退出/死亡/進捗などの system/event メッセージは常に色コードを削除します。
 
-## カスタム絵文字と ImageEmojis
+## カスタム絵文字とゲーム側絵文字プラグイン
 
 BlueMapWebChat はカスタム絵文字を `plugins/BlueMapWebChat/emojis` に保存します。サブフォルダーは絵文字パックとして扱われます。
 
-`emoji.game-link.mode` が `imageemojis` または `imageemojis-link` の場合、GIF/JPG/JPEG/WEBP の元ファイルの横に ImageEmojis 用の PNG サイドカーを自動生成します。たとえば `default` パックに `wave.gif` をアップロードすると、次のファイルが作成されます。
+`emoji.game-link.mode` は `link` と `label` のみをサポートします。
 
-```text
-plugins/BlueMapWebChat/emojis/default/wave.gif
-plugins/BlueMapWebChat/emojis/default/wave.png
+- `link`: `label-format` の文字列と BM Web Chat の短い画像リンクを送信します。
+- `label`: `label-format` の文字列だけを送信します。
+
+BM Web Chat は ImageEmojis などのゲーム側絵文字プラグインを直接呼び出さず、リソースパックや生成済み glyph も読み取りません。外部のゲーム側絵文字プラグインが同じトークン文字列を使う場合、Minecraft チャット内でそのトークンをレンダリングできます。
+
+`plain-broadcast-with-urls` は、同じメッセージにカスタム絵文字トークンと URL が含まれる場合の処理を制御します。既定値 `true` では、元の行を plain Bukkit チャットとして送信してゲーム側絵文字プラグインがトークンを描画できるようにし、各 URL を別のクリック可能な参照行として再送信します。絵文字が URL の前でも後でも同じように処理されます。
+
+`default-pack` と `aliases` は、短いゲーム側トークンを BM Web Chat の pack/name id に対応付けるために使います。例:
+
+```yaml
+emoji:
+  game-link:
+    default-pack: "default"
+    aliases:
+      wave: "default/wave"
 ```
 
-Web UI は元ファイルを使うため、GIF アニメーションは維持されます。ImageEmojis は PNG サイドカーを読み込めます。ImageEmojis が同じ絵文字ディレクトリを参照している場合は、絵文字の追加や変更後に `/emojis reload` を実行してください。
-
-### Social embeds
-
-YouTube Shorts は既存の YouTube プレビュー設定を使います。TikTok と X/Twitter の投稿 embed は `preview.social-embeds` で任意に有効化できます。公開サーバーでは、クリック前に外部コンテンツを読み込まないよう `click-to-load: true` を推奨します.
+GIF/JPG/JPEG/WEBP の絵文字元ファイルには、PNG だけを読めるゲーム側絵文字プラグインとの互換性のため、同じフォルダーに PNG sidecar が自動生成されます。Web UI は元ファイルを使うため、GIF アニメーションは維持されます。
 
 ## コマンドパネル
 

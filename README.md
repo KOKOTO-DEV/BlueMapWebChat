@@ -2,8 +2,6 @@
 
 A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can run as a BlueMap web addon, as a standalone `/chat` page served by the plugin, or both at the same time.
 
-<img width="1057" height="682" alt="Image" src="https://github.com/user-attachments/assets/722761ea-94a4-4da9-be79-3cd04997c166" />
-
 ## Features
 
 - BlueMap embedded chat panel and standalone web chat page
@@ -14,7 +12,7 @@ A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can r
 - Admin custom emoji manager: create, upload, rename, and delete emoji folders/files
 - File and clipboard upload, image/video/audio/YouTube/Shorts previews, plus optional TikTok and X/Twitter embeds
 - DiscordSRV relay and Discord CDN media cache
-- Message replies with clickable referenced-message previews, pinned messages, virtual scrolling, draggable/resizable window, experimental PIP
+- Message replies with clickable referenced-message previews, optional game-side reply previews, pinned messages, virtual scrolling, draggable/resizable window, experimental PIP
 - Built-in UI languages: en-US, ko-KR, ja-JP, zh-CN
 
 ## Build
@@ -40,25 +38,25 @@ target/BlueMapWebChat-4.0.0.jar
 ### BlueMap addon and standalone page together
 
 ```yaml
-standalone-web:
-  enabled: true
-  path: "/chat"
-
 web-addon:
   auto-install: true
   auto-patch-webapp-conf: true
+
+standalone-web:
+  enabled: true
+  path: "/chat"
 ```
 
 ### Standalone only
 
 ```yaml
-standalone-web:
-  enabled: true
-  path: "/chat"
-
 web-addon:
   auto-install: false
   auto-patch-webapp-conf: false
+
+standalone-web:
+  enabled: true
+  path: "/chat"
 ```
 
 Standalone URL:
@@ -78,13 +76,14 @@ http:
   path-prefix: "/api"
   cors-origin: "https://map.example.com"
 
+web-addon:
+  api-base-url: "/bmwc/api"
+
+
 standalone-web:
   enabled: true
   path: "/chat"
   # Optional. This may be the same route as web-addon.api-base-url.
-  api-base-url: "/bmwc/api"
-
-web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
@@ -125,18 +124,25 @@ See `docs/CADDY_HTTPS_EN.md` for details.
 - `commands.run-from-chat-input`: allow `/command` execution from the normal chat input
 - `ui.picture-in-picture.enabled`: controls both the PIP button and PIP execution
 
-## Custom emoji and ImageEmojis
+## Custom emoji and game-side emoji plugins
 
 BlueMapWebChat stores custom emoji files under `plugins/BlueMapWebChat/emojis`. Subfolders are treated as emoji packs.
 
-When `emoji.game-link.mode` is set to `imageemojis` or `imageemojis-link`, GIF/JPG/JPEG/WEBP emoji originals automatically get same-folder PNG sidecars for ImageEmojis. For example, uploading `wave.gif` to the `default` pack stores:
+For web-to-game chat, `emoji.game-link.mode` supports only `link` and `label`.
+
+- `link`: sends the configured token text plus a short BM Web Chat image link.
+- `label`: sends only the configured token text.
+
+BM Web Chat does not call ImageEmojis or any other game-side emoji plugin directly, and it does not read resource packs or generated glyphs. If an external game-side emoji plugin uses the same token text, such as `:default/wave:`, that plugin can render the token in Minecraft chat. With `plain-broadcast-with-urls: true`, messages that contain both a custom emoji token and a URL are split: the original line stays plain so game-side emoji plugins can render the token, and each URL is repeated on a separate clickable reference line.
+
+When GIF/JPG/JPEG/WEBP emoji files are uploaded, BlueMapWebChat also creates a same-folder PNG sidecar for compatibility with game-side emoji plugins that only read PNG files:
 
 ```text
 plugins/BlueMapWebChat/emojis/default/wave.gif
 plugins/BlueMapWebChat/emojis/default/wave.png
 ```
 
-The web UI keeps using the original file, so GIF animation is preserved. ImageEmojis can load the PNG sidecar. If ImageEmojis watches the same emoji directory, run `/emojis reload` after adding or changing emoji files.
+The web UI keeps using the original file, so GIF animation is preserved. A game-side emoji plugin may use the PNG sidecar if it watches the same emoji directory. Run that plugin's reload command after adding or changing emoji files.
 
 ## YouTube Shorts, TikTok, and X/Twitter previews
 

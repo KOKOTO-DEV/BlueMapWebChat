@@ -12,7 +12,7 @@
 - 管理员自定义表情管理：创建、上传、重命名和删除表情文件夹/文件
 - 文件/剪贴板上传，图片/视频/音频/YouTube/Shorts 预览，以及可选的 TikTok 和 X/Twitter 嵌入
 - DiscordSRV 转发，Discord CDN 媒体缓存
-- 回复与跳转到原消息、置顶消息、虚拟滚动、可拖动/缩放窗口、实验性 PIP
+- 回复与跳转到原消息、游戏内回复预览、置顶消息、虚拟滚动、可拖动/缩放窗口、实验性 PIP
 - UI 语言: en-US, ko-KR, ja-JP, zh-CN
 
 ## 构建
@@ -50,13 +50,14 @@ http:
   path-prefix: "/api"
   cors-origin: "https://map.example.com"
 
+web-addon:
+  api-base-url: "/bmwc/api"
+
+
 standalone-web:
   enabled: true
   path: "/chat"
   # 可选。可以与 web-addon.api-base-url 使用同一路径。
-  api-base-url: "/bmwc/api"
-
-web-addon:
   api-base-url: "/bmwc/api"
 
 upload:
@@ -86,18 +87,25 @@ emoji:
 - `commands.run-from-chat-input`: 允许从普通输入框执行 `/command`
 - `ui.picture-in-picture.enabled`: 控制 PIP 按钮和 PIP 执行
 
-## 自定义表情与 ImageEmojis
+## 自定义表情与游戏侧表情插件
 
 BlueMapWebChat 将自定义表情保存到 `plugins/BlueMapWebChat/emojis`。子文件夹会作为表情包处理。
 
-当 `emoji.game-link.mode` 设置为 `imageemojis` 或 `imageemojis-link` 时，GIF/JPG/JPEG/WEBP 原始文件旁边会自动生成供 ImageEmojis 使用的 PNG sidecar。例如，将 `wave.gif` 上传到 `default` 表情包后，会生成：
+在 Web→游戏聊天中，`emoji.game-link.mode` 只支持 `link` 和 `label`。
+
+- `link`: 发送配置的 token 文本以及 BM Web Chat 的短图片链接。
+- `label`: 只发送配置的 token 文本。
+
+BM Web Chat 不会直接调用 ImageEmojis 或其他游戏侧表情插件，也不会读取资源包或生成的 glyph。如果外部游戏侧表情插件使用相同的 token 文本，例如 `:default/wave:`，该插件可以在 Minecraft 聊天中渲染它。当 `plain-broadcast-with-urls: true` 时，如果同一条消息同时包含自定义表情 token 和 URL，会拆成多行：原始行以 plain 形式发送，方便游戏侧表情插件渲染 token；每个 URL 会再作为单独的可点击引用行发送。
+
+上传 GIF/JPG/JPEG/WEBP 表情时，BlueMapWebChat 还会在同一文件夹生成 PNG sidecar，以兼容只能读取 PNG 的游戏侧表情插件。
 
 ```text
 plugins/BlueMapWebChat/emojis/default/wave.gif
 plugins/BlueMapWebChat/emojis/default/wave.png
 ```
 
-Web UI 会继续使用原始文件，因此 GIF 动画会保留。ImageEmojis 可以读取 PNG sidecar。如果 ImageEmojis 指向同一个表情目录，添加或修改表情后请执行 `/emojis reload`。
+Web UI 会继续使用原始文件，因此 GIF 动画会保留。如果游戏侧表情插件监视同一个表情目录，它可以使用 PNG sidecar。添加或修改表情后，请执行该插件的 reload 命令。
 
 ## YouTube Shorts、TikTok 和 X/Twitter 预览
 

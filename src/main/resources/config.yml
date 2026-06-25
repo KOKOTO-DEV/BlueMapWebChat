@@ -532,6 +532,7 @@ emoji:
   # Allowed range: 24-1024. The picker minimum height follows this size.
   picker-size-px: 44
   # 0 = unlimited. Positive value limits how many custom emoji tokens can be sent in one message.
+  # Tokens may include pack paths and spaces, for example :default/wave: or :pack 1/name:.
   message-token-limit: 12
   # Token inserted by the emoji picker.
   # short  = :pack/name:
@@ -544,14 +545,17 @@ emoji:
     - jpeg
     - gif
     - webp
-  # Relays custom emoji tokens to Minecraft chat.
-  # Web message: :pack/name: (legacy :emoji:pack/name: is also accepted)
   game-link:
     enabled: true
-    # link             = :pack/name: https://example.com/bmwc/api/e/1a2b3c4d
-    # label            = :pack/name:
-    # imageemojis      = send ImageEmojis template text or replace with a symbol, depending on imageemojis.output
-    # imageemojis-link = ImageEmojis output + short image link
+    # Relays custom emoji tokens from web chat to Minecraft chat.
+    # Web message: :pack/name: (legacy :emoji:pack/name: is also accepted)
+    #
+    # link  = :pack/name: https://example.com/bmwc/api/e/1a2b3c4d
+    # label = :pack/name:
+    #
+    # External game-side emoji plugins may render the label-format token if they
+    # use the same token names. BM Web Chat does not call those plugins directly
+    # and does not read their resource packs or generated glyphs.
     mode: "link"
     # Public API base used for the in-game short links.
     # Leave empty to infer from web-addon.api-base-url, standalone-web.api-base-url,
@@ -559,58 +563,41 @@ emoji:
     # For HTTPS reverse proxy, setting this explicitly is recommended, for example:
     # public-api-base-url: "https://map.example.com/bmwc/api"
     public-api-base-url: ""
+    # Placeholders: {id}, {name}, {pack}
+    # Use ":{id}:" for packed tokens such as :default/wave:.
+    # Use ":{name}:" only if your game-side emoji plugin uses flat names.
     label-format: ":{id}:"
     # 0 = unlimited. Prevents very long in-game lines when many emoji are sent.
     max-links-per-message: 4
-    imageemojis:
-      # How BM Web Chat relays known web emoji tokens to ImageEmojis.
-      # template = send template-format and let ImageEmojis replace it where it can
-      # symbol   = read emojis.zip and send the actual generated font symbol
-      # auto     = use symbol when found, otherwise fall back to template-format
-      output: "template"
-      # Template text sent to ImageEmojis when output is template/auto.
-      # Default keeps BM Web Chat's full pack/name id, for example :pack/name:.
-      # Use ":{name}:" only if your ImageEmojis aliases are flat names.
-      template-format: ":{id}:"
-      # Path to ImageEmojis' generated resource pack ZIP.
-      # Relative paths are resolved from this plugin's data folder.
-      # If the ImageEmojis plugin is loaded, BM Web Chat first reads the live
-      # ImageEmojis emoji repository via reflection and uses this ZIP only as fallback.
-      # Used for converting actual ImageEmojis symbols back to web emojis.
-      resource-pack-zip: "../ImageEmojis/emojis.zip"
-      # When mode is imageemojis and the emoji cannot be represented by ImageEmojis,
-      # append BM Web Chat's short image link. Known PNG/template emojis are not linked
-      # just because the symbol lookup missed, so ImageEmojis template conversion is not broken by a URL.
-      fallback-to-link: false
-      # If a line contains both an ImageEmojis template and a URL, BM Web Chat first
-      # tries to replace the emoji template with ImageEmojis' actual generated symbol,
-      # then applies the clickable URL component. This keeps URLs clickable when the
-      # symbol mapping is available. If conversion is not available, the plain-broadcast
-      # fallback below can still let ImageEmojis process the template.
-      clickable-urls-after-conversion: true
-      # If a line still contains an ImageEmojis template and a URL after the conversion
-      # attempt above, send it as a plain broadcast instead of BM Web Chat's clickable-URL
-      # component. Some emoji plugins only rewrite plain broadcast/chat text and cannot
-      # see tokens inside custom Bungee components with click events.
-      plain-broadcast-with-urls: true
-      # If ImageEmojis uses flat aliases such as :name: but BM Web Chat stores emojis as
-      # :pack/name:, set the pack that should win for ambiguous :name: aliases.
-      # Example: "default" or "global"
-      default-pack: ""
-      # Explicit ImageEmojis alias -> BM Web Chat emoji id overrides.
-      # Use this when multiple packs contain the same file name, or when an ImageEmojis
-      # alias differs from the BM Web Chat file name.
-      aliases: {}
-      # Unsafe compatibility fallback. When true, BM Web Chat guesses glyphs using
-      # ImageEmojis' filename hash algorithm. Leave false unless you cannot read
-      # ImageEmojis at runtime or from emojis.zip; guesses may collide and show a wrong emoji.
-      generated-symbol-fallback: false
-      # In imageemojis/imageemojis-link mode, GIF/JPG/JPEG/WEBP emoji originals
-      # automatically get same-folder PNG sidecars for ImageEmojis.
-      # Example: emojis/default/wave.gif + emojis/default/wave.png
-
+    # If true, a line containing both a known custom emoji token and a URL is split:
+    # the original line is sent as plain Bukkit broadcast so external game-side
+    # emoji plugins can render the token, and each URL is repeated on a separate
+    # clickable line. This keeps both emoji rendering and URL click events.
+    plain-broadcast-with-urls: true
+    # Prefer this pack when a flat token such as :wave: matches multiple packs.
+    # Example: "default" or "global"
+    default-pack: ""
+    # Optional explicit aliases for web/game token compatibility.
+    # Example:
+    # aliases:
+    #   wave: "default/wave"
+    aliases: {}
 reply:
-  # Prefix added to the message text when a web/guest message is a reply and is relayed to Minecraft chat.
+  # Show the original message preview in Minecraft chat when a web/guest message is a reply.
+  # It is sent as a separate line before the actual web message so URLs in both lines stay clickable.
+  game-preview:
+    enabled: true
+    # Supports Minecraft color codes with &.
+    # Placeholders: {sender}, {preview}, {id}
+    format: "&7↪ {sender}: {preview}"
+    # Maximum displayed preview length before appending …
+    # 0 = no truncation.
+    max-length: 120
+
+  # Label/prefix used for the actual web message line when relaying a reply to Minecraft.
+  # With the default web formats this changes "[Web] Player: message" into "[Reply] Player: message".
+  # The first bracketed source label near the start of the rendered relay line is replaced.
+  # If no bracketed source label is found, this text is prepended.
   # Placeholders: {sender}, {preview}, {id}
   game-prefix:
     enabled: true

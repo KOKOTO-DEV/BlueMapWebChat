@@ -17,8 +17,6 @@ import java.io.OutputStream;
 import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
-import java.math.BigInteger;
-import java.security.MessageDigest;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -30,8 +28,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -45,8 +41,10 @@ public class WebChatServer {
     private final Deque<ChatMessage> history = new ArrayDeque<>();
     private final Set<SseClient> clients = ConcurrentHashMap.newKeySet();
     private static final Pattern URL_PATTERN = Pattern.compile("(?i)\\b((?:https?://|www\\.)[^\\s<>\"]+)");
-    private static final Pattern EMOJI_TOKEN_PATTERN = Pattern.compile("(?<![A-Za-z0-9+.-]):(?:emoji:)?([^:\\s\\r\\n]{1,200}):");
-    private static final Pattern IMAGEEMOJIS_ALIAS_TOKEN_PATTERN = Pattern.compile(":([^:/\\r\\n]{1,128}):");
+    // Keep this aligned with the frontend customEmojiTokenRegex().
+    // Emoji ids may contain spaces and pack paths, for example :pack 1/name:.
+    // The negative lookbehind prevents URL schemes such as http:// from being treated as emoji tokens.
+    private static final Pattern EMOJI_TOKEN_PATTERN = Pattern.compile("(?<![A-Za-z0-9+.-]):(?:emoji:)?([^:\\r\\n]{1,200}):");
     private static final Set<String> DANGEROUS_UPLOAD_EXTENSIONS = Set.of(
             "exe", "msi", "bat", "cmd", "com", "scr", "ps1", "vbs",
             "sh", "bash", "jar", "war", "class",
@@ -57,21 +55,6 @@ public class WebChatServer {
     private HttpServer server;
     private ExecutorService executor;
     private volatile boolean running;
-    private volatile ImageEmojisFontCache imageEmojisFontCache;
-
-    private static class ImageEmojisFontCache {
-        final Path path;
-        final long modifiedAt;
-        final long size;
-        final Map<String, String> symbols;
-
-        ImageEmojisFontCache(Path path, long modifiedAt, long size, Map<String, String> symbols) {
-            this.path = path;
-            this.modifiedAt = modifiedAt;
-            this.size = size;
-            this.symbols = symbols == null ? Map.of() : symbols;
-        }
-    }
 
     public WebChatServer(BlueMapWebChatPlugin plugin, Storage storage, AuthManager auth, CaptchaManager captcha) {
         this.plugin = plugin;
@@ -102,7 +85,7 @@ public class WebChatServer {
         loadPersistedHistory();
         cleanupOldUploads();
         cleanupOldExternalMediaCache();
-        syncExistingImageEmojisPngSidecarsOnStartup();
+        syncExistingGameEmojiPngSidecarsOnStartup();
 
         running = true;
         server.start();
@@ -383,8 +366,7 @@ public class WebChatServer {
 
     public void publishFromGame(String player, String realPlayerName, String playerUuid, String message) {
         ConfigValues config = plugin.configValues();
-        String normalizedMessage = normalizeGameEmojiForWeb(message, config);
-        String text = stripChatMessage(normalizedMessage, config);
+        String text = stripChatMessage(message, config);
         if (text.isBlank()) return;
         if (plugin.discordBridge() != null && plugin.discordBridge().shouldSuppressGameEcho(player, text)) {
             return;
@@ -1279,7 +1261,6 @@ public class WebChatServer {
 
     private void handleEmojiList(HttpExchange ex, ConfigValues config) throws IOException {
         EmojiCatalog catalog = scanEmojiCatalog(config);
-        Map<String, List<String>> imageEmojiSymbolsById = imageEmojiSymbolsByWebId(catalog, config);
         List<Object> packObjects = new ArrayList<>();
         for (EmojiPack pack : catalog.packs) {
             Map<String, Object> pm = new LinkedHashMap<>();
@@ -1300,7 +1281,6 @@ public class WebChatServer {
             im.put("filename", Path.of(item.relativePath).getFileName().toString());
             im.put("url", emojiBaseUrl + "/" + urlPath(item.relativePath));
             im.put("aliases", emojiPublicAliases(item, config));
-            im.put("symbols", imageEmojiSymbolsById.getOrDefault(item.id, List.of()));
             im.put("ext", item.ext);
             im.put("size", item.size);
             im.put("animated", "gif".equalsIgnoreCase(item.ext));
@@ -1597,11 +1577,11 @@ public class WebChatServer {
         String e = String.valueOf(ext == null ? "" : ext).replace(".", "").trim().toLowerCase(Locale.ROOT);
         return e.equals("png") || e.equals("gif") || e.equals("jpg") || e.equals("jpeg") || e.equals("webp");
     }
-
-    private boolean imageEmojisSidecarActive(ConfigValues config) {
-        if (config == null || !config.emojiEnabled || !config.emojiGameLinkEnabled) return false;
-        String mode = String.valueOf(config.emojiGameLinkMode == null ? "" : config.emojiGameLinkMode).trim().toLowerCase(Locale.ROOT);
-        return mode.equals("imageemojis") || mode.equals("imageemojis-link");
+    private boolean gameLinkPngSidecarActive(ConfigValues config) {
+        // PNG sidecars are a generic compatibility helper for external game-side
+        // emoji plugins that can only read PNG files. They are not tied to a
+        // specific plugin integration mode.
+        return config != null && config.emojiEnabled && config.emojiGameLinkEnabled;
     }
 
     private boolean emojiHasPngSidecarSource(String ext) {
@@ -1653,7 +1633,6 @@ public class WebChatServer {
             byte[] pngData = convertImageBytesToPng(input);
             if (pngData == null || pngData.length == 0) return false;
             Files.write(sidecar, pngData, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-            imageEmojisFontCache = null;
             return true;
         } catch (Exception ex) {
             plugin.getLogger().warning("Failed to create PNG sidecar for emoji " + originalFile + ": " + ex.getMessage());
@@ -1661,9 +1640,9 @@ public class WebChatServer {
         }
     }
 
-    private void syncExistingImageEmojisPngSidecarsOnStartup() {
+    private void syncExistingGameEmojiPngSidecarsOnStartup() {
         ConfigValues config = plugin.configValues();
-        if (!imageEmojisSidecarActive(config)) return;
+        if (!gameLinkPngSidecarActive(config)) return;
         Path root = emojiDir();
         if (!Files.isDirectory(root)) return;
         int created = 0;
@@ -1684,7 +1663,7 @@ public class WebChatServer {
         } catch (IOException ex) {
             plugin.getLogger().warning("Failed to scan emoji directory for PNG sidecars: " + ex.getMessage());
         }
-        plugin.getLogger().info("ImageEmojis PNG sidecar sync complete: created " + created
+        plugin.getLogger().info("Game emoji PNG sidecar sync complete: created " + created
                 + ", already present " + already + ", failed " + failed + ".");
     }
 
@@ -3279,7 +3258,7 @@ public class WebChatServer {
             return;
         }
         byte[] sidecarPngData = null;
-        if (imageEmojisSidecarActive(config) && emojiHasPngSidecarSource(ext)) {
+        if (gameLinkPngSidecarActive(config) && emojiHasPngSidecarSource(ext)) {
             sidecarPngData = convertImageBytesToPng(file.data);
             if (sidecarPngData == null || sidecarPngData.length == 0) {
                 sendJson(ex, 400, "{\"ok\":false,\"error\":\"png_conversion_failed\"}");
@@ -3324,8 +3303,7 @@ public class WebChatServer {
             sidecar = emojiPngSidecarPath(target);
             if (sidecar != null) {
                 Files.write(sidecar, sidecarPngData, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                imageEmojisFontCache = null;
-            }
+                }
         }
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("ok", true);
@@ -3560,13 +3538,7 @@ public class WebChatServer {
             return fallback;
         }
     }
-
-
     private String messageForGameChat(String message, ConfigValues config) {
-        return messageForGameChat(message, config, false);
-    }
-
-    private String messageForGameChat(String message, ConfigValues config, boolean forceImageEmojisSymbolOutput) {
         String text = String.valueOf(message == null ? "" : message);
         if (config == null || !config.emojiEnabled || !config.emojiGameLinkEnabled) return text;
         Matcher matcher = EMOJI_TOKEN_PATTERN.matcher(text);
@@ -3581,14 +3553,6 @@ public class WebChatServer {
         matcher.reset();
 
         String mode = String.valueOf(config.emojiGameLinkMode == null ? "link" : config.emojiGameLinkMode).trim().toLowerCase(Locale.ROOT);
-        boolean imageEmojisMode = mode.equals("imageemojis") || mode.equals("imageemojis-link");
-        boolean imageEmojisLinkMode = mode.equals("imageemojis-link");
-        boolean fallbackLink = imageEmojisMode && config.emojiImageEmojisFallbackToLink;
-        String imageEmojisOutput = normalizedImageEmojisOutput(config);
-        String effectiveImageEmojisOutput = (imageEmojisMode && forceImageEmojisSymbolOutput) ? "symbol" : imageEmojisOutput;
-        boolean needImageEmojisSymbols = imageEmojisMode && (effectiveImageEmojisOutput.equals("symbol") || effectiveImageEmojisOutput.equals("auto"));
-        Map<String, String> imageEmojiSymbols = needImageEmojisSymbols ? loadImageEmojisSymbols(config) : Map.of();
-
         String shortBase = publicShortEmojiBaseUrlForGame(config);
         int maxLinks = Math.max(0, config.emojiGameLinkMaxLinksPerMessage);
         int linked = 0;
@@ -3602,35 +3566,11 @@ public class WebChatServer {
                 continue;
             }
 
-            String label = emojiGameLabel(item, config);
-            String imageEmojisTemplate = emojiImageEmojisTemplateLabel(item, config);
-            String replacement = imageEmojisMode ? imageEmojisTemplate : label;
-            boolean convertedByImageEmojis = false;
-            boolean canUseImageEmojisTemplate = imageEmojisTemplateCompatible(item);
-
-            if (imageEmojisMode) {
-                String symbol = (effectiveImageEmojisOutput.equals("symbol") || effectiveImageEmojisOutput.equals("auto"))
-                        ? imageEmojiSymbolFor(item.id, item, imageEmojiSymbols)
-                        : "";
-                if (!symbol.isBlank()) {
-                    replacement = symbol;
-                    convertedByImageEmojis = true;
-                } else if ((effectiveImageEmojisOutput.equals("template") || effectiveImageEmojisOutput.equals("auto")) && canUseImageEmojisTemplate) {
-                    // ImageEmojis' public template format is :<emoji>:. Do not append a URL here;
-                    // a trailing link can prevent the external formatter from recognizing the template.
-                    replacement = imageEmojisTemplate;
-                    convertedByImageEmojis = true;
-                } else {
-                    replacement = imageEmojisTemplate;
-                }
-            }
-
+            String replacement = emojiGameLabel(item, config);
             boolean shouldAppendLink = item != null
                     && !shortBase.isBlank()
                     && (maxLinks <= 0 || linked < maxLinks)
-                    && (mode.equals("link")
-                        || imageEmojisLinkMode
-                        || (fallbackLink && !convertedByImageEmojis && !forceImageEmojisSymbolOutput));
+                    && mode.equals("link");
             if (shouldAppendLink) {
                 replacement = replacement + " " + shortBase + "/" + shortEmojiId(item.id);
                 linked++;
@@ -3651,42 +3591,41 @@ public class WebChatServer {
         return null;
     }
 
-    private String normalizedImageEmojisOutput(ConfigValues config) {
-        String v = String.valueOf(config == null || config.emojiImageEmojisOutput == null ? "template" : config.emojiImageEmojisOutput)
-                .trim().toLowerCase(Locale.ROOT);
-        if (v.equals("symbol") || v.equals("actual") || v.equals("unicode")) return "symbol";
-        if (v.equals("auto")) return "auto";
-        return "template";
+    private String emojiGameLabel(EmojiItem item, ConfigValues config) {
+        String name = stripControl(item == null ? "" : item.name, 80).trim();
+        if (name.isBlank() && item != null) name = stripControl(item.label, 80).trim();
+        if (name.isBlank()) name = "emoji";
+        String pack = stripControl(item == null ? "" : item.pack, 80).trim();
+        String id = stripControl(item == null ? name : item.id, 200).trim();
+        if (id.isBlank()) id = pack.isBlank() ? name : pack + "/" + name;
+        String format = config == null ? "" : String.valueOf(config.emojiGameLinkLabelFormat == null ? "" : config.emojiGameLinkLabelFormat);
+        if (format.isBlank()) format = ":{id}:";
+        return stripControl(format
+                .replace("{name}", name)
+                .replace("{pack}", pack)
+                .replace("{id}", id), 240).trim();
     }
 
-    private boolean imageEmojisTemplateCompatible(EmojiItem item) {
-        if (item == null) return false;
-        return emojiNeedsGamePng(item.ext);
+
+    private String emojiTokenFallbackLabel(String id) {
+        String raw = String.valueOf(id == null ? "" : id).replace("\\", "/").trim();
+        int slash = raw.lastIndexOf('/');
+        String name = slash >= 0 ? raw.substring(slash + 1) : raw;
+        name = stripControl(name, 80).trim();
+        if (name.isBlank()) name = "emoji";
+        return ":" + name + ":";
     }
 
-    private String normalizeGameEmojiForWeb(String message, ConfigValues config) {
-        String text = String.valueOf(message == null ? "" : message);
-        if (config == null || !config.emojiEnabled || text.isBlank()) return text;
-        EmojiCatalog catalog = scanEmojiCatalog(config);
-        if (catalog.items.isEmpty()) return text;
 
-        Map<String, String> aliasToId = emojiAliasToWebId(catalog, config);
-        if (!aliasToId.isEmpty()) {
-            Map<String, String> symbols = loadImageEmojisSymbols(config);
-            text = replaceImageEmojiSymbolsWithWebTokens(text, catalog, symbols, config, aliasToId);
-            text = replaceImageEmojiAliasTokensWithWebTokens(text, aliasToId);
-        }
-        return text;
-    }
 
     private Map<String, String> emojiAliasToWebId(EmojiCatalog catalog, ConfigValues config) {
         Map<String, String> out = new LinkedHashMap<>();
         if (catalog == null) return out;
 
-        // Explicit mapping has the highest priority. This is important when ImageEmojis uses
-        // flat :name: aliases while BM Web Chat keeps emojis in pack/name folders.
-        if (config != null && config.emojiImageEmojisAliases != null) {
-            for (Map.Entry<String, String> entry : config.emojiImageEmojisAliases.entrySet()) {
+        // Explicit mapping has the highest priority. This is useful when a game-side
+        // token such as :name: should map to a BM Web Chat pack/name emoji.
+        if (config != null && config.emojiGameLinkAliases != null) {
+            for (Map.Entry<String, String> entry : config.emojiGameLinkAliases.entrySet()) {
                 String alias = String.valueOf(entry.getKey() == null ? "" : entry.getKey()).trim();
                 String id = String.valueOf(entry.getValue() == null ? "" : entry.getValue()).trim();
                 if (alias.isBlank() || id.isBlank()) continue;
@@ -3705,8 +3644,8 @@ public class WebChatServer {
             }
         }
 
-        // If a default ImageEmojis pack is configured, prefer that pack for flat :name: aliases.
-        String defaultPack = normalizedEmojiPackName(config == null ? "" : config.emojiImageEmojisDefaultPack);
+        // If a default game-link pack is configured, prefer that pack for flat :name: aliases.
+        String defaultPack = normalizedEmojiPackName(config == null ? "" : config.emojiGameLinkDefaultPack);
         if (!defaultPack.isBlank()) {
             for (EmojiItem item : catalog.items) {
                 if (!normalizedEmojiPackName(item.pack).equals(defaultPack)
@@ -3718,7 +3657,7 @@ public class WebChatServer {
         }
 
         // For non-conflicting names, let :name: work automatically. Ambiguous aliases are
-        // intentionally skipped to avoid mapping ImageEmojis glyphs to the wrong web emoji.
+        // intentionally skipped to avoid mapping a flat token to the wrong packed emoji.
         Map<String, List<EmojiItem>> byAlias = new LinkedHashMap<>();
         for (EmojiItem item : catalog.items) {
             collectEmojiAliasCandidate(byAlias, item.name, item);
@@ -3814,521 +3753,6 @@ public class WebChatServer {
         return null;
     }
 
-    private String replaceImageEmojiAliasTokensWithWebTokens(String text, Map<String, String> aliasToId) {
-        Matcher matcher = IMAGEEMOJIS_ALIAS_TOKEN_PATTERN.matcher(text);
-        StringBuffer out = new StringBuffer();
-        while (matcher.find()) {
-            String alias = String.valueOf(matcher.group(1));
-            String id = emojiAliasLookup(aliasToId, alias);
-            if (id == null || id.isBlank()) {
-                matcher.appendReplacement(out, Matcher.quoteReplacement(matcher.group(0)));
-            } else {
-                matcher.appendReplacement(out, Matcher.quoteReplacement(":" + id + ":"));
-            }
-        }
-        matcher.appendTail(out);
-        return out.toString();
-    }
-
-    private String replaceImageEmojiSymbolsWithWebTokens(String text, EmojiCatalog catalog, Map<String, String> symbols,
-                                                          ConfigValues config, Map<String, String> aliasToId) {
-        Map<String, String> symbolToId = imageEmojiSymbolToWebId(catalog, symbols, config, aliasToId);
-        if (symbolToId.isEmpty()) return text;
-        List<Map.Entry<String, String>> entries = new ArrayList<>(symbolToId.entrySet());
-        entries.sort((a, b) -> Integer.compare(b.getKey().length(), a.getKey().length()));
-        String out = text;
-        for (Map.Entry<String, String> entry : entries) {
-            String symbol = entry.getKey();
-            String id = entry.getValue();
-            if (symbol == null || symbol.isBlank() || id == null || id.isBlank()) continue;
-            out = out.replace(symbol, ":" + id + ":");
-        }
-        return out;
-    }
-
-    private Map<String, List<String>> imageEmojiSymbolsByWebId(EmojiCatalog catalog, ConfigValues config) {
-        LinkedHashMap<String, LinkedHashSet<String>> grouped = new LinkedHashMap<>();
-        if (catalog == null || catalog.items.isEmpty()) return Map.of();
-        Map<String, String> aliasToId = emojiAliasToWebId(catalog, config);
-        Map<String, String> symbols = loadImageEmojisSymbols(config);
-        Map<String, String> symbolToId = imageEmojiSymbolToWebId(catalog, symbols, config, aliasToId);
-        for (Map.Entry<String, String> entry : symbolToId.entrySet()) {
-            String symbol = firstUnicodeSymbol(entry.getKey());
-            String id = String.valueOf(entry.getValue() == null ? "" : entry.getValue()).trim();
-            if (symbol.isBlank() || id.isBlank()) continue;
-            grouped.computeIfAbsent(id, ignored -> new LinkedHashSet<>()).add(symbol);
-        }
-        LinkedHashMap<String, List<String>> out = new LinkedHashMap<>();
-        for (Map.Entry<String, LinkedHashSet<String>> entry : grouped.entrySet()) {
-            out.put(entry.getKey(), new ArrayList<>(entry.getValue()));
-        }
-        return out;
-    }
-
-    private Map<String, String> imageEmojiSymbolToWebId(EmojiCatalog catalog, Map<String, String> symbols,
-                                                        ConfigValues config, Map<String, String> aliasToId) {
-        LinkedHashMap<String, String> out = new LinkedHashMap<>();
-        if (catalog == null || catalog.items.isEmpty()) return out;
-        Map<String, String> aliases = aliasToId == null || aliasToId.isEmpty() ? emojiAliasToWebId(catalog, config) : aliasToId;
-
-        // 1) Prefer the generated resource-pack font map when available.
-        // ImageEmojis writes providers like minecraft:font/<filename>.png -> ["\\u...."].
-        // The key can be "font/name", "textures/font/name", or just "name" depending on the parser/source.
-        if (symbols != null && !symbols.isEmpty()) {
-            for (Map.Entry<String, String> entry : symbols.entrySet()) {
-                String symbol = firstUnicodeSymbol(entry.getValue());
-                if (symbol.isBlank()) continue;
-                for (String key : imageEmojiSymbolKeyAliases(entry.getKey())) {
-                    String id = emojiAliasLookup(aliases, key);
-                    if (id != null && !id.isBlank()) {
-                        putImageEmojiSymbolToId(out, symbol, id);
-                    }
-                }
-            }
-            for (EmojiItem item : catalog.items) {
-                String symbol = firstUnicodeSymbol(imageEmojiSymbolFor(item.id, item, symbols));
-                if (!symbol.isBlank()) putImageEmojiSymbolToId(out, symbol, item.id);
-            }
-        }
-
-        // 2) Optional unsafe fallback: reproduce ImageEmojis' hash algorithm from file names.
-        // This is disabled by default because the ImageEmojis range can collide, and BM Web Chat
-        // may have duplicate file names across packs. When it guesses wrong, the web UI shows a
-        // different emoji than Minecraft. Prefer runtime/zip mappings plus explicit aliases.
-        if (config != null && config.emojiImageEmojisGeneratedSymbolFallback) {
-            for (EmojiItem item : catalog.items) {
-                for (String fileName : imageEmojiFileNameCandidates(item)) {
-                    for (String symbol : imageEmojiGeneratedSymbols(fileName)) {
-                        putImageEmojiSymbolToId(out, symbol, item.id);
-                    }
-                }
-            }
-
-            Path emojiDir = imageEmojisEmojiDirectory(config);
-            if (emojiDir != null && Files.isDirectory(emojiDir)) {
-                try (java.util.stream.Stream<Path> stream = Files.list(emojiDir)) {
-                    stream.filter(Files::isRegularFile).forEach(path -> {
-                        String fileName = path.getFileName() == null ? "" : path.getFileName().toString();
-                        if (!"png".equalsIgnoreCase(extension(fileName))) return;
-                        String base = fileName.contains(".") ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
-                        String id = emojiAliasLookup(aliases, base);
-                        if (id == null || id.isBlank()) return;
-                        for (String symbol : imageEmojiGeneratedSymbols(fileName)) {
-                            putImageEmojiSymbolToId(out, symbol, id);
-                        }
-                    });
-                } catch (IOException ignored) {
-                }
-            }
-        }
-
-        return out;
-    }
-
-    private void putImageEmojiSymbolToId(Map<String, String> out, String symbol, String id) {
-        String s = firstUnicodeSymbol(symbol);
-        if (s.isBlank() || id == null || id.isBlank()) return;
-        out.putIfAbsent(s, id);
-    }
-
-    private List<String> imageEmojiSymbolKeyAliases(String key) {
-        LinkedHashSet<String> keys = new LinkedHashSet<>();
-        String raw = String.valueOf(key == null ? "" : key).replace('\\', '/').trim();
-        if (raw.isBlank()) return new ArrayList<>(keys);
-        addImageEmojiAliasCandidate(keys, raw);
-        int colon = raw.indexOf(':');
-        if (colon >= 0 && colon + 1 < raw.length()) addImageEmojiAliasCandidate(keys, raw.substring(colon + 1));
-        String noNamespace = colon >= 0 && colon + 1 < raw.length() ? raw.substring(colon + 1) : raw;
-        String noExt = noNamespace.replaceFirst("(?i)\\.(png|webp|gif|jpg|jpeg)$", "");
-        addImageEmojiAliasCandidate(keys, noExt);
-        for (String prefix : new String[]{"textures/font/", "textures/", "font/", "emojis/"}) {
-            if (noExt.regionMatches(true, 0, prefix, 0, prefix.length())) {
-                addImageEmojiAliasCandidate(keys, noExt.substring(prefix.length()));
-            }
-            String marker = "/" + prefix;
-            int idx = noExt.toLowerCase(Locale.ROOT).indexOf(marker.toLowerCase(Locale.ROOT));
-            if (idx >= 0 && idx + marker.length() < noExt.length()) {
-                addImageEmojiAliasCandidate(keys, noExt.substring(idx + marker.length()));
-            }
-        }
-        int slash = noExt.lastIndexOf('/');
-        if (slash >= 0 && slash + 1 < noExt.length()) addImageEmojiAliasCandidate(keys, noExt.substring(slash + 1));
-        return new ArrayList<>(keys);
-    }
-
-    private void addImageEmojiAliasCandidate(Set<String> keys, String value) {
-        String v = stripControl(String.valueOf(value == null ? "" : value), 200).trim();
-        if (v.isBlank()) return;
-        keys.add(v);
-        String noExt = v.replaceFirst("(?i)\\.(png|webp|gif|jpg|jpeg)$", "");
-        if (!noExt.isBlank()) keys.add(noExt);
-    }
-
-    private List<String> imageEmojiFileNameCandidates(EmojiItem item) {
-        LinkedHashSet<String> files = new LinkedHashSet<>();
-        if (item == null) return new ArrayList<>(files);
-        for (String candidate : new String[]{item.name, item.label, emojiTokenFallbackLabel(item.id).replace(":", "")}) {
-            String base = stripControl(candidate, 160).trim();
-            if (base.isBlank()) continue;
-            base = base.replace('\\', '/');
-            int slash = base.lastIndexOf('/');
-            if (slash >= 0 && slash + 1 < base.length()) base = base.substring(slash + 1);
-            if (base.isBlank()) continue;
-            files.add(base + ".png");
-            files.add(base.toLowerCase(Locale.ROOT) + ".png");
-        }
-        return new ArrayList<>(files);
-    }
-
-    private List<String> imageEmojiGeneratedSymbols(String fileName) {
-        String name = String.valueOf(fileName == null ? "" : fileName).trim();
-        if (name.isBlank()) return List.of();
-        if (!name.toLowerCase(Locale.ROOT).endsWith(".png")) name = name + ".png";
-        name = name.toLowerCase(Locale.ROOT);
-        LinkedHashSet<String> out = new LinkedHashSet<>();
-        String fileNameHash = sha256Hex(name);
-        if (!fileNameHash.isBlank()) {
-            out.add(String.valueOf((char) hashToRange(fileNameHash, 0xEFF2L, 0xEFF2L + 2000L)));
-            out.add(String.valueOf((char) hashToRange(fileNameHash, 0xE000L, 0xE000L + 6400L)));
-        }
-        return new ArrayList<>(out);
-    }
-
-    private long hashToRange(String input, long start, long end) {
-        if (start >= end) return start;
-        String hex = sha256Hex(input);
-        if (hex.isBlank()) return start;
-        BigInteger hashValue = new BigInteger(hex, 16);
-        return start + hashValue.mod(BigInteger.valueOf(end - start)).longValue();
-    }
-
-    private String sha256Hex(String input) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = digest.digest(String.valueOf(input == null ? "" : input).getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(hashBytes.length * 2);
-            for (byte b : hashBytes) hex.append(String.format("%02x", b));
-            return hex.toString();
-        } catch (Throwable t) {
-            return "";
-        }
-    }
-
-    private String firstUnicodeSymbol(String value) {
-        String s = String.valueOf(value == null ? "" : value);
-        if (s.isBlank()) return "";
-        int cp = s.codePointAt(0);
-        if (cp <= 0) return "";
-        return new String(Character.toChars(cp));
-    }
-
-    private Path imageEmojisEmojiDirectory(ConfigValues config) {
-        Path zip = imageEmojisResourcePackPath(config);
-        if (zip != null && zip.getParent() != null) return zip.getParent().resolve("emojis").normalize();
-        return plugin.getDataFolder().toPath().resolve("../ImageEmojis/emojis").normalize();
-    }
-
-    private String emojiGameLabel(EmojiItem item, ConfigValues config) {
-        String name = stripControl(item == null ? "" : item.name, 40).trim();
-        if (name.isBlank() && item != null) name = stripControl(item.label, 40).trim();
-        if (name.isBlank()) name = "emoji";
-        String pack = stripControl(item == null ? "" : item.pack, 40).trim();
-        String format = config == null ? "" : String.valueOf(config.emojiGameLinkLabelFormat == null ? "" : config.emojiGameLinkLabelFormat);
-        if (format.isBlank()) format = ":{id}:";
-        return stripControl(format
-                .replace("{name}", name)
-                .replace("{pack}", pack)
-                .replace("{id}", item == null ? name : item.id), 96).trim();
-    }
-
-
-    private String emojiImageEmojisTemplateLabel(EmojiItem item, ConfigValues config) {
-        String format = config == null ? "" : String.valueOf(config.emojiImageEmojisTemplateFormat == null ? "" : config.emojiImageEmojisTemplateFormat);
-        if (format.isBlank()) format = ":{id}:";
-        String name = stripControl(item == null ? "" : item.name, 80).trim();
-        if (name.isBlank() && item != null) name = stripControl(item.label, 80).trim();
-        if (name.isBlank()) name = "emoji";
-        String pack = stripControl(item == null ? "" : item.pack, 80).trim();
-        String id = stripControl(item == null ? name : item.id, 160).trim();
-        if (id.isBlank()) id = pack.isBlank() ? name : pack + "/" + name;
-        return stripControl(format
-                .replace("{name}", name)
-                .replace("{pack}", pack)
-                .replace("{id}", id), 192).trim();
-    }
-
-    private String emojiTokenFallbackLabel(String id) {
-        String raw = String.valueOf(id == null ? "" : id).replace("\\", "/");
-        int slash = raw.lastIndexOf('/');
-        String name = slash >= 0 ? raw.substring(slash + 1) : raw;
-        name = stripControl(name, 40).trim();
-        if (name.isBlank()) name = "emoji";
-        return ":" + name + ":";
-    }
-
-    private String imageEmojiSymbolFor(String id, EmojiItem item, Map<String, String> symbols) {
-        if (symbols == null || symbols.isEmpty()) return "";
-        List<String> keys = new ArrayList<>();
-        String rawId = String.valueOf(id == null ? "" : id).replace("\\", "/").trim();
-        if (!rawId.isBlank()) keys.add(rawId);
-        int slash = rawId.lastIndexOf('/');
-        if (slash >= 0 && slash + 1 < rawId.length()) keys.add(rawId.substring(slash + 1));
-        if (item != null) {
-            if (item.id != null && !item.id.isBlank()) keys.add(item.id);
-            if (item.name != null && !item.name.isBlank()) keys.add(item.name);
-            if (item.label != null && !item.label.isBlank()) keys.add(item.label);
-        }
-        for (String key : keys) {
-            String symbol = symbols.get(key);
-            if (symbol == null) symbol = symbols.get(key.toLowerCase(Locale.ROOT));
-            if (symbol != null && !symbol.isBlank()) return symbol;
-        }
-        return "";
-    }
-
-    private Map<String, String> loadImageEmojisSymbols(ConfigValues config) {
-        LinkedHashMap<String, String> merged = new LinkedHashMap<>();
-
-        // Best source: the running ImageEmojis plugin already knows the exact name -> glyph mapping.
-        // This avoids guessing the character from file hashes and also works when ImageEmojis settings
-        // such as extendedUnicodeRange differ from BM Web Chat's defaults.
-        Map<String, String> runtimeSymbols = readImageEmojisRuntimeSymbols();
-        if (runtimeSymbols != null && !runtimeSymbols.isEmpty()) merged.putAll(runtimeSymbols);
-
-        Path path = imageEmojisResourcePackPath(config);
-        if (path != null) {
-            try {
-                if (Files.isRegularFile(path)) {
-                    long modifiedAt = Files.getLastModifiedTime(path).toMillis();
-                    long size = Files.size(path);
-                    ImageEmojisFontCache cache = imageEmojisFontCache;
-                    Map<String, String> zipSymbols;
-                    if (cache != null && path.equals(cache.path) && modifiedAt == cache.modifiedAt && size == cache.size) {
-                        zipSymbols = cache.symbols;
-                    } else {
-                        zipSymbols = readImageEmojisSymbols(path);
-                        imageEmojisFontCache = new ImageEmojisFontCache(path, modifiedAt, size, zipSymbols);
-                    }
-                    if (zipSymbols != null && !zipSymbols.isEmpty()) {
-                        for (Map.Entry<String, String> entry : zipSymbols.entrySet()) {
-                            merged.putIfAbsent(entry.getKey(), entry.getValue());
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        return merged.isEmpty() ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(merged));
-    }
-
-    private Map<String, String> readImageEmojisRuntimeSymbols() {
-        LinkedHashMap<String, String> out = new LinkedHashMap<>();
-        try {
-            Object imageEmojisPlugin = Bukkit.getPluginManager().getPlugin("ImageEmojis");
-            if (imageEmojisPlugin == null) return Map.of();
-            Object repository = invokeNoArg(imageEmojisPlugin, "getEmojiRepository");
-            if (repository == null) return Map.of();
-            Object emojisObject = invokeNoArg(repository, "getEmojis");
-            if (!(emojisObject instanceof Iterable<?> emojis)) return Map.of();
-            for (Object emoji : emojis) {
-                if (emoji == null) continue;
-                String symbol = firstUnicodeSymbol(reflectString(emoji, "getAsUtf8Symbol"));
-                if (symbol.isBlank()) symbol = firstImageEmojiRuntimeSymbol(invokeNoArg(emoji, "getChars"));
-                if (symbol.isBlank()) continue;
-                String name = reflectString(emoji, "getName");
-                String fileName = reflectString(emoji, "getFileName");
-                String template = reflectString(emoji, "getTemplate");
-                putImageEmojiSymbolKey(out, name, symbol);
-                putImageEmojiSymbolKey(out, template, symbol);
-                if (!fileName.isBlank()) addImageEmojiSymbolKeys(out, fileName, symbol);
-            }
-        } catch (Throwable ignored) {
-            return Map.of();
-        }
-        return out.isEmpty() ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(out));
-    }
-
-    private Object invokeNoArg(Object target, String methodName) {
-        if (target == null || methodName == null || methodName.isBlank()) return null;
-        try {
-            java.lang.reflect.Method method = target.getClass().getMethod(methodName);
-            method.setAccessible(true);
-            return method.invoke(target);
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private String reflectString(Object target, String methodName) {
-        Object value = invokeNoArg(target, methodName);
-        return stripControl(String.valueOf(value == null ? "" : value), 200).trim();
-    }
-
-    private String firstImageEmojiRuntimeSymbol(Object charsObject) {
-        if (charsObject instanceof Iterable<?> chars) {
-            for (Object value : chars) {
-                String symbol = decodeImageEmojiSymbol(String.valueOf(value == null ? "" : value));
-                if (!symbol.isBlank()) return symbol;
-            }
-            return "";
-        }
-        return decodeImageEmojiSymbol(String.valueOf(charsObject == null ? "" : charsObject));
-    }
-
-    private String decodeImageEmojiSymbol(String value) {
-        String raw = String.valueOf(value == null ? "" : value).trim();
-        if (raw.isBlank()) return "";
-        // ImageEmojis stores chars as strings like "\uF234" in EmojiModel,
-        // while already-serialized JSON may contain the actual PUA glyph.
-        String decoded = decodeJsonString(raw);
-        return firstUnicodeSymbol(decoded);
-    }
-
-    private Path imageEmojisResourcePackPath(ConfigValues config) {
-        String configured = config == null ? "" : String.valueOf(config.emojiImageEmojisResourcePackZip == null ? "" : config.emojiImageEmojisResourcePackZip).trim();
-        if (configured.isBlank()) configured = "../ImageEmojis/emojis.zip";
-        Path path = Path.of(configured);
-        if (!path.isAbsolute()) path = plugin.getDataFolder().toPath().resolve(path);
-        return path.normalize();
-    }
-
-    private Map<String, String> readImageEmojisSymbols(Path zipPath) throws IOException {
-        Map<String, String> out = new HashMap<>();
-        Pattern providerBlockPattern = Pattern.compile("\\{[\\s\\S]{0,8000}?\"type\"\\s*:\\s*\"bitmap\"[\\s\\S]{0,8000}?\\}", Pattern.CASE_INSENSITIVE);
-        Pattern filePattern = Pattern.compile("\"file\"\\s*:\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
-        Pattern charsPattern = Pattern.compile("\"chars\"\\s*:\\s*\\[\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
-        try (ZipInputStream zin = new ZipInputStream(Files.newInputStream(zipPath))) {
-            ZipEntry entry;
-            while ((entry = zin.getNextEntry()) != null) {
-                String name = entry.getName();
-                if (entry.isDirectory() || name == null || !name.endsWith(".json") || !name.contains("/font/")) continue;
-                String json = new String(readAllBytesLimited(zin, 16 * 1024 * 1024), StandardCharsets.UTF_8);
-                Matcher blockMatcher = providerBlockPattern.matcher(json);
-                while (blockMatcher.find()) {
-                    String block = blockMatcher.group(0);
-                    Matcher fileMatcher = filePattern.matcher(block);
-                    Matcher charsMatcher = charsPattern.matcher(block);
-                    if (!fileMatcher.find() || !charsMatcher.find()) continue;
-                    String file = decodeJsonString(fileMatcher.group(1));
-                    String symbol = firstUnicodeSymbol(decodeJsonString(charsMatcher.group(1)));
-                    if (file.isBlank() || symbol.isBlank()) continue;
-                    addImageEmojiSymbolKeys(out, file, symbol);
-                }
-            }
-        }
-        return out.isEmpty() ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(out));
-    }
-
-    private byte[] readAllBytesLimited(InputStream in, int maxBytes) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] buf = new byte[8192];
-        int total = 0;
-        int n;
-        while ((n = in.read(buf)) >= 0) {
-            total += n;
-            if (total > maxBytes) break;
-            out.write(buf, 0, n);
-        }
-        return out.toByteArray();
-    }
-
-    private void addImageEmojiSymbolKeys(Map<String, String> out, String file, String symbol) {
-        String normalized = String.valueOf(file == null ? "" : file).replace('\\', '/');
-        int colon = normalized.indexOf(':');
-        if (colon >= 0 && colon + 1 < normalized.length()) normalized = normalized.substring(colon + 1);
-        normalized = normalized.replaceFirst("(?i)\\.(png|webp|gif|jpg|jpeg)$", "");
-        normalized = normalized.replaceFirst("^/", "");
-        normalized = normalized.replaceFirst("^(?:assets/minecraft/)?", "");
-        normalized = normalized.replaceFirst("^(?:textures/)?", "");
-        normalized = normalized.replaceFirst("^(?:font/)?", "");
-        if (normalized.isBlank()) return;
-        putImageEmojiSymbolKey(out, normalized, symbol);
-        int slash = normalized.lastIndexOf('/');
-        if (slash >= 0 && slash + 1 < normalized.length()) {
-            putImageEmojiSymbolKey(out, normalized.substring(slash + 1), symbol);
-        }
-        String marker = "/emojis/";
-        int idx = normalized.indexOf(marker);
-        if (idx >= 0 && idx + marker.length() < normalized.length()) {
-            putImageEmojiSymbolKey(out, normalized.substring(idx + marker.length()), symbol);
-        }
-    }
-
-    private void putImageEmojiSymbolKey(Map<String, String> out, String key, String symbol) {
-        String cleaned = stripControl(String.valueOf(key == null ? "" : key), 160).trim();
-        if (cleaned.isBlank() || symbol == null || symbol.isBlank()) return;
-        out.putIfAbsent(cleaned, symbol);
-        out.putIfAbsent(cleaned.toLowerCase(Locale.ROOT), symbol);
-    }
-
-    private String decodeJsonString(String value) {
-        String s = String.valueOf(value == null ? "" : value);
-        StringBuilder out = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            char ch = s.charAt(i);
-            if (ch != '\\' || i + 1 >= s.length()) {
-                out.append(ch);
-                continue;
-            }
-            char n = s.charAt(++i);
-            switch (n) {
-                case 'n' -> out.append('\n');
-                case 'r' -> out.append('\r');
-                case 't' -> out.append('\t');
-                case 'b' -> out.append('\b');
-                case 'f' -> out.append('\f');
-                case '\\' -> out.append('\\');
-                case '"' -> out.append('"');
-                case '/' -> out.append('/');
-                case 'u' -> {
-                    if (i + 4 <= s.length() - 1) {
-                        String hex = s.substring(i + 1, i + 5);
-                        try {
-                            out.append((char) Integer.parseInt(hex, 16));
-                            i += 4;
-                        } catch (NumberFormatException ex) {
-                            out.append("\\u").append(hex);
-                            i += 4;
-                        }
-                    } else {
-                        out.append("\\u");
-                    }
-                }
-                default -> out.append(n);
-            }
-        }
-        return out.toString();
-    }
-
-    private String applyReplyGamePrefix(ChatMessage msg, String gameMessage, ConfigValues config) {
-        String text = String.valueOf(gameMessage == null ? "" : gameMessage);
-        if (msg == null || config == null || !config.replyGamePrefixEnabled) return text;
-        if (msg.replyToId == null || msg.replyToId.isBlank()) return text;
-        String prefix = String.valueOf(config.replyGamePrefixText == null ? "" : config.replyGamePrefixText);
-        if (prefix.isBlank()) return text;
-        String sender = stripControl(msg.replyToSender, 64);
-        String preview = stripControl(msg.replyToPreview, 120);
-        prefix = prefix
-                .replace("{sender}", sender)
-                .replace("{preview}", preview)
-                .replace("{id}", stripControl(msg.replyToId, 96));
-        // Keep intentional trailing spaces in values such as "[Reply] ". stripControl()
-        // trims, so sanitize the prefix locally instead.
-        StringBuilder sanitizedPrefix = new StringBuilder(prefix.length());
-        for (int i = 0; i < prefix.length(); i++) {
-            char ch = prefix.charAt(i);
-            if (ch == '\n' || ch == '\r') {
-                sanitizedPrefix.append(' ');
-            } else if (ch == '\t' || !Character.isISOControl(ch)) {
-                sanitizedPrefix.append(ch);
-            }
-        }
-        prefix = sanitizedPrefix.toString();
-        if (prefix.length() > 160) prefix = prefix.substring(0, 160);
-        return prefix.isBlank() ? text : prefix + text;
-    }
-
     private String publicShortEmojiBaseUrlForGame(ConfigValues config) {
         String api = publicApiBaseUrlForGame(config);
         return api.isBlank() ? "" : api + "/e";
@@ -4370,40 +3794,23 @@ public class WebChatServer {
     private String shortEmojiId(String emojiId) {
         return SecurityUtil.sha256Hex(String.valueOf(emojiId == null ? "" : emojiId)).substring(0, 8);
     }
-
-
-    private boolean shouldTryClickableUrlsAfterImageEmojisConversion(ChatMessage msg, ConfigValues config) {
-        if (config == null || !config.emojiEnabled || !config.emojiGameLinkEnabled) return false;
-        if (!config.emojiImageEmojisClickableUrlsAfterConversion) return false;
-        if (!config.clickableUrlsInGame) return false;
-        String rawMessage = String.valueOf(msg == null || msg.message == null ? "" : msg.message);
-        if (!containsUrl(rawMessage)) return false;
-        String mode = String.valueOf(config.emojiGameLinkMode == null ? "" : config.emojiGameLinkMode).trim().toLowerCase(Locale.ROOT);
-        if (!mode.equals("imageemojis") && !mode.equals("imageemojis-link")) return false;
-        return containsKnownImageEmojisTemplate(rawMessage, config);
+    private boolean shouldPreservePlainBroadcastForGameEmojiTokens(ChatMessage msg, String renderedLine, ConfigValues config) {
+        return shouldPreservePlainBroadcastForGameEmojiTokens(String.valueOf(msg == null ? "" : msg.message), renderedLine, config);
     }
 
-    private boolean shouldPreservePlainBroadcastForImageEmojis(ChatMessage msg, String renderedLine, ConfigValues config) {
+    private boolean shouldPreservePlainBroadcastForGameEmojiTokens(String rawMessage, String renderedLine, ConfigValues config) {
         if (config == null || !config.emojiEnabled || !config.emojiGameLinkEnabled) return false;
-        if (!config.emojiImageEmojisPlainBroadcastWithUrls) return false;
+        if (!config.emojiGameLinkPlainBroadcastWithUrls) return false;
         if (!config.clickableUrlsInGame || !containsUrl(renderedLine)) return false;
-        String mode = String.valueOf(config.emojiGameLinkMode == null ? "" : config.emojiGameLinkMode).trim().toLowerCase(Locale.ROOT);
-        if (!mode.equals("imageemojis") && !mode.equals("imageemojis-link")) return false;
-        String output = normalizedImageEmojisOutput(config);
-        if (!output.equals("template") && !output.equals("auto")) return false;
-        // When clickable-urls-after-conversion is enabled, messageForGameChat() already
-        // tried to replace ImageEmojis templates with the actual generated symbols before
-        // this check. Only fall back to plain broadcast if a known template still remains
-        // in the final rendered line. Checking the original web message here would force
-        // plain broadcast even after successful conversion, which prevents clickable URLs.
-        if (config.emojiImageEmojisClickableUrlsAfterConversion) {
-            return containsKnownImageEmojisTemplate(String.valueOf(renderedLine == null ? "" : renderedLine), config);
-        }
-        return containsKnownImageEmojisTemplate(String.valueOf(msg == null ? "" : msg.message), config)
-                || containsKnownImageEmojisTemplate(String.valueOf(renderedLine == null ? "" : renderedLine), config);
+        // Some external game-side emoji plugins only rewrite plain broadcast/chat
+        // text and cannot see tokens inside Bungee components with click events.
+        // If the final line contains both a known custom emoji token and a URL,
+        // send the main line as plain chat and add URLs as separate clickable lines.
+        return containsKnownGameEmojiToken(String.valueOf(rawMessage == null ? "" : rawMessage), config)
+                || containsKnownGameEmojiToken(String.valueOf(renderedLine == null ? "" : renderedLine), config);
     }
 
-    private boolean containsKnownImageEmojisTemplate(String text, ConfigValues config) {
+    private boolean containsKnownGameEmojiToken(String text, ConfigValues config) {
         String raw = String.valueOf(text == null ? "" : text);
         if (raw.isBlank()) return false;
         Matcher matcher = EMOJI_TOKEN_PATTERN.matcher(raw);
@@ -4418,7 +3825,7 @@ public class WebChatServer {
         matcher.reset();
         while (matcher.find()) {
             EmojiItem item = emojiItemForToken(matcher.group(1), emojiById, aliasToId);
-            if (item != null && imageEmojisTemplateCompatible(item)) return true;
+            if (item != null) return true;
         }
         return false;
     }
@@ -4427,29 +3834,171 @@ public class WebChatServer {
         ConfigValues config = plugin.configValues();
         if (!config.sendWebChatToGame) return;
 
-        // Translate color/format codes only in the configured template, not in user text.
+        // Translate color/format codes only in configured templates, not in user text.
         // This keeps user-provided literals such as "&n", "&l", "&a" intact when relayed to game chat.
         String template = ChatColor.translateAlternateColorCodes('&', format);
-        boolean forceImageEmojisSymbolOutput = shouldTryClickableUrlsAfterImageEmojisConversion(msg, config);
-        String gameMessage = applyReplyGamePrefix(msg, messageForGameChat(msg.message, config, forceImageEmojisSymbolOutput), config);
+        String gameMessage = messageForGameChat(msg.message, config);
         String line = template
                 .replace("{player}", msg.sender)
                 .replace("{guest}", msg.sender)
                 .replace("{message}", gameMessage);
+        line = applyReplyGameLinePrefix(msg, line, config);
 
+        final String finalReplyLine = gameReplyPreviewLine(msg, config);
         final String finalLine = line;
-        boolean preservePlainForImageEmojis = shouldPreservePlainBroadcastForImageEmojis(msg, finalLine, config);
+        boolean preservePlainForReply = shouldPreservePlainBroadcastForGameEmojiTokens(
+                String.valueOf(msg == null ? "" : msg.replyToPreview), finalReplyLine, config);
+        boolean preservePlainForGameEmojiTokens = shouldPreservePlainBroadcastForGameEmojiTokens(msg, finalLine, config);
         Bukkit.getScheduler().runTask(plugin, () -> {
-            if (config.clickableUrlsInGame && containsUrl(finalLine) && !preservePlainForImageEmojis) {
-                broadcastClickableLine(finalLine);
-            } else {
-                Bukkit.broadcastMessage(finalLine);
+            if (!finalReplyLine.isBlank()) {
+                broadcastGameLine(finalReplyLine, preservePlainForReply, config);
             }
+            broadcastGameLine(finalLine, preservePlainForGameEmojiTokens, config);
         });
+    }
+
+    private boolean shouldShowReplyPreviewInGame(ChatMessage msg, ConfigValues config) {
+        return msg != null
+                && config != null
+                && config.replyGamePreviewEnabled
+                && msg.replyToId != null
+                && !msg.replyToId.isBlank();
+    }
+
+    private String gameReplyPreviewLine(ChatMessage msg, ConfigValues config) {
+        if (!shouldShowReplyPreviewInGame(msg, config)) return "";
+        String sender = stripControl(msg.replyToSender, 64).trim();
+        if (sender.isBlank()) sender = "Unknown";
+
+        String rawPreview = String.valueOf(msg.replyToPreview == null ? "" : msg.replyToPreview)
+                .replace('\n', ' ')
+                .replace('\r', ' ')
+                .trim();
+        int max = Math.max(0, config.replyGamePreviewMaxLength);
+        rawPreview = truncateVisible(rawPreview, max);
+
+        String gamePreview = messageForGameChat(rawPreview, config);
+        gamePreview = truncateVisible(gamePreview, max);
+        if (gamePreview.isBlank()) gamePreview = "...";
+
+        String format = String.valueOf(config.replyGamePreviewFormat == null ? "" : config.replyGamePreviewFormat);
+        if (format.isBlank()) format = "&7↪ {sender}: {preview}";
+        String line = ChatColor.translateAlternateColorCodes('&', format)
+                .replace("{sender}", sender)
+                .replace("{preview}", gamePreview)
+                .replace("{id}", stripControl(msg.replyToId, 96));
+        return sanitizeSingleGameLine(line, max > 0 ? max + 96 : 512).trim();
+    }
+
+    private String applyReplyGameLinePrefix(ChatMessage msg, String renderedLine, ConfigValues config) {
+        String text = String.valueOf(renderedLine == null ? "" : renderedLine);
+        if (msg == null || config == null || !config.replyGamePrefixEnabled) return text;
+        if (msg.replyToId == null || msg.replyToId.isBlank()) return text;
+        String prefix = formatReplyGamePrefix(msg, config);
+        if (prefix.isBlank()) return text;
+        return replaceFirstBracketLabelOrPrepend(text, prefix, 96);
+    }
+
+    private String formatReplyGamePrefix(ChatMessage msg, ConfigValues config) {
+        String prefix = String.valueOf(config == null || config.replyGamePrefixText == null ? "" : config.replyGamePrefixText);
+        if (prefix.isBlank()) return "";
+        String sender = stripControl(msg == null ? "" : msg.replyToSender, 64);
+        String preview = truncateVisible(stripControl(msg == null ? "" : msg.replyToPreview, 240), Math.max(0, config == null ? 0 : config.replyGamePreviewMaxLength));
+        prefix = prefix
+                .replace("{sender}", sender)
+                .replace("{preview}", preview)
+                .replace("{id}", stripControl(msg == null ? "" : msg.replyToId, 96));
+        prefix = ChatColor.translateAlternateColorCodes('&', prefix);
+        return sanitizeSingleGameLine(prefix, 160);
+    }
+
+    private String replaceFirstBracketLabelOrPrepend(String text, String prefix, int searchLimit) {
+        String line = String.valueOf(text == null ? "" : text);
+        String label = String.valueOf(prefix == null ? "" : prefix);
+        if (label.isBlank()) return line;
+
+        int limit = searchLimit <= 0 ? line.length() : Math.min(line.length(), searchLimit);
+        for (int i = 0; i < limit; i++) {
+            char ch = line.charAt(i);
+            if (ch == ChatColor.COLOR_CHAR && i + 1 < limit) {
+                i++;
+                continue;
+            }
+            if (ch != '[') continue;
+            int end = line.indexOf(']', i + 1);
+            if (end < 0 || end >= limit) break;
+            int after = end + 1;
+            while (after < line.length() && Character.isWhitespace(line.charAt(after))) after++;
+            String spacer = label.endsWith(" ") || after >= line.length() ? "" : " ";
+            return line.substring(0, i) + label + spacer + line.substring(after);
+        }
+
+        String spacer = label.endsWith(" ") || line.isBlank() ? "" : " ";
+        return label + spacer + line;
+    }
+
+    private String sanitizeSingleGameLine(String value, int maxLength) {
+        String raw = String.valueOf(value == null ? "" : value);
+        StringBuilder out = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char ch = raw.charAt(i);
+            if (ch == '\n' || ch == '\r') {
+                out.append(' ');
+            } else if (ch == '\t' || !Character.isISOControl(ch)) {
+                out.append(ch);
+            }
+        }
+        return truncateVisible(out.toString(), maxLength);
+    }
+
+    private String truncateVisible(String value, int maxLength) {
+        String raw = String.valueOf(value == null ? "" : value).replace('\n', ' ').replace('\r', ' ').trim();
+        if (maxLength <= 0 || raw.length() <= maxLength) return raw;
+        if (maxLength <= 1) return "…";
+        return raw.substring(0, Math.max(0, maxLength - 1)).trim() + "…";
+    }
+
+    private void broadcastGameLine(String line, boolean preservePlainForGameEmojiTokens, ConfigValues config) {
+        if (line == null || line.isEmpty()) return;
+        boolean hasClickableUrl = config != null && config.clickableUrlsInGame && containsUrl(line);
+        if (!hasClickableUrl) {
+            Bukkit.broadcastMessage(line);
+            return;
+        }
+
+        if (preservePlainForGameEmojiTokens) {
+            // Send the original line as plain chat first so external game-side emoji
+            // plugins can render :pack/name: tokens. Then add separate clickable URL
+            // reference lines, because those plugins often cannot see tokens inside
+            // Bungee clickable URL components.
+            Bukkit.broadcastMessage(line);
+            broadcastClickableUrlReferences(line);
+            return;
+        }
+
+        broadcastClickableLine(line);
     }
 
     private boolean containsUrl(String line) {
         return line != null && URL_PATTERN.matcher(line).find();
+    }
+
+    private void broadcastClickableUrlReferences(String line) {
+        for (String url : extractClickableUrls(line)) {
+            broadcastClickableLine("↪ " + url);
+        }
+    }
+
+    private List<String> extractClickableUrls(String line) {
+        LinkedHashSet<String> urls = new LinkedHashSet<>();
+        Matcher matcher = URL_PATTERN.matcher(String.valueOf(line == null ? "" : line));
+        while (matcher.find()) {
+            String raw = matcher.group(1);
+            String[] split = splitUrlTrailing(raw);
+            String url = split[0];
+            if (!url.isBlank()) urls.add(url);
+        }
+        return new ArrayList<>(urls);
     }
 
     private void broadcastClickableLine(String line) {

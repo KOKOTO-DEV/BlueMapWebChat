@@ -17,13 +17,13 @@ BlueMap webroot 아래 `addons/bluemap-web-chat`에 파일을 설치하고 `weba
 ### standalone 전용
 
 ```yaml
-standalone-web:
-  enabled: true
-  path: "/chat"
-
 web-addon:
   auto-install: false
   auto-patch-webapp-conf: false
+
+standalone-web:
+  enabled: true
+  path: "/chat"
 ```
 
 `http://<server-host>:8899/chat`로 접속합니다.
@@ -37,14 +37,14 @@ http:
   path-prefix: "/api"
   cors-origin: "https://map.example.com"
 
+web-addon:
+  api-base-url: "/bmwc/api"
+
 standalone-web:
   enabled: true
   # 권장값은 빈 값입니다. web-addon.api-base-url을 따라갑니다.
   # 같은 공개 API 경로를 명시하려면 "/bmwc/api"를 넣어도 됩니다.
   api-base-url: ""
-
-web-addon:
-  api-base-url: "/bmwc/api"
 
 upload:
   # 권장값은 빈 값입니다. 업로드 URL은 활성 API base를 자동으로 따라갑니다.
@@ -67,7 +67,6 @@ emoji:
 - 명시값도 허용됩니다. `/bmwc/api`를 넣으면 upload는 `/uploads`, emoji는 `/emojis`를 자동으로 붙이고, `/bmwc/api/uploads`, `/bmwc/api/emojis`를 넣으면 그대로 사용합니다.
 - 선행 `/`가 없는 상대값, 예: `bmwc/api`, `bmwc/api/uploads`, `bmwc/api/emojis`는 `http.cors-origin`이 실제 origin일 때 그 origin을 앞에 붙입니다. `cors-origin: "*"`이면 같은 origin 절대경로처럼 `/bmwc/api...`로 처리합니다.
 - `https://map.example.com/bmwc/api` 같은 전체 URL은 그대로 사용합니다.
-
 
 ### 이모지 용량 표시
 
@@ -98,6 +97,26 @@ emoji:
 - `pinned.max-pins`
 - `pinned.show-to-logged-out`
 - `commands.max-length`
+
+## Minecraft 채팅 답글 표시
+
+```yaml
+reply:
+  game-preview:
+    enabled: true
+    format: "&7↪ {sender}: {preview}"
+    max-length: 120
+
+  game-prefix:
+    enabled: true
+    text: "[Reply] "
+```
+
+웹 또는 게스트 메시지가 다른 메시지에 답글을 달면 `game-preview.enabled`가 원문 미리보기를 실제 웹 메시지보다 먼저 Minecraft 채팅에 별도 한 줄로 보냅니다. 이렇게 하면 기존 웹→게임 채팅 포맷은 유지하면서, 원문 줄과 실제 메시지 줄의 URL을 각각 클릭 가능하게 유지할 수 있습니다.
+
+원문 미리보기는 일반 웹 메시지와 같은 웹→게임 커스텀 이모지 경로를 사용합니다. 원문 안의 커스텀 이모지 토큰은 `emoji.game-link.label-format` 기준으로 포맷되고, 긴 원문은 `max-length` 기준으로 `…` 처리됩니다. `0`으로 두면 원문 미리보기 자체의 길이 제한을 끕니다.
+
+`game-prefix`는 실제 답글 메시지 줄의 라벨/prefix를 제어합니다. 기본 웹 포맷에서는 `[Web] Player: message`를 `[Reply] Player: message`로 바꿉니다. BlueMapWebChat은 이미 렌더링된 전달 문자열의 앞부분에서 처음 나오는 대괄호 소스 라벨을 교체합니다. 대괄호 라벨이 없으면 prefix 텍스트를 앞에 붙입니다. 같은 답글 원문 미리보기와 라벨은 web-to-Discord 전달에도 적용됩니다.
 
 ## 고정 메시지
 
@@ -147,22 +166,30 @@ player-display:
 
 `strip-colors: false`는 실제 채팅 작성자 이름에만 Minecraft legacy 색상 코드를 렌더링합니다. 서버 입장/퇴장/사망/업적 같은 system/event 메시지는 항상 색상 코드를 제거합니다.
 
-## 커스텀 이모지와 ImageEmojis
+## 커스텀 이모지와 게임 측 이모지 플러그인
 
 BlueMapWebChat은 커스텀 이모지를 `plugins/BlueMapWebChat/emojis` 아래에 저장합니다. 하위 폴더는 이모지 팩으로 처리됩니다.
 
-`emoji.game-link.mode`가 `imageemojis` 또는 `imageemojis-link`일 때는 GIF/JPG/JPEG/WEBP 원본 옆에 ImageEmojis용 PNG 사이드카를 자동 생성합니다. 예를 들어 `default` 팩에 `wave.gif`를 업로드하면 다음 파일이 같이 생깁니다.
+`emoji.game-link.mode`는 `link`와 `label`만 지원합니다.
 
-```text
-plugins/BlueMapWebChat/emojis/default/wave.gif
-plugins/BlueMapWebChat/emojis/default/wave.png
+- `link`: `label-format` 텍스트와 BM Web Chat 짧은 이미지 링크를 같이 보냅니다.
+- `label`: `label-format` 텍스트만 보냅니다.
+
+BM Web Chat은 ImageEmojis나 다른 게임 측 이모지 플러그인을 직접 호출하지 않고, 리소스팩이나 생성된 glyph도 읽지 않습니다. 외부 게임 측 이모지 플러그인이 같은 토큰 텍스트를 사용한다면 Minecraft 채팅에서 해당 토큰을 렌더링할 수 있습니다.
+
+`plain-broadcast-with-urls`는 한 메시지에 커스텀 이모지 토큰과 URL이 같이 있을 때의 처리 방식을 정합니다. 기본값 `true`에서는 원문 줄을 plain Bukkit 채팅으로 보내 게임 측 이모지 플러그인이 토큰을 렌더링하게 하고, 각 URL은 별도의 클릭 가능한 참조 줄로 다시 보냅니다. 이모지가 URL 앞에 있든 뒤에 있든 동일하게 처리됩니다.
+
+`default-pack`과 `aliases`는 짧은 게임 측 토큰을 BM Web Chat의 pack/name id로 매핑할 때 사용합니다. 예를 들면 다음과 같습니다.
+
+```yaml
+emoji:
+  game-link:
+    default-pack: "default"
+    aliases:
+      wave: "default/wave"
 ```
 
-웹 UI는 원본 파일을 사용하므로 GIF 애니메이션은 유지됩니다. ImageEmojis는 PNG 사이드카를 읽을 수 있습니다. ImageEmojis가 같은 이모지 디렉터리를 참조한다면, 이모지 추가/변경 후 `/emojis reload`를 실행하세요.
-
-### Social embeds
-
-YouTube Shorts는 기존 YouTube 미리보기 설정을 사용합니다. TikTok과 X/Twitter 게시물 embed는 `preview.social-embeds`에서 선택적으로 켤 수 있습니다. 공개 서버에서는 사용자가 클릭하기 전 외부 콘텐츠가 로드되지 않도록 `click-to-load: true`를 유지하는 것을 권장합니다.
+GIF/JPG/JPEG/WEBP 이모지 원본은 PNG만 읽는 게임 측 이모지 플러그인과의 호환을 위해 같은 폴더에 PNG sidecar가 자동 생성됩니다. 웹 UI는 원본 파일을 사용하므로 GIF 애니메이션은 유지됩니다.
 
 ## 명령어 패널
 

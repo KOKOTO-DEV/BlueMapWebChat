@@ -11,6 +11,11 @@ http:
     - "::1"
   log-client-ip-resolution: false
 
+web-addon:
+  # Caddy route: /bmwc/* -> 127.0.0.1:8899
+  # External /bmwc/api/config becomes internal /api/config.
+  api-base-url: "/bmwc/api"
+
 standalone-web:
   enabled: true
   path: "/chat"
@@ -19,11 +24,6 @@ standalone-web:
   # Empty follows web-addon.api-base-url. You may also set "/bmwc/api" explicitly.
   # Relative values without leading / use http.cors-origin when it is a real origin.
   api-base-url: ""
-
-web-addon:
-  # Caddy route: /bmwc/* -> 127.0.0.1:8899
-  # External /bmwc/api/config becomes internal /api/config.
-  api-base-url: "/bmwc/api"
 
 upload:
   # Recommended: empty; uploads follow web-addon.api-base-url + /uploads.

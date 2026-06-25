@@ -18,9 +18,6 @@ standalone /chat 페이지
 standalone 모드는 기본 비활성화입니다. 필요할 때 명시적으로 켭니다.
 
 ```yaml
-standalone-web:
-  enabled: true
-  path: "/chat"
   api-base-url: ""
 ```
 
@@ -43,14 +40,15 @@ https://<domain>/bmwc/chat
 BlueMap 지도 안에 채팅 UI를 넣지 않을 때는 아래처럼 둡니다.
 
 ```yaml
-standalone-web:
-  enabled: true
-  path: "/chat"
-
 web-addon:
   auto-install: false
   auto-patch-webapp-conf: false
+
+standalone-web:
+  enabled: true
+  path: "/chat"
 ```
+
 
 
 ## 투명 창 제한
@@ -60,3 +58,5 @@ standalone 브라우저 창과 Document Picture-in-Picture 창은 일반 웹 API
 ### URL 설정 해석 규칙
 
 `web-addon.api-base-url`이 HTTPS 공개 API 경로의 기준입니다. `standalone-web.api-base-url`, `upload.public-base-url`, `emoji.public-base-url`은 호환 목적이 아니면 비워둡니다. standalone 빈 값은 `web-addon.api-base-url`을 따르고, upload/emoji 빈 값은 각각 `/uploads`, `/emojis`를 붙입니다. `/bmwc/api` 같은 절대 브라우저 경로는 그대로 사용합니다. 선행 `/`가 없는 상대값은 `http.cors-origin`이 실제 origin일 때 그 origin을 앞에 붙입니다. `https://...` 전체 URL은 그대로 사용합니다.
+
+
