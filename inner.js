@@ -129,6 +129,8 @@
     historyEndNoticePendingUserTopUntil: 0,
     historyEndNoticePendingUserBottomUntil: 0,
     historyEndNoticeBottomExtraScrollCount: 0,
+    scrollbarDragLastX: null,
+    scrollbarDragLastY: null,
     historyEndNoticePosition: "top",
     historyEndNoticeKey: "history.end",
     historyEndNoticeFallback: "No more messages to display.",
@@ -3469,7 +3471,7 @@
   }
 
   function bottomEndNoticeExtraScrollAttemptReason(reason) {
-    return /^(wheel|key|touch)-bottom$/.test(String(reason || ""));
+    return /^(wheel|key|touch|scrollbar)-bottom$/.test(String(reason || ""));
   }
 
   function bottomEndNoticeExtraScrollCountReached() {
@@ -6401,22 +6403,53 @@
         const nearHorizontalScrollbar = ev.clientY >= rect.bottom - 18;
         if (nearVerticalScrollbar || nearHorizontalScrollbar) {
           state.scrollbarDragActive = true;
+          state.scrollbarDragLastX = ev.clientX;
+          state.scrollbarDragLastY = ev.clientY;
           markDirectScrollInput();
           markHistoryEndTopUserIntent(box, "scrollbar-down");
+          if (isAtHistoryBottomRequestZone(box)) {
+            markHistoryEndBottomUserIntent(box, "scrollbar-bottom");
+            requestNewerHistoryFromBottomInput("scrollbar");
+          }
         }
       }, {passive: true});
+      window.addEventListener("pointermove", (ev) => {
+        if (!state.scrollbarDragActive) return;
+        markDirectScrollInput();
+        markScrollInteraction();
+        const lastX = Number.isFinite(Number(state.scrollbarDragLastX)) ? Number(state.scrollbarDragLastX) : ev.clientX;
+        const lastY = Number.isFinite(Number(state.scrollbarDragLastY)) ? Number(state.scrollbarDragLastY) : ev.clientY;
+        const dx = ev.clientX - lastX;
+        const dy = ev.clientY - lastY;
+        state.scrollbarDragLastX = ev.clientX;
+        state.scrollbarDragLastY = ev.clientY;
+        if (dy > 2 || dx > 2) {
+          if (isAtHistoryBottomRequestZone(box)) {
+            markHistoryEndBottomUserIntent(box, "scrollbar-bottom");
+            requestNewerHistoryFromBottomInput("scrollbar");
+          }
+        } else if (dy < -2 || dx < -2) {
+          markHistoryEndTopUserIntent(box, "scrollbar-top");
+          requestOlderHistoryFromTopInput("scrollbar");
+        }
+      }, {capture: true, passive: true});
       window.addEventListener("pointerup", (ev) => {
         if (ev.pointerType === "touch") endTouchScrollInteraction();
         if (!state.scrollbarDragActive) return;
         state.scrollbarDragActive = false;
+        state.scrollbarDragLastX = null;
+        state.scrollbarDragLastY = null;
         markScrollInteraction();
         markHistoryEndTopUserIntent(box, "scrollbar");
+        if (isAtHistoryBottomRequestZone(box)) markHistoryEndBottomUserIntent(box, "scrollbar-bottom");
         setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "scrollbar"), 0);
       }, {capture: true, passive: true});
       window.addEventListener("pointercancel", (ev) => {
         if (ev.pointerType === "touch") endTouchScrollInteraction();
         if (!state.scrollbarDragActive) return;
         state.scrollbarDragActive = false;
+        state.scrollbarDragLastX = null;
+        state.scrollbarDragLastY = null;
         markScrollInteraction();
         setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "scrollbar-cancel"), 0);
       }, {capture: true, passive: true});
@@ -6424,6 +6457,8 @@
         endTouchScrollInteraction();
         if (!state.scrollbarDragActive) return;
         state.scrollbarDragActive = false;
+        state.scrollbarDragLastX = null;
+        state.scrollbarDragLastY = null;
         markScrollInteraction();
         setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "scrollbar-blur"), 0);
       });
@@ -6467,7 +6502,10 @@
       refreshScrollAffordances(box);
       if (!programmaticScroll) {
         if (shouldLoadOlder) markHistoryEndTopUserIntent(box, "scroll-top");
-        if (isAtHistoryBottomRequestZone(box)) markHistoryEndBottomUserIntent(box, "scroll-bottom");
+        if (isAtHistoryBottomRequestZone(box)) {
+          const bottomScrollReason = state.scrollbarDragActive ? "scrollbar-bottom" : (state.touchScrollActive ? "touch-bottom" : "scroll-bottom");
+          markHistoryEndBottomUserIntent(box, bottomScrollReason);
+        }
         maybeShowHistoryEndNoticeFromUserScroll(box, "scroll");
       }
 
@@ -8047,7 +8085,10 @@
 
 
   function pinnedTitle(pin) {
-    const text = displayMessageText(pin).replace(/\s+/g, " ").trim();
+    // The collapsed pinned bar uses plain text (`textContent`/title), not the
+    // rich message renderer. Strip Minecraft legacy color codes here so pinned
+    // summaries do not leak raw values such as &7/§7/&#RRGGBB.
+    const text = plainLegacyText(displayMessageText(pin)).replace(/\s+/g, " ").trim();
     if (!text) return t("pinned.untitled", "Pinned message");
     return text.length > 64 ? text.slice(0, 64) + "…" : text;
   }

@@ -195,7 +195,7 @@ player-display:
   strip-colors: true
 ```
 
-When `strip-colors: false`, Minecraft legacy color codes are rendered only for actual chat sender names. System/event messages such as join/quit/death/advancement always strip color codes.
+When `strip-colors: false`, Minecraft legacy color codes are rendered only for actual chat sender names in the web UI. System/event messages and Discord output strip raw Minecraft color codes. Stored/remembered display names are normalized against the current `strip-colors` setting when they are reused.
 
 ## Command panel
 

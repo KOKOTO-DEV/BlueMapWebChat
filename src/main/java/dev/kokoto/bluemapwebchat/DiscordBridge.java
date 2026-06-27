@@ -574,9 +574,13 @@ public class DiscordBridge {
 
     private String stripMinecraftColorCodes(String s) {
         if (s == null || s.isEmpty()) return "";
-        // Strip RGB legacy sequences such as §x§8§a§b§4§f§e before normal legacy codes.
-        String out = s.replaceAll("(?i)§x(?:§[0-9a-f]){6}", "");
-        out = out.replaceAll("(?i)§[0-9a-fk-or]", "");
+        // Strip legacy color codes before sending to Discord. This intentionally
+        // removes both section-sign codes and configured ampersand codes so
+        // player-display.strip-colors=false can color names in the web UI without
+        // leaking raw &a/§a/&#RRGGBB tags to Discord.
+        String out = s.replaceAll("(?i)[§&]x(?:[§&][0-9a-f]){6}", "");
+        out = out.replaceAll("(?i)&#[0-9a-f]{6}", "");
+        out = out.replaceAll("(?i)[§&][0-9a-fk-or]", "");
         return out.replace("§", "");
     }
 

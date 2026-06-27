@@ -1,5 +1,28 @@
 # Changelog
 
+## 4.1.1
+
+### Pinned messages and player display
+
+- Fixed collapsed pinned-message summaries so raw Minecraft color codes such as `&7`, `§7`, and `&#RRGGBB` do not leak into the compact pinned bar or tooltip.
+- Ensured `player-display.mode` and `player-display.strip-colors` are applied consistently to Minecraft-origin chat, web-authenticated player names, stored display-name fallbacks, pinned messages, and web rendering.
+- Stripped raw Minecraft color codes from Discord output even when sender-name colors are preserved for the web UI.
+
+### Discord relay
+
+- Improved game-side custom emoji URL appending for Discord, including augmentation of DiscordSRV native Minecraft-to-Discord relay messages when possible.
+- Removed the hard-coded reply arrow from Discord reply preview lines; the reply marker now applies only to the actual replied message line.
+
+### Reply relay and game chat output
+
+- Added separate game-side reply preview and reply prefix settings.
+- Ensured `reply.game-preview.format` and `reply.game-prefix.text` translate Minecraft legacy `&` color codes before broadcasting to game chat.
+- Changed mixed token/URL game-chat fallback to keep a single plain Minecraft chat line instead of repeating URL reference lines.
+- Fixed image-only upload URLs in Minecraft chat so normal sender labels before `https://` are no longer mistaken for custom emoji tokens, preserving clickable URL output.
+
+### History loading and edge notices
+
+- Added scrollbar-drag and touch-scroll handling for the bottom-edge no-more-history notice.
 
 ## 4.1.0
 
@@ -31,10 +54,8 @@
 ### History loading and edge notices
 
 - Improved top and bottom edge history loading retries when older or newer messages are still available.
-- Added a bottom-edge "No more messages to display" toast after repeated extra-scroll attempts at the latest loaded message while keeping newer-history retry requests immediate.
+- Added a bottom-edge “No more messages to display” toast after repeated extra-scroll attempts at the latest loaded message while keeping newer-history retry requests immediate.
 - Kept the existing top-edge no-more-history notice for the oldest loaded history edge.
-
-
 ## 4.0.1
 
 ### Discord relay fixes
@@ -47,7 +68,7 @@
 ### Reply relay fixes
 
 - Changed game-side reply labeling to render the normal web -> game relay line first and then replace the source label with the configured reply label.
-- Changed reply relay output from `[Web] Player: message` to `[Reply] Player: message` by default.
+- Changed reply relay output from `[Web] Player: message` to `↪ [Reply] Player: message` by default.
 - Applied the same reply preview and reply label behavior to web -> Discord relay output.
 
 ### Release cleanup
@@ -55,8 +76,6 @@
 - Bumped the project version to `4.0.1`.
 - Refreshed default configuration comments, README files, configuration references, and i18n documentation for the 4.0.1 release.
 - Documented the Discord attachment, color-code cleanup, and custom emoji link behavior.
-
-
 
 ## 4.0.0
 

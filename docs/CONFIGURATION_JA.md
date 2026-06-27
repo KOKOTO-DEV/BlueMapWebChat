@@ -169,7 +169,7 @@ player-display:
   strip-colors: true
 ```
 
-`strip-colors: false` の場合、実際のチャット送信者名だけ Minecraft legacy 色コードをレンダリングします。参加/退出/死亡/進捗などの system/event メッセージは常に色コードを削除します。
+`strip-colors: false` の場合、Web UI では実際のチャット送信者名にのみ Minecraft legacy 色コードを描画します。システム/イベントメッセージと Discord 出力では、生の Minecraft 色コードを除去します。保存済みの表示名も再利用時に現在の `strip-colors` 設定で正規化されます。
 
 ## カスタム絵文字とゲーム側絵文字プラグイン
 

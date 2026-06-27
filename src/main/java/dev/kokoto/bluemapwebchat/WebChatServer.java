@@ -3914,13 +3914,13 @@ public class WebChatServer {
     private boolean shouldPreservePlainBroadcastForGameEmojiTokens(String rawMessage, String renderedLine, ConfigValues config) {
         if (config == null || !config.clickableUrlsInGame || !containsUrl(renderedLine)) return false;
         if (!isEmojiGameTokenPreserveMode(config)) return false;
-        // Preserve :pack/name: tokens for external game-side emoji plugins.
-        // Do not resolve BM Web Chat emoji IDs, do not append image URLs, and do not
-        // convert tokens to glyphs/symbols here. If the same line also contains URLs,
-        // keep a single plain Minecraft chat line so the token text remains visible to
-        // game-side emoji plugins.
-        return containsEmojiTokenLiteral(String.valueOf(rawMessage == null ? "" : rawMessage))
-                || containsEmojiTokenLiteral(String.valueOf(renderedLine == null ? "" : renderedLine));
+        // Preserve :pack/name: tokens only when the original user/reply text contains
+        // a known BM Web Chat emoji token. Do not inspect the final rendered game line:
+        // formats such as "{sender}: {message}" can produce false positives like
+        // "쿠로베 호노카: https://...", where the sender colon and the URL scheme colon
+        // look like an emoji token to the broad token regex. That false positive forced
+        // plain Bukkit broadcast and made image-only upload URLs non-clickable in-game.
+        return containsKnownEmojiTokenLiteral(String.valueOf(rawMessage == null ? "" : rawMessage), config);
     }
 
     private boolean isEmojiGameTokenPreserveMode(ConfigValues config) {
@@ -3939,6 +3939,25 @@ public class WebChatServer {
     private boolean containsEmojiTokenLiteral(String text) {
         String raw = String.valueOf(text == null ? "" : text);
         return !raw.isBlank() && EMOJI_TOKEN_PATTERN.matcher(raw).find();
+    }
+
+    private boolean containsKnownEmojiTokenLiteral(String text, ConfigValues config) {
+        String raw = String.valueOf(text == null ? "" : text);
+        if (raw.isBlank() || config == null || !config.emojiEnabled) return false;
+        Matcher matcher = EMOJI_TOKEN_PATTERN.matcher(raw);
+        if (!matcher.find()) return false;
+
+        EmojiCatalog catalog = scanEmojiCatalog(config);
+        Map<String, EmojiItem> emojiById = new HashMap<>();
+        for (EmojiItem item : catalog.items) {
+            emojiById.put(item.id, item);
+        }
+        Map<String, String> aliasToId = emojiAliasToWebId(catalog, config);
+        matcher.reset();
+        while (matcher.find()) {
+            if (emojiItemForToken(matcher.group(1), emojiById, aliasToId) != null) return true;
+        }
+        return false;
     }
 
     private String translateGameFormatCodes(String value) {

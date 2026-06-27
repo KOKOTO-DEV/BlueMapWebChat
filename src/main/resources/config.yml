@@ -1,4 +1,4 @@
-# BlueMapWebChat 4.1.0 configuration
+# BlueMapWebChat 4.1.1 configuration
 #
 # URL / HTTP / HTTPS quick guide
 # ───────────────────────
@@ -273,9 +273,9 @@ ui:
 # custom-name = customName first, then displayName.
 # When a display/custom nickname differs from the real Minecraft username,
 # web chat sends the real username too so the UI can show it on hover/click.
-# strip-colors: true removes legacy Minecraft color codes.
-# strip-colors: false keeps &/§ color codes and the web UI renders supported
-# legacy Minecraft colors/formats in the sender name.
+# strip-colors: true removes legacy Minecraft color codes from stored/displayed names.
+# strip-colors: false keeps &/§ color codes for web sender-name rendering.
+# Discord output still strips raw Minecraft color codes before sending.
 player-display:
   mode: "name"
   strip-colors: true

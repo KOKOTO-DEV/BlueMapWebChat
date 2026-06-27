@@ -195,7 +195,7 @@ player-display:
   strip-colors: true
 ```
 
-`strip-colors: false`는 실제 채팅 작성자 이름에만 Minecraft legacy 색상 코드를 렌더링합니다. 서버 입장/퇴장/사망/업적 같은 system/event 메시지는 항상 색상 코드를 제거합니다.
+`strip-colors: false`이면 웹 UI의 실제 채팅 발신자 이름에만 Minecraft legacy 색상 코드가 렌더링됩니다. 시스템/이벤트 메시지와 Discord 출력은 원시 Minecraft 색상 코드를 제거합니다. 저장되어 있던 표시 이름도 다시 사용할 때 현재 `strip-colors` 설정 기준으로 정규화됩니다.
 
 ## 커스텀 이모지와 게임 측 이모지 플러그인
 

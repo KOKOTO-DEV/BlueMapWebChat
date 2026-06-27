@@ -186,12 +186,17 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
         } else {
             name = player.getName();
         }
-        if (name == null || name.isBlank()) name = player.getName();
+        return normalizePlayerDisplayName(name, player.getName());
+    }
+
+    public String normalizePlayerDisplayName(String name, String fallback) {
+        String out = name == null || name.isBlank() ? String.valueOf(fallback == null ? "" : fallback) : name;
+        ConfigValues config = configValues;
         if (config == null || config.playerNameStripColors) {
-            name = ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', name));
+            out = ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', out));
         }
-        if (name == null || name.isBlank()) name = player.getName();
-        return name;
+        if (out == null || out.isBlank()) out = String.valueOf(fallback == null ? "" : fallback);
+        return out == null ? "" : out;
     }
 
     public String displayNameForAccount(Account account) {
@@ -210,14 +215,15 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
             }
             String remembered = storage.knownDisplayName(account.uuid);
             if (remembered != null && !remembered.isBlank()) {
-                if (account.lastDisplayName == null || account.lastDisplayName.isBlank()) {
-                    storage.updateLastDisplayName(account.uuid, account.safeUsername(), remembered);
+                String normalized = normalizePlayerDisplayName(remembered, account.safeUsername());
+                if (account.lastDisplayName == null || account.lastDisplayName.isBlank() || !account.lastDisplayName.equals(normalized)) {
+                    storage.updateLastDisplayName(account.uuid, account.safeUsername(), normalized);
                 }
-                return remembered;
+                return normalized;
             }
         }
         if (account.lastDisplayName != null && !account.lastDisplayName.isBlank()) {
-            return account.lastDisplayName;
+            return normalizePlayerDisplayName(account.lastDisplayName, account.safeUsername());
         }
         return account.safeUsername();
     }
