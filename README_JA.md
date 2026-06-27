@@ -89,23 +89,28 @@ emoji:
 
 ## カスタム絵文字とゲーム側絵文字プラグイン
 
-BlueMapWebChat はカスタム絵文字を `plugins/BlueMapWebChat/emojis` に保存します。サブフォルダーは絵文字パックとして扱われます。
+BlueMapWebChat はカスタム絵文字を `plugins/BlueMapWebChat/emojis` 以下に保存します。サブフォルダーは絵文字パックとして扱われます。
 
-Web→ゲームチャットでは、`emoji.game-link.mode` は `link` と `label` のみをサポートします。
+既定では、Web→ゲームチャットは `:default/wave:` や `:emoji:default/wave:` のようなカスタム絵文字トークンをそのまま保持します。ImageEmojis などのゲーム側絵文字プラグインが Minecraft チャット内で同じトークン文字列を描画する場合は、この既定値を使用してください。
 
-- `link`: 設定されたトークン文字列と BM Web Chat の短い画像リンクを送信します。
-- `label`: 設定されたトークン文字列だけを送信します。
+`emoji.game-link.enabled` を有効にした場合、`emoji.game-link.mode` は `preserve`、`link`、`label` をサポートします。
 
-BM Web Chat は ImageEmojis などのゲーム側絵文字プラグインを直接呼び出さず、リソースパックや生成済み glyph も読み取りません。外部のゲーム側絵文字プラグインが `:default/wave:` のような同じトークン文字列を使う場合、そのプラグインが Minecraft チャット内でレンダリングできます。`plain-broadcast-with-urls: true` の場合、カスタム絵文字トークンと URL が同じメッセージに含まれると行を分離します。元の行は plain として送信してゲーム側絵文字プラグインがトークンを描画できるようにし、各 URL は別のクリック可能な参照行として再送信します。
+- `preserve`: 元のトークン文字列を変更しません。
+- `link`: 設定されたトークン文字列と短い BM Web Chat 画像リンクを送信します。
+- `label`: 設定されたトークン文字列のみを送信します。
 
-GIF/JPG/JPEG/WEBP の絵文字をアップロードすると、PNG だけを読めるゲーム側絵文字プラグインとの互換性のため、同じフォルダーに PNG sidecar も生成します。
+`emoji.game-link.*` は Web→Minecraft チャットのみに影響します。Discord の画像プレビューリンクは別設定です。`discordsrv.append-web-emoji-links` は Web→Discord 用で、`discordsrv.append-game-emoji-links` は可能な場合 DiscordSRV の通常の Minecraft→Discord リレー本文を編集して Game→Discord トークン URL を追加します。DiscordSRV が通常の Minecraft チャットを既に中継している場合は、重複を避けるため `game-to-discord` を無効のままにしてください。
+
+BM Web Chat は ImageEmojis などのゲーム側絵文字プラグインを直接呼び出さず、リソースパックや生成済み glyph も読み取りません。トークン文字列を保持し、可能であれば ImageEmojis より先に読み込まれることで、ゲーム側レンダリング前の元のチャット文字列を取得できるようにします。
+
+GIF/JPG/JPEG/WEBP 絵文字をアップロードすると、PNG のみを読むゲーム側絵文字プラグインとの互換性のため、同じフォルダーに PNG sidecar も作成します。
 
 ```text
 plugins/BlueMapWebChat/emojis/default/wave.gif
 plugins/BlueMapWebChat/emojis/default/wave.png
 ```
 
-Web UI は元ファイルを使うため、GIF アニメーションは維持されます。ゲーム側絵文字プラグインが同じ絵文字ディレクトリを監視している場合は PNG sidecar を利用できます。絵文字の追加や変更後は、そのプラグインの reload コマンドを実行してください。
+Web UI は元ファイルを使い続けるため、GIF アニメーションは維持されます。同じ絵文字ディレクトリを監視するゲーム側絵文字プラグインは PNG sidecar を利用できます。絵文字の追加や変更後は、そのプラグインの reload コマンドを実行してください。
 
 ## YouTube Shorts、TikTok、X/Twitter プレビュー
 

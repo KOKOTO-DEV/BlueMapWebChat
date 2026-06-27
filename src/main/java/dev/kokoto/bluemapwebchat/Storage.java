@@ -197,6 +197,7 @@ public class Storage {
             yml.set(p + "pinId", pin.pinId);
             yml.set(p + "messageId", pin.messageId);
             yml.set(p + "pinnedAt", pin.pinnedAt);
+            yml.set(p + "sortOrder", pin.sortOrder);
             yml.set(p + "pinnedBy", pin.pinnedBy);
             yml.set(p + "time", pin.time);
             yml.set(p + "source", pin.source);
@@ -218,8 +219,57 @@ public class Storage {
 
     public List<PinnedMessage> listPinnedMessages() {
         List<PinnedMessage> out = new ArrayList<>(pinnedById.values());
-        out.sort(Comparator.comparingLong((PinnedMessage p) -> p.pinnedAt).reversed());
+        sortPinnedMessages(out);
         return out;
+    }
+
+    private void sortPinnedMessages(List<PinnedMessage> pins) {
+        pins.sort(Comparator
+                .comparingLong((PinnedMessage p) -> p.sortOrder > 0 ? p.sortOrder : p.pinnedAt).reversed()
+                .thenComparing(Comparator.comparingLong((PinnedMessage p) -> p.pinnedAt).reversed())
+                .thenComparing(p -> p.pinId == null ? "" : p.pinId));
+    }
+
+    public synchronized boolean movePinnedMessage(String pinId, String direction) {
+        if (pinId == null || pinId.isBlank()) return false;
+        String dir = String.valueOf(direction == null ? "" : direction).trim().toLowerCase(Locale.ROOT);
+        List<PinnedMessage> pins = new ArrayList<>(pinnedById.values());
+        sortPinnedMessages(pins);
+        int index = -1;
+        for (int i = 0; i < pins.size(); i++) {
+            if (pinId.equals(pins.get(i).pinId)) {
+                index = i;
+                break;
+            }
+        }
+        if (index < 0) return false;
+        int target;
+        if ("up".equals(dir)) {
+            target = index - 1;
+        } else if ("down".equals(dir)) {
+            target = index + 1;
+        } else {
+            return false;
+        }
+        if (target < 0 || target >= pins.size()) return false;
+
+        normalizePinnedSortOrders(pins);
+        PinnedMessage current = pins.get(index);
+        PinnedMessage other = pins.get(target);
+        long tmp = current.sortOrder;
+        current.sortOrder = other.sortOrder;
+        other.sortOrder = tmp;
+        savePinnedMessages();
+        return true;
+    }
+
+    private void normalizePinnedSortOrders(List<PinnedMessage> sortedPins) {
+        int n = sortedPins == null ? 0 : sortedPins.size();
+        for (int i = 0; i < n; i++) {
+            // Larger value appears earlier. Spacing by 1000 leaves room for
+            // future direct insertion if needed while preserving deterministic order.
+            sortedPins.get(i).sortOrder = (long) (n - i) * 1000L;
+        }
     }
 
     public synchronized PinnedMessage pinMessage(ChatMessage msg, String pinnedBy, int maxPins) {

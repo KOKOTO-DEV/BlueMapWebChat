@@ -89,23 +89,28 @@ emoji:
 
 ## 自定义表情与游戏侧表情插件
 
-BlueMapWebChat 将自定义表情保存到 `plugins/BlueMapWebChat/emojis`。子文件夹会作为表情包处理。
+BlueMapWebChat 会把自定义表情文件保存到 `plugins/BlueMapWebChat/emojis`。子文件夹会作为表情包处理。
 
-在 Web→游戏聊天中，`emoji.game-link.mode` 只支持 `link` 和 `label`。
+默认情况下，Web→游戏聊天会保留 `:default/wave:`、`:emoji:default/wave:` 这样的自定义表情 token。若 ImageEmojis 或其他游戏侧表情插件会在 Minecraft 聊天中渲染相同的 token 文本，请使用这个默认行为。
 
-- `link`: 发送配置的 token 文本以及 BM Web Chat 的短图片链接。
+启用 `emoji.game-link.enabled` 后，`emoji.game-link.mode` 支持 `preserve`、`link` 和 `label`。
+
+- `preserve`: 保持原始 token 文本不变。
+- `link`: 发送配置的 token 文本，并附加一个短 BM Web Chat 图片链接。
 - `label`: 只发送配置的 token 文本。
 
-BM Web Chat 不会直接调用 ImageEmojis 或其他游戏侧表情插件，也不会读取资源包或生成的 glyph。如果外部游戏侧表情插件使用相同的 token 文本，例如 `:default/wave:`，该插件可以在 Minecraft 聊天中渲染它。当 `plain-broadcast-with-urls: true` 时，如果同一条消息同时包含自定义表情 token 和 URL，会拆成多行：原始行以 plain 形式发送，方便游戏侧表情插件渲染 token；每个 URL 会再作为单独的可点击引用行发送。
+`emoji.game-link.*` 只影响 Web→Minecraft 聊天。Discord 图片预览链接由单独设置控制：`discordsrv.append-web-emoji-links` 用于 Web→Discord 消息，`discordsrv.append-game-emoji-links` 会在可能的情况下编辑 DiscordSRV 的普通 Minecraft→Discord 转发消息，为 Game→Discord token 附加 URL。如果 DiscordSRV 已经在转发普通 Minecraft 聊天，请保持 `game-to-discord` 关闭以避免重复。
 
-上传 GIF/JPG/JPEG/WEBP 表情时，BlueMapWebChat 还会在同一文件夹生成 PNG sidecar，以兼容只能读取 PNG 的游戏侧表情插件。
+BM Web Chat 不会直接调用 ImageEmojis 或其他游戏侧表情插件，也不会读取资源包或生成的 glyph。它会保留 token 文本，并尽量在 ImageEmojis 之前加载，以便在游戏侧渲染前捕获原始聊天文本。
+
+上传 GIF/JPG/JPEG/WEBP 表情时，BlueMapWebChat 还会在同一文件夹创建 PNG sidecar，以兼容只读取 PNG 文件的游戏侧表情插件。
 
 ```text
 plugins/BlueMapWebChat/emojis/default/wave.gif
 plugins/BlueMapWebChat/emojis/default/wave.png
 ```
 
-Web UI 会继续使用原始文件，因此 GIF 动画会保留。如果游戏侧表情插件监视同一个表情目录，它可以使用 PNG sidecar。添加或修改表情后，请执行该插件的 reload 命令。
+Web UI 会继续使用原始文件，因此 GIF 动画会保留。如果游戏侧表情插件监视同一个表情目录，它可以使用 PNG sidecar。添加或更改表情后，请运行该插件的 reload 命令。
 
 ## YouTube Shorts、TikTok 和 X/Twitter 预览
 

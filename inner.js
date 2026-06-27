@@ -127,6 +127,9 @@
     historyEndNoticeVisibleUntil: 0,
     historyEndNoticeLastShownAt: 0,
     historyEndNoticePendingUserTopUntil: 0,
+    historyEndNoticePendingUserBottomUntil: 0,
+    historyEndNoticeBottomExtraScrollCount: 0,
+    historyEndNoticePosition: "top",
     historyEndNoticeKey: "history.end",
     historyEndNoticeFallback: "No more messages to display.",
     historySlowNoticeTimer: null,
@@ -149,7 +152,11 @@
     pendingNewerHistoryLoad: false,
     pendingTopOlderHistoryTimer: null,
     pendingTopOlderHistoryDueAt: 0,
+    pendingBottomNewerHistoryTimer: null,
+    pendingBottomNewerHistoryDueAt: 0,
     olderHistorySettleUntil: 0,
+    historyTopEdgeIntentUntil: 0,
+    historyBottomEdgeIntentUntil: 0,
     lastTopOlderHistoryRequestAt: 0,
     historyLoadingSince: 0,
     historyLoadSeq: 0,
@@ -558,7 +565,7 @@
     if (!root || root.__bmwcActionDelegationInstalled) return;
     root.__bmwcActionDelegationInstalled = true;
 
-    const selector = "[data-delete], [data-pin], [data-unpin], [data-open-pins], a.bmwc-link, a.bmwc-image-link";
+    const selector = "[data-delete], [data-pin], [data-unpin], [data-pin-move], [data-open-pins], a.bmwc-link, a.bmwc-image-link";
     let pointerDownAction = null;
     let touchDownAction = null;
     let lastPointerAction = {key: "", time: 0};
@@ -578,6 +585,8 @@
       if (pinId) return "pin:" + pinId;
       const unpinId = target.getAttribute("data-unpin");
       if (unpinId) return "unpin:" + unpinId;
+      const movePinId = target.getAttribute("data-pin-move");
+      if (movePinId) return "move-pin:" + movePinId + ":" + (target.getAttribute("data-direction") || "");
       if (target.hasAttribute("data-open-pins")) return "open-pins";
       const href = target.getAttribute("href") || "";
       if (href && target.matches("a.bmwc-link, a.bmwc-image-link")) return "link:" + href;
@@ -629,6 +638,15 @@
         event.preventDefault();
         event.stopPropagation();
         unpinMessage(unpinId);
+        return true;
+      }
+
+      const movePinId = target.getAttribute("data-pin-move");
+      if (movePinId) {
+        releasePointerActionScrollState();
+        event.preventDefault();
+        event.stopPropagation();
+        movePinnedMessage(movePinId, target.getAttribute("data-direction") || "");
         return true;
       }
 
@@ -1880,6 +1898,11 @@
     clearTimeout(state.pendingTopOlderHistoryTimer);
     state.pendingTopOlderHistoryTimer = null;
     state.pendingTopOlderHistoryDueAt = 0;
+    clearTimeout(state.pendingBottomNewerHistoryTimer);
+    state.pendingBottomNewerHistoryTimer = null;
+    state.pendingBottomNewerHistoryDueAt = 0;
+    state.historyTopEdgeIntentUntil = 0;
+    state.historyBottomEdgeIntentUntil = 0;
     clearTimeout(state.replyJumpStabilizeTimer);
     state.replyJumpStabilizeTimer = null;
 
@@ -3200,6 +3223,10 @@
     return !state.historyLoading && !state.historyHasMore && state.messages.length > 0;
   }
 
+  function historyLatestEndEligible() {
+    return !state.historyLoading && !state.historyHasAfter && state.messages.length > 0;
+  }
+
   function protectHistoryEndNotice(reason = "", ms = 0) {
     // The oldest-history notice is a user-scroll toast, not a persistent state
     // banner. Modal/focus/resize/PIP/delete transitions may refresh layout, but
@@ -3235,7 +3262,7 @@
     setHistoryNoticeText(notice || document.getElementById("bmwc-history-end"), "history.end", "No more messages to display.");
   }
 
-  function ensureHistoryEndNotice(box, key = null, fallback = null) {
+  function ensureHistoryEndNotice(box, key = null, fallback = null, position = null) {
     if (!box) box = document.getElementById("bmwc-messages");
     const root = document.getElementById("bmwc-root");
     const panel = root && root.querySelector ? root.querySelector(".bmwc-panel") : null;
@@ -3243,7 +3270,7 @@
     let notice = document.getElementById("bmwc-history-end");
     if (!notice) {
       notice = document.createElement("div");
-      notice.className = "bmwc-history-end bmwc-hidden";
+      notice.className = "bmwc-history-end bmwc-history-end-top bmwc-hidden";
       notice.id = "bmwc-history-end";
     }
     if (key) {
@@ -3251,6 +3278,11 @@
     } else {
       setHistoryNoticeText(notice, state.historyEndNoticeKey || "history.end", state.historyEndNoticeFallback || "No more messages to display.");
     }
+
+    const pos = position || state.historyEndNoticePosition || "top";
+    state.historyEndNoticePosition = pos === "bottom" ? "bottom" : "top";
+    notice.classList.toggle("bmwc-history-end-bottom", state.historyEndNoticePosition === "bottom");
+    notice.classList.toggle("bmwc-history-end-top", state.historyEndNoticePosition !== "bottom");
 
     // Keep this as a panel-level overlay, not as a child of the virtualized
     // message list.  When the notice lived inside .bmwc-messages it competed
@@ -3274,6 +3306,10 @@
     return !!box && Number(box.scrollTop || 0) <= historyEndNoticeThresholdPx(box);
   }
 
+  function historyEndNoticeAtBottom(box) {
+    return !!box && bottomGapPx(box) <= historyEndNoticeThresholdPx(box);
+  }
+
   function hideHistoryEndNoticeToast(clearPending = false) {
     if (state.historyEndNoticeTimer) {
       clearTimeout(state.historyEndNoticeTimer);
@@ -3286,9 +3322,17 @@
     state.historyEndNoticeProtectedUntil = 0;
     state.historyEndNoticeUiTransitionUntil = 0;
     state.forceHistoryEndNoticeUntil = 0;
-    if (clearPending) state.historyEndNoticePendingUserTopUntil = 0;
+    if (clearPending) {
+      state.historyEndNoticePendingUserTopUntil = 0;
+      state.historyEndNoticePendingUserBottomUntil = 0;
+      state.historyEndNoticeBottomExtraScrollCount = 0;
+    }
     const notice = document.getElementById("bmwc-history-end");
-    if (notice) notice.classList.add("bmwc-hidden");
+    if (notice) {
+      notice.classList.add("bmwc-hidden");
+      notice.classList.remove("bmwc-history-end-bottom");
+      notice.classList.add("bmwc-history-end-top");
+    }
     resetHistoryNoticeText(notice);
   }
 
@@ -3297,7 +3341,7 @@
     if (!box || state.minimized || guestChatHidden()) return;
     if (Number(box.scrollTop || 0) > historyPreloadThresholdPx(box)) return;
 
-    const notice = ensureHistoryEndNotice(box, key, fallback);
+    const notice = ensureHistoryEndNotice(box, key, fallback, "top");
     if (!notice) return;
     const now = Date.now();
     if (state.historyEndNoticeTimer) clearTimeout(state.historyEndNoticeTimer);
@@ -3318,16 +3362,20 @@
     if (key !== "history.end") hideHistoryEndNoticeToast(false);
   }
 
-  function showHistoryEndNoticeToast(box, reason = "") {
+  function showHistoryEndNoticeToast(box, reason = "", position = "top") {
     if (!box) box = document.getElementById("bmwc-messages");
-    const notice = ensureHistoryEndNotice(box, "history.end", "No more messages to display.");
+    const pos = position === "bottom" ? "bottom" : "top";
+    const notice = ensureHistoryEndNotice(box, "history.end", "No more messages to display.", pos);
     if (!notice || !box) return;
-    if (state.minimized || guestChatHidden() || !historyEndEligible() || !historyEndNoticeAtTop(box)) return;
+    const eligible = pos === "bottom"
+      ? (historyLatestEndEligible() && historyEndNoticeAtBottom(box))
+      : (historyEndEligible() && historyEndNoticeAtTop(box));
+    if (state.minimized || guestChatHidden() || !eligible) return;
 
     const now = Date.now();
     // Ignore duplicate callbacks fired in the same frame, but do not latch the
     // notice across focus changes. A new wheel/touch/key/scrollbar input at the
-    // top edge can show it again after the previous toast has disappeared.
+    // edge can show it again after the previous toast has disappeared.
     if (state.historyEndNoticeVisible && now < Number(state.historyEndNoticeVisibleUntil || 0)) return;
     if (now - Number(state.historyEndNoticeLastShownAt || 0) < 250) return;
 
@@ -3338,7 +3386,10 @@
     state.historyEndNoticeStickySince = 0;
     state.historyEndNoticeVisibleUntil = now + 2500;
     state.historyEndNoticeLastShownAt = now;
-    state.historyEndNoticePendingUserTopUntil = 0;
+    if (pos === "bottom") {
+      state.historyEndNoticePendingUserBottomUntil = 0;
+      state.historyEndNoticeBottomExtraScrollCount = 0;
+    } else state.historyEndNoticePendingUserTopUntil = 0;
     notice.classList.remove("bmwc-hidden");
 
     state.historyEndNoticeTimer = setTimeout(() => {
@@ -3413,33 +3464,76 @@
     setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, reason || "top-user-input"), 220);
   }
 
+  function resetHistoryEndBottomExtraScrollCount() {
+    state.historyEndNoticeBottomExtraScrollCount = 0;
+  }
+
+  function bottomEndNoticeExtraScrollAttemptReason(reason) {
+    return /^(wheel|key|touch)-bottom$/.test(String(reason || ""));
+  }
+
+  function bottomEndNoticeExtraScrollCountReached() {
+    return Number(state.historyEndNoticeBottomExtraScrollCount || 0) >= 10;
+  }
+
+  function markHistoryEndBottomUserIntent(box, reason = "") {
+    if (!box || state.minimized || guestChatHidden()) return;
+    const nearBottom = bottomGapPx(box) <= historyPreloadThresholdPx(box);
+    if (!nearBottom) {
+      resetHistoryEndBottomExtraScrollCount();
+      return;
+    }
+    if (bottomEndNoticeExtraScrollAttemptReason(reason)) {
+      state.historyEndNoticeBottomExtraScrollCount = Math.max(0, Number(state.historyEndNoticeBottomExtraScrollCount || 0)) + 1;
+    }
+    state.historyEndNoticePendingUserBottomUntil = Date.now() + 6000;
+    setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, reason || "bottom-user-input"), 0);
+    setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, reason || "bottom-user-input"), 80);
+    setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, reason || "bottom-user-input"), 220);
+  }
+
   function maybeShowHistoryEndNoticeFromUserScroll(box, reason = "") {
     if (!box) box = document.getElementById("bmwc-messages");
     if (!box) return;
 
     const now = Date.now();
     const atTop = historyEndNoticeAtTop(box);
-    if (!atTop) {
+    const atBottom = historyEndNoticeAtBottom(box);
+    if (!atBottom) resetHistoryEndBottomExtraScrollCount();
+    if (!atTop && !atBottom) {
       hideHistoryEndNoticeToast(false);
       return;
     }
 
     const fromRecentScroll = recentHistoryEndUserScrollInput(now);
     const fromPendingTopIntent = Number(state.historyEndNoticePendingUserTopUntil || 0) > now;
-    if (!fromRecentScroll && !fromPendingTopIntent) return;
+    const fromPendingBottomIntent = Number(state.historyEndNoticePendingUserBottomUntil || 0) > now;
+    if (!fromRecentScroll && !fromPendingTopIntent && !fromPendingBottomIntent) return;
 
     if (state.minimized || guestChatHidden()) return;
-    if (!historyEndEligible()) {
-      // While history is still loading or hasMore is still true, keep only the
-      // user intent. The load completion path will call this again and show the
-      // toast only if the final response proves there is no older history.
-      if (fromRecentScroll) state.historyEndNoticePendingUserTopUntil = now + 5000;
-      return;
+
+    if (atTop && (fromRecentScroll || fromPendingTopIntent)) {
+      if (!historyEndEligible()) {
+        // While history is still loading or hasMore is still true, keep only the
+        // user intent. The load completion path will call this again and show the
+        // toast only if the final response proves there is no older history.
+        if (fromRecentScroll) state.historyEndNoticePendingUserTopUntil = now + 5000;
+      } else {
+        showHistoryEndNoticeToast(box, reason, "top");
+        return;
+      }
     }
 
-    showHistoryEndNoticeToast(box, reason);
+    if (atBottom && (fromRecentScroll || fromPendingBottomIntent)) {
+      if (!historyLatestEndEligible()) {
+        // If newer messages are still loading or still known to exist, keep the
+        // bottom-edge intent. loadNewerHistory() will recheck after it settles.
+        if (fromRecentScroll) state.historyEndNoticePendingUserBottomUntil = now + 5000;
+      } else if (bottomEndNoticeExtraScrollCountReached()) {
+        showHistoryEndNoticeToast(box, reason, "bottom");
+      }
+    }
   }
-
   function updateHistoryEndNotice(box) {
     if (!box) box = document.getElementById("bmwc-messages");
     const notice = ensureHistoryEndNotice(box);
@@ -3447,11 +3541,13 @@
     updateScrollAffordanceLayout(box);
 
     const now = Date.now();
+    const noticeAtExpectedEdge = state.historyEndNoticePosition === "bottom"
+      ? (historyLatestEndEligible() && historyEndNoticeAtBottom(box))
+      : (historyEndEligible() && historyEndNoticeAtTop(box));
     const shouldRemainVisible =
       state.historyEndNoticeVisible &&
       now < Number(state.historyEndNoticeVisibleUntil || 0) &&
-      historyEndEligible() &&
-      historyEndNoticeAtTop(box) &&
+      noticeAtExpectedEdge &&
       !state.minimized &&
       !guestChatHidden();
 
@@ -3576,6 +3672,7 @@
   function markNonScrollUiAction() {
     state.lastNonScrollUiActionAt = Date.now();
     state.historyEndNoticePendingUserTopUntil = 0;
+    state.historyEndNoticePendingUserBottomUntil = 0;
   }
 
   function deferRenderUntilScrollIdle(options = {}) {
@@ -3602,16 +3699,19 @@
   function requestNewerHistoryFromBottomInput(reason = "bottom-input") {
     const box = document.getElementById("bmwc-messages");
     if (!box || state.minimized || guestChatHidden()) return;
+    const atBottomEdge = isAtHistoryBottomRequestZone(box);
+    if (atBottomEdge) markHistoryBottomEdgeIntent(reason);
     if (!state.historyHasAfter || !state.historyNewestId) return;
-    const threshold = historyPreloadThresholdPx(box);
-    if (bottomGapPx(box) > threshold) return;
+    if (!atBottomEdge && !hasHistoryBottomEdgeIntent()) return;
     if (state.historyLoading) {
       requestNewerHistoryAfterScrollIdle();
+      scheduleBottomNewerHistoryRetry(reason);
       return;
     }
     const now = Date.now();
     if (now - Number(state.lastBottomNewerHistoryRequestAt || 0) < newerHistoryRequestCooldownMs()) {
       requestNewerHistoryAfterScrollIdle();
+      scheduleBottomNewerHistoryRetry(reason);
       return;
     }
     state.lastBottomNewerHistoryRequestAt = now;
@@ -3621,8 +3721,10 @@
   function requestOlderHistoryFromTopInput(reason = "top-input") {
     const box = document.getElementById("bmwc-messages");
     if (!box || state.minimized || guestChatHidden()) return;
+    const atTopEdge = isAtHistoryTopRequestZone(box);
+    if (atTopEdge) markHistoryTopEdgeIntent(reason);
     if (!state.historyHasMore || !state.historyOldestId) return;
-    if (box.scrollTop > historyPreloadThresholdPx(box)) return;
+    if (!atTopEdge && !hasHistoryTopEdgeIntent()) return;
 
     if (topHistoryLoadBusy()) {
       scheduleTopOlderHistoryRetry(reason);
@@ -3681,6 +3783,36 @@
 
   function markOlderHistorySettling() {
     state.olderHistorySettleUntil = Date.now() + topHistorySettleMs();
+  }
+
+  function historyEdgeIntentMs() {
+    const n = Number(state.config && state.config.uiHistoryEdgeIntentMs);
+    if (Number.isFinite(n) && n >= 300) return Math.max(300, Math.min(5000, Math.round(n)));
+    return Math.max(1200, Math.min(3200, scrollInteractionIdleMs() * 5));
+  }
+
+  function markHistoryTopEdgeIntent(reason = "") {
+    state.historyTopEdgeIntentUntil = Date.now() + historyEdgeIntentMs();
+  }
+
+  function markHistoryBottomEdgeIntent(reason = "") {
+    state.historyBottomEdgeIntentUntil = Date.now() + historyEdgeIntentMs();
+  }
+
+  function hasHistoryTopEdgeIntent() {
+    return Date.now() < Number(state.historyTopEdgeIntentUntil || 0);
+  }
+
+  function hasHistoryBottomEdgeIntent() {
+    return Date.now() < Number(state.historyBottomEdgeIntentUntil || 0);
+  }
+
+  function isAtHistoryTopRequestZone(box) {
+    return !!box && Number(box.scrollTop || 0) <= historyPreloadThresholdPx(box);
+  }
+
+  function isAtHistoryBottomRequestZone(box) {
+    return !!box && bottomGapPx(box) <= historyPreloadThresholdPx(box);
   }
 
   function topHistoryBusyTimeoutMs() {
@@ -3753,6 +3885,33 @@
       state.pendingTopOlderHistoryTimer = null;
       state.pendingTopOlderHistoryDueAt = 0;
       requestOlderHistoryFromTopInput(reason + "-retry");
+    }, safeDelay);
+  }
+
+  function scheduleBottomNewerHistoryRetry(reason = "bottom-retry") {
+    const now = Date.now();
+    const cooldownUntil = Number(state.lastBottomNewerHistoryRequestAt || 0) + newerHistoryRequestCooldownMs();
+    const loadingSince = Number(state.historyLoadingSince || 0);
+    const loadingUntil = state.historyLoading && loadingSince > 0 ? loadingSince + 15000 : 0;
+    const busyUntil = Math.max(
+      Number.isFinite(cooldownUntil) ? cooldownUntil : 0,
+      Number.isFinite(loadingUntil) ? loadingUntil : 0
+    );
+    const delay = Math.max(120, Math.min(1200, busyUntil > now ? busyUntil - now + 40 : 220));
+    const safeDelay = Number.isFinite(delay) ? delay : 220;
+    const dueAt = now + safeDelay;
+
+    if (state.pendingBottomNewerHistoryTimer) {
+      const previousDueAt = Number(state.pendingBottomNewerHistoryDueAt || 0);
+      if (previousDueAt && dueAt <= previousDueAt) return;
+      clearTimeout(state.pendingBottomNewerHistoryTimer);
+    }
+
+    state.pendingBottomNewerHistoryDueAt = dueAt;
+    state.pendingBottomNewerHistoryTimer = setTimeout(() => {
+      state.pendingBottomNewerHistoryTimer = null;
+      state.pendingBottomNewerHistoryDueAt = 0;
+      requestNewerHistoryFromBottomInput(reason + "-retry");
     }, safeDelay);
   }
 
@@ -6198,6 +6357,7 @@
           markHistoryEndTopUserIntent(box, "wheel-top");
           requestOlderHistoryFromTopInput("wheel");
         } else if (ev.deltaY > 0) {
+          markHistoryEndBottomUserIntent(box, "wheel-bottom");
           requestNewerHistoryFromBottomInput("wheel");
         }
         setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "wheel"), 0);
@@ -6207,7 +6367,10 @@
           markDirectScrollInput();
           rememberUserTopIntent(box);
           if (["ArrowUp", "PageUp", "Home"].includes(ev.key)) markHistoryEndTopUserIntent(box, "key-top");
-          if (["ArrowDown", "PageDown", "End", " "].includes(ev.key)) setTimeout(() => requestNewerHistoryFromBottomInput("key"), 0);
+          if (["ArrowDown", "PageDown", "End", " "].includes(ev.key)) {
+            markHistoryEndBottomUserIntent(box, "key-bottom");
+            setTimeout(() => requestNewerHistoryFromBottomInput("key"), 0);
+          }
           setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(box, "key"), 0);
         }
       }, {passive: true});
@@ -6225,6 +6388,7 @@
           markHistoryEndTopUserIntent(box, "touch-top");
           requestOlderHistoryFromTopInput("touch");
         } else if (historyTouchStartY != null && y != null && historyTouchStartY - y > 18) {
+          markHistoryEndBottomUserIntent(box, "touch-bottom");
           requestNewerHistoryFromBottomInput("touch");
         }
       }, {passive: true});
@@ -6272,7 +6436,7 @@
         const target = ev && ev.target;
         try {
           if (target && target.closest && target.closest(
-            "button, input, textarea, select, a, [data-delete], [data-pin], [data-unpin], [data-open-pins], " +
+            "button, input, textarea, select, a, [data-delete], [data-pin], [data-unpin], [data-pin-move], [data-open-pins], " +
             ".bmwc-modal, .bmwc-modal-backdrop, .bmwc-login, .bmwc-admin-modal, .bmwc-preferences-modal, " +
             ".bmwc-media-card, .bmwc-youtube-card, .bmwc-social-card, .bmwc-social-embed"
           )) markNonScrollUiAction();
@@ -6303,6 +6467,7 @@
       refreshScrollAffordances(box);
       if (!programmaticScroll) {
         if (shouldLoadOlder) markHistoryEndTopUserIntent(box, "scroll-top");
+        if (isAtHistoryBottomRequestZone(box)) markHistoryEndBottomUserIntent(box, "scroll-bottom");
         maybeShowHistoryEndNoticeFromUserScroll(box, "scroll");
       }
 
@@ -6500,8 +6665,16 @@
           state.olderHistorySettleUntil = 0;
         }
         const finalBox = document.getElementById("bmwc-messages");
+        if (historyLoadSucceeded && older && finalBox && state.historyHasMore && (isAtHistoryTopRequestZone(finalBox) || hasHistoryTopEdgeIntent())) {
+          // Some browsers do not emit another scroll/wheel event once the user is
+          // already pinned to the physical top. If there is still older history
+          // and the user's recent edge intent is still active, queue another
+          // guarded pass instead of leaving the viewport apparently stuck.
+          scheduleTopOlderHistoryRetry("older-continuation");
+        }
         const hasPendingHistoryEndTopIntent = Number(state.historyEndNoticePendingUserTopUntil || 0) > Date.now();
-        if (finalBox && (older || hasPendingHistoryEndTopIntent)) {
+        const hasPendingHistoryEndBottomIntent = Number(state.historyEndNoticePendingUserBottomUntil || 0) > Date.now();
+        if (finalBox && (older || hasPendingHistoryEndTopIntent || hasPendingHistoryEndBottomIntent)) {
           setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(finalBox, older ? "history-loaded" : "history-refreshed"), 0);
           setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(finalBox, older ? "history-loaded-late" : "history-refreshed-late"), 120);
         }
@@ -6566,10 +6739,16 @@
         state.pendingNewerHistoryLoad = false;
         if (historyLoadSucceeded) scheduleViewportMaintenance("newer-history", 1600);
         const finalBox = document.getElementById("bmwc-messages");
-        if (finalBox && bottomGapPx(finalBox) <= historyPreloadThresholdPx(finalBox) && state.historyHasAfter) {
+        if (historyLoadSucceeded && finalBox && state.historyHasAfter && (isAtHistoryBottomRequestZone(finalBox) || hasHistoryBottomEdgeIntent())) {
           // If the fetched page was too short to create additional scroll room,
-          // queue one more pass after the current scroll interaction settles.
+          // or the user is still trying to continue toward the newer edge, queue
+          // another guarded pass. This covers the physical-bottom case where no
+          // additional scroll event is fired after a blocked/cooldowned request.
           requestNewerHistoryAfterScrollIdle();
+          scheduleBottomNewerHistoryRetry("newer-continuation");
+        } else if (historyLoadSucceeded && finalBox && !state.historyHasAfter && Number(state.historyEndNoticePendingUserBottomUntil || 0) > Date.now()) {
+          setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(finalBox, "newer-history-end"), 0);
+          setTimeout(() => maybeShowHistoryEndNoticeFromUserScroll(finalBox, "newer-history-end-late"), 120);
         }
       }
     }
@@ -7852,7 +8031,7 @@
       list.innerHTML = `<p>${esc(t("pinned.empty", "No pinned messages."))}</p>`;
       return;
     }
-    state.pins.forEach(pin => list.appendChild(renderPinnedItem(pin)));
+    state.pins.forEach((pin, index) => list.appendChild(renderPinnedItem(pin, index, state.pins.length)));
   }
 
   function setModerationActionsVisible(visible) {
@@ -7911,7 +8090,7 @@
     if (bar) bar.title = label.title || label.textContent || "";
   }
 
-  function renderPinnedItem(pin) {
+  function renderPinnedItem(pin, index = 0, total = 0) {
     const msg = Object.assign({}, pin, {id: pin.messageId || pin.pinId});
     const el = renderMessageElement(msg);
     el.classList.add("bmwc-pinned-item");
@@ -7923,11 +8102,37 @@
       detail.textContent = " · " + fmt("pinned.pinnedBy", "pinned by {user}", {user: pin.pinnedBy || "-"});
       meta.appendChild(detail);
       if (state.moderationActionsVisible && state.pinsCanPin && pin.pinId) {
+        const controls = document.createElement("span");
+        controls.className = "bmwc-mini-actions bmwc-pinned-actions";
+
+        const up = document.createElement("button");
+        up.className = "bmwc-mini-action";
+        up.type = "button";
+        up.setAttribute("data-pin-move", pin.pinId);
+        up.setAttribute("data-direction", "up");
+        up.title = t("button.moveUp", "Move up");
+        up.textContent = "↑";
+        if (index <= 0) up.disabled = true;
+        controls.appendChild(up);
+
+        const down = document.createElement("button");
+        down.className = "bmwc-mini-action";
+        down.type = "button";
+        down.setAttribute("data-pin-move", pin.pinId);
+        down.setAttribute("data-direction", "down");
+        down.title = t("button.moveDown", "Move down");
+        down.textContent = "↓";
+        if (total > 0 && index >= total - 1) down.disabled = true;
+        controls.appendChild(down);
+
         const unpin = document.createElement("button");
         unpin.className = "bmwc-mini-action";
+        unpin.type = "button";
         unpin.setAttribute("data-unpin", pin.pinId);
         unpin.textContent = t("button.unpin", "unpin");
-        meta.appendChild(unpin);
+        controls.appendChild(unpin);
+
+        meta.appendChild(controls);
       }
     }
     return el;
@@ -7960,6 +8165,20 @@
     await loadPins();
   }
 
+  async function movePinnedMessage(pinId, direction) {
+    if (!pinId || !direction || !state.token || !(state.role === "ADMIN" || state.role === "MODERATOR")) return;
+    const res = await adminApi("/admin/move-pin", {
+      method: "POST",
+      body: JSON.stringify({pinId, direction})
+    });
+    if (!res.ok) {
+      alertResponse("alert.movePinFailed", "Move failed: {error}", res);
+      return;
+    }
+    await loadPins();
+    refreshOpenPinnedModal();
+  }
+
   async function unpinMessage(pinId) {
     if (!pinId || !state.token || !(state.role === "ADMIN" || state.role === "MODERATOR")) return;
     const res = await adminApi("/admin/unpin-message", {
@@ -7971,12 +8190,7 @@
       return;
     }
     await loadPins();
-    const list = document.getElementById("bmwc-pinned-list");
-    if (list) {
-      list.innerHTML = "";
-      state.pins.forEach(pin => list.appendChild(renderPinnedItem(pin)));
-      if (!state.pins.length) list.innerHTML = `<p>${esc(t("pinned.empty", "No pinned messages."))}</p>`;
-    }
+    refreshOpenPinnedModal();
   }
 
   function openPinnedModal() {
@@ -7999,10 +8213,17 @@
     const list = wrap.querySelector("#bmwc-pinned-list");
     if (list) {
       if (!state.pins.length) list.innerHTML = `<p>${esc(t("pinned.empty", "No pinned messages."))}</p>`;
-      state.pins.forEach(pin => list.appendChild(renderPinnedItem(pin)));
+      state.pins.forEach((pin, index) => list.appendChild(renderPinnedItem(pin, index, state.pins.length)));
     }
     wrap.querySelector("#bmwc-pinned-close").onclick = () => wrap.remove();
     wrap.addEventListener("click", e => {
+      const move = e.target && e.target.closest ? e.target.closest("[data-pin-move]") : null;
+      if (move && wrap.contains(move)) {
+        e.preventDefault();
+        e.stopPropagation();
+        movePinnedMessage(move.getAttribute("data-pin-move"), move.getAttribute("data-direction") || "");
+        return;
+      }
       const unpin = e.target && e.target.closest ? e.target.closest("[data-unpin]") : null;
       if (unpin && wrap.contains(unpin)) {
         e.preventDefault();

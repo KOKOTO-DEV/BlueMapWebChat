@@ -90,25 +90,56 @@ emoji:
 - `pinned.show-to-logged-out`
 - `commands.max-length`
 
+## ゲストチャット制限
+
+```yaml
+guest:
+  cooldown-seconds: 6
+  max-messages-per-minute: 50
+```
+
+ゲストチャットは `cooldown-seconds` と `max-messages-per-minute` の両方で制限されます。1分あたりの既定値は `50` メッセージです。既存サーバーの設定ファイルは自動で上書きされないため、既存環境で新しい既定値を使う場合は `plugins/BlueMapWebChat/config.yml` を手動で更新してください。
+
 ## Minecraft チャットでの返信表示
 
 ```yaml
 reply:
   game-preview:
     enabled: true
-    format: "&7↪ {sender}: {preview}"
+    format: "&7{sender}: {preview}"
     max-length: 120
 
   game-prefix:
     enabled: true
-    text: "[Reply] "
+    text: "↪ [Reply] "
 ```
 
 Web またはゲストメッセージが別のメッセージへ返信する場合、`game-preview.enabled` は参照元メッセージのプレビューを実際の Web メッセージの前に Minecraft チャットへ別行で送信します。これにより、通常の Web→ゲーム形式を保ったまま、引用行と本文行の URL をそれぞれクリック可能にできます。
 
-プレビュー文は通常の Web メッセージと同じ Web→ゲーム用カスタム絵文字経路を通ります。プレビュー内のカスタム絵文字トークンは `emoji.game-link.label-format` に従って整形され、長いプレビューは `max-length` に従って `…` で省略されます。`0` にするとプレビュー固有の省略を無効化します。
+プレビュー文は通常の Web メッセージと同じ Web→ゲーム用カスタム絵文字処理を通ります。既定のトークン保持設定ではカスタム絵文字トークンは変更されず、`emoji.game-link.enabled` を明示的に有効にした場合は選択した game-link mode が適用されます。長いプレビューは `max-length` に従って `…` で省略されます。`0` にするとプレビュー固有の省略を無効化します。
 
-`game-prefix` は実際の返信メッセージ行のラベル/prefix を制御します。既定の Web 形式では `[Web] Player: message` を `[Reply] Player: message` に変更します。BlueMapWebChat は、すでにレンダリングされた中継行の先頭付近にある最初の角括弧ソースラベルを置き換えます。角括弧ラベルがない場合は prefix テキストを先頭に追加します。同じ返信プレビューとラベルは web-to-Discord 中継にも適用されます。
+`game-prefix` は実際の返信メッセージ行のラベル/prefix を制御します。既定の Web フォーマットでは `[Web] Player: message` を `↪ [Reply] Player: message` に変更します。BlueMapWebChat は、既にレンダリングされた relay 行の先頭付近にある最初の角括弧ソースラベルを置き換えます。該当するラベルがない場合は prefix テキストを前に付けます。
+
+`game-preview.format` と `game-prefix.text` はどちらも `&7` などの Minecraft legacy 色コードに対応しています。
+
+## Discord 連携オプション
+
+```yaml
+discordsrv:
+  append-web-emoji-links: false
+  game-to-discord: false
+  append-game-emoji-links: true
+  max-emoji-links-per-message: 4
+  reply-relay:
+    enabled: false
+    prefix-enabled: true
+    preview-enabled: true
+    preview-max-length: 120
+```
+
+`discordsrv.append-web-emoji-links` は、Web→Discord メッセージに BM Web Chat カスタム絵文字トークンの画像 URL を追加します。`discordsrv.append-game-emoji-links` は、可能な場合 DiscordSRV の通常の Minecraft→Discord リレー本文を編集し、ゲーム側トークンの画像 URL を追加します。任意機能の `discordsrv.game-to-discord` は BM Web Chat がゲームチャットを Discord へ直接送信するための機能なので、DiscordSRV が通常の Minecraft チャットを既に中継している場合は重複を避けるため無効のままにしてください。これらは Web→Minecraft チャットのみに影響する `emoji.game-link.*` とは別の設定です。
+
+`discordsrv.reply-relay` は、Web の返信プレビューを Discord にも送るかどうかを制御します。Discord メッセージに予期しない追加行が出ないよう、既定では無効です。
 
 ## 固定メッセージ
 
@@ -142,18 +173,23 @@ player-display:
 
 ## カスタム絵文字とゲーム側絵文字プラグイン
 
-BlueMapWebChat はカスタム絵文字を `plugins/BlueMapWebChat/emojis` に保存します。サブフォルダーは絵文字パックとして扱われます。
+BlueMapWebChat はカスタム絵文字を `plugins/BlueMapWebChat/emojis` 以下に保存します。サブフォルダーは絵文字パックとして扱われます。
 
-`emoji.game-link.mode` は `link` と `label` のみをサポートします。
+既定では `emoji.game-link.enabled` が `false` のため、Web→ゲームメッセージの `:pack/name:` や `:emoji:pack/name:` のようなカスタム絵文字トークンは変更されません。ImageEmojis などのゲーム側絵文字プラグインが Minecraft チャット内でトークンを描画する場合は、この既定値を使用してください。
 
-- `link`: `label-format` の文字列と BM Web Chat の短い画像リンクを送信します。
-- `label`: `label-format` の文字列だけを送信します。
+`emoji.game-link.enabled` が `true` の場合、`emoji.game-link.mode` は `preserve`、`link`、`label` をサポートします。
 
-BM Web Chat は ImageEmojis などのゲーム側絵文字プラグインを直接呼び出さず、リソースパックや生成済み glyph も読み取りません。外部のゲーム側絵文字プラグインが同じトークン文字列を使う場合、Minecraft チャット内でそのトークンをレンダリングできます。
+- `preserve`: game-link が有効でもトークン保持動作を強制します。
+- `link`: `label-format` テキストと短い BM Web Chat 画像リンクを送信します。
+- `label`: `label-format` テキストのみを送信します。
 
-`plain-broadcast-with-urls` は、同じメッセージにカスタム絵文字トークンと URL が含まれる場合の処理を制御します。既定値 `true` では、元の行を plain Bukkit チャットとして送信してゲーム側絵文字プラグインがトークンを描画できるようにし、各 URL を別のクリック可能な参照行として再送信します。絵文字が URL の前でも後でも同じように処理されます。
+`emoji.game-link.*` は Web→Minecraft チャットのみに影響します。Discord の画像プレビューリンクは、Web→Discord 用の `discordsrv.append-web-emoji-links` と Game→Discord 用の `discordsrv.append-game-emoji-links` で分けて制御します。`append-game-emoji-links` は可能な場合 DiscordSRV の通常の Minecraft→Discord リレー本文を編集し、`game-to-discord` は BM Web Chat がゲームチャットを Discord へ直接送信したい場合にのみ必要です。
 
-`default-pack` と `aliases` は、短いゲーム側トークンを BM Web Chat の pack/name id に対応付けるために使います。例:
+BM Web Chat は ImageEmojis などのゲーム側絵文字プラグインを直接呼び出さず、リソースパックや生成済み glyph も読み取りません。トークン文字列を保持し、可能であれば ImageEmojis より先に読み込まれることで、ゲーム側レンダリング前の元のチャット文字列を取得できるようにします。
+
+トークン保持動作が有効で同じ行に URL も含まれる場合、BM Web Chat は URL 参照行を繰り返さず、単一の plain Minecraft チャット行として送信します。これにより、ゲーム側の絵文字プラグインが元のトークン文字列を読み取れます。
+
+`default-pack` と `aliases` は、flat なゲーム側トークンを BM Web Chat の pack/name id に対応付けるために使います。例:
 
 ```yaml
 emoji:
@@ -163,7 +199,7 @@ emoji:
       wave: "default/wave"
 ```
 
-GIF/JPG/JPEG/WEBP の絵文字元ファイルには、PNG だけを読めるゲーム側絵文字プラグインとの互換性のため、同じフォルダーに PNG sidecar が自動生成されます。Web UI は元ファイルを使うため、GIF アニメーションは維持されます。
+GIF/JPG/JPEG/WEBP 絵文字の元ファイルには、PNG のみを読むゲーム側絵文字プラグインとの互換性のため、同じフォルダーに PNG sidecar が自動生成されます。Web UI は元ファイルを使い続けるため、GIF アニメーションは維持されます。
 
 ## コマンドパネル
 

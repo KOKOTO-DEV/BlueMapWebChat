@@ -7,6 +7,7 @@ public class PinnedMessage {
     public String pinId;
     public String messageId;
     public long pinnedAt;
+    public long sortOrder;
     public String pinnedBy;
     public long time;
     public String source;
@@ -24,6 +25,7 @@ public class PinnedMessage {
         pin.pinId = "pin-" + SecurityUtil.randomToken(10);
         pin.messageId = msg == null ? "" : value(msg.id, "");
         pin.pinnedAt = System.currentTimeMillis();
+        pin.sortOrder = pin.pinnedAt;
         pin.pinnedBy = value(pinnedBy, "");
         pin.time = msg == null ? pin.pinnedAt : msg.time;
         pin.source = msg == null ? "web" : value(msg.source, "web");
@@ -43,6 +45,7 @@ public class PinnedMessage {
         m.put("pinId", value(pinId, ""));
         m.put("messageId", value(messageId, ""));
         m.put("pinnedAt", pinnedAt);
+        m.put("sortOrder", sortOrder);
         m.put("pinnedBy", value(pinnedBy, ""));
         m.put("time", time);
         m.put("source", value(source, "web"));
@@ -67,6 +70,7 @@ public class PinnedMessage {
         pin.pinId = value(s.getString("pinId"), s.getName());
         pin.messageId = value(s.getString("messageId"), "");
         pin.pinnedAt = s.getLong("pinnedAt", System.currentTimeMillis());
+        pin.sortOrder = s.getLong("sortOrder", pin.pinnedAt);
         pin.pinnedBy = value(s.getString("pinnedBy"), "");
         pin.time = s.getLong("time", pin.pinnedAt);
         pin.source = value(s.getString("source"), "web");

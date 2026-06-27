@@ -33,6 +33,8 @@ web:
     moderationActionsEnable: 启用固定/删除
     moderationActionsDisable: 停用固定/删除
     unpin: 取消置顶
+    moveUp: 上移
+    moveDown: 下移
     commands: 命令
     pip: PIP
     run: 运行
@@ -85,6 +87,7 @@ web:
     saveFailed: '保存失败: {error}'
     pinFailed: 置顶失败：{error}
     unpinFailed: 取消置顶失败：{error}
+    movePinFailed: '调整顺序失败: {error}'
     emojiPackNameRequired: '请输入文件夹名称。'
     emojiFileRequired: '请选择表情文件。'
     confirmDeleteEmoji: '要删除这个表情吗？'

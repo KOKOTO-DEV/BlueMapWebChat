@@ -2,13 +2,11 @@
 
 A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can run as a BlueMap web addon, as a standalone `/chat` page served by the plugin, or both at the same time.
 
-<img width="1057" height="682" alt="Image" src="https://github.com/user-attachments/assets/722761ea-94a4-4da9-be79-3cd04997c166" />
-
 ## Features
 
 - BlueMap embedded chat panel and standalone web chat page
 - Two-way game ↔ web chat relay
-- Guest chat with math captcha, cooldowns, and per-minute limits
+- Guest chat with math captcha, cooldowns, and a 50 messages/minute default guest rate limit
 - `/bmchat auth <code>` account linking, web password login, local admin accounts
 - Web admin/moderator panel, message hiding, pin/delete action toggle, guest/IP mutes, session revoke
 - Admin custom emoji manager: create, upload, rename, and delete emoji folders/files
@@ -130,12 +128,17 @@ See `docs/CADDY_HTTPS_EN.md` for details.
 
 BlueMapWebChat stores custom emoji files under `plugins/BlueMapWebChat/emojis`. Subfolders are treated as emoji packs.
 
-For web-to-game chat, `emoji.game-link.mode` supports only `link` and `label`.
+By default, web-to-game chat preserves custom emoji tokens such as `:default/wave:` and `:emoji:default/wave:`. Use this default when ImageEmojis or another game-side emoji plugin renders the same token text in Minecraft chat.
 
+`emoji.game-link.mode` supports `preserve`, `link`, and `label` when `emoji.game-link.enabled` is enabled.
+
+- `preserve`: keeps the original token text unchanged.
 - `link`: sends the configured token text plus a short BM Web Chat image link.
 - `label`: sends only the configured token text.
 
-BM Web Chat does not call ImageEmojis or any other game-side emoji plugin directly, and it does not read resource packs or generated glyphs. If an external game-side emoji plugin uses the same token text, such as `:default/wave:`, that plugin can render the token in Minecraft chat. With `plain-broadcast-with-urls: true`, messages that contain both a custom emoji token and a URL are split: the original line stays plain so game-side emoji plugins can render the token, and each URL is repeated on a separate clickable reference line.
+`emoji.game-link.*` only affects web-to-Minecraft chat. Discord image preview links are controlled separately: `discordsrv.append-web-emoji-links` handles web→Discord messages, and `discordsrv.append-game-emoji-links` handles game→Discord tokens by augmenting DiscordSRV's normal Minecraft→Discord relay when possible. Leave `game-to-discord` disabled when DiscordSRV already relays normal Minecraft chat to avoid duplicates.
+
+BM Web Chat does not call ImageEmojis or any other game-side emoji plugin directly, and it does not read resource packs or generated glyphs. It preserves token text and attempts to load before ImageEmojis so the original chat text can be captured before game-side rendering.
 
 When GIF/JPG/JPEG/WEBP emoji files are uploaded, BlueMapWebChat also creates a same-folder PNG sidecar for compatibility with game-side emoji plugins that only read PNG files:
 

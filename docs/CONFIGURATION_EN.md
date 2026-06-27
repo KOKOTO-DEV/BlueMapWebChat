@@ -98,25 +98,56 @@ emoji:
 - `pinned.show-to-logged-out`
 - `commands.max-length`
 
+## Guest chat controls
+
+```yaml
+guest:
+  cooldown-seconds: 6
+  max-messages-per-minute: 50
+```
+
+Guest chat is rate-limited by both `cooldown-seconds` and `max-messages-per-minute`. The default per-minute limit is `50` messages. Existing server configs are not overwritten automatically, so update `plugins/BlueMapWebChat/config.yml` manually if you want the new default on an existing installation.
+
 ## Reply relay to Minecraft chat
 
 ```yaml
 reply:
   game-preview:
     enabled: true
-    format: "&7↪ {sender}: {preview}"
+    format: "&7{sender}: {preview}"
     max-length: 120
 
   game-prefix:
     enabled: true
-    text: "[Reply] "
+    text: "↪ [Reply] "
 ```
 
 When a web or guest message replies to another message, `game-preview.enabled` sends the referenced message preview as a separate Minecraft chat line before the actual web message. This keeps the normal web-to-game chat format unchanged while allowing URLs in both the quote line and the real message to remain clickable.
 
-The preview text uses the same web-to-game custom emoji path as normal web messages. Custom emoji tokens in the preview are formatted with `emoji.game-link.label-format`, and long previews are shortened with `…` according to `max-length`; set it to `0` to disable preview-specific truncation.
+The preview text uses the same web-to-game custom emoji handling as normal web messages. With the default token-preserving setup, custom emoji tokens remain unchanged; when `emoji.game-link.enabled` is explicitly enabled, the selected game-link mode is applied. Long previews are shortened with `…` according to `max-length`; set it to `0` to disable preview-specific truncation.
 
-`game-prefix` controls the actual reply message line label/prefix. With the default web formats it changes `[Web] Player: message` into `[Reply] Player: message`. BlueMapWebChat replaces the first bracketed source label near the start of the already-rendered relay line; if no such label is found, the prefix text is prepended. The same reply preview and label are also applied to the web-to-Discord relay.
+`game-prefix` controls the actual reply message line label/prefix. With the default web formats it changes `[Web] Player: message` into `↪ [Reply] Player: message`. BlueMapWebChat replaces the first bracketed source label near the start of the already-rendered relay line; if no such label is found, the prefix text is prepended.
+
+Both `game-preview.format` and `game-prefix.text` support Minecraft legacy color codes with `&`, for example `&7` for gray.
+
+## Discord relay options
+
+```yaml
+discordsrv:
+  append-web-emoji-links: false
+  game-to-discord: false
+  append-game-emoji-links: true
+  max-emoji-links-per-message: 4
+  reply-relay:
+    enabled: false
+    prefix-enabled: true
+    preview-enabled: true
+    preview-max-length: 120
+```
+
+`discordsrv.append-web-emoji-links` appends image URLs for BM Web Chat custom emoji tokens to web-to-Discord messages. `discordsrv.append-game-emoji-links` appends image URLs for game-side tokens by augmenting DiscordSRV's normal Minecraft→Discord relay messages when possible. Optional `discordsrv.game-to-discord` can make BM Web Chat send game chat to Discord directly, but keep it disabled when DiscordSRV already relays normal Minecraft chat to avoid duplicate Discord messages. These settings are separate from `emoji.game-link.*`, which only affects web-to-Minecraft chat.
+
+`discordsrv.reply-relay` controls whether web reply previews are also sent to Discord. It is disabled by default to avoid extra/comment-like lines in Discord messages.
 
 ## Pinned messages
 
@@ -271,14 +302,19 @@ Admin custom emoji manager note: renaming an emoji file or folder changes the `:
 
 BlueMapWebChat stores custom emoji files under `plugins/BlueMapWebChat/emojis`. Subfolders are treated as emoji packs.
 
-`emoji.game-link.mode` supports `link` and `label` only.
+By default, `emoji.game-link.enabled` is `false`, so web-to-game messages preserve custom emoji tokens such as `:pack/name:` and `:emoji:pack/name:` unchanged. Use this default when ImageEmojis or another game-side emoji plugin renders tokens in Minecraft chat.
 
+When `emoji.game-link.enabled` is `true`, `emoji.game-link.mode` supports `preserve`, `link`, and `label`.
+
+- `preserve`: force token-preserving behavior even when game-link is enabled.
 - `link`: sends `label-format` text plus a short BM Web Chat image link.
 - `label`: sends `label-format` text only.
 
-BM Web Chat does not call ImageEmojis or other game-side emoji plugins directly, and it does not read resource packs or generated glyphs. If an external game-side emoji plugin uses the same token text, it can render the token in Minecraft chat.
+`emoji.game-link.*` only affects web-to-Minecraft chat. Discord image preview links are controlled separately by `discordsrv.append-web-emoji-links` for web→Discord and `discordsrv.append-game-emoji-links` for game→Discord. `append-game-emoji-links` can augment DiscordSRV's normal Minecraft→Discord relay messages, while `game-to-discord` is only needed when you want BM Web Chat to send game chat to Discord directly.
 
-`plain-broadcast-with-urls` controls messages that contain both a custom emoji token and a URL. With the default `true`, BM Web Chat sends the original line as plain Bukkit chat so game-side emoji plugins can render the token, then repeats each URL on a separate clickable reference line. This works regardless of whether the emoji comes before or after the URL.
+BM Web Chat does not call ImageEmojis or other game-side emoji plugins directly, and it does not read resource packs or generated glyphs. It preserves token text and attempts to load before ImageEmojis so original chat text can be captured before game-side rendering.
+
+When token-preserving behavior is active and the same line also contains URLs, BM Web Chat keeps a single plain Minecraft chat line instead of repeating URL reference lines. This protects game-side emoji plugins that need to read the original token text.
 
 `default-pack` and `aliases` help map flat game-side tokens back to BM Web Chat pack/name ids. For example:
 
@@ -291,4 +327,3 @@ emoji:
 ```
 
 GIF/JPG/JPEG/WEBP emoji originals automatically get same-folder PNG sidecars for compatibility with game-side emoji plugins that only read PNG files. The web UI keeps using the original file, so GIF animation is preserved.
-

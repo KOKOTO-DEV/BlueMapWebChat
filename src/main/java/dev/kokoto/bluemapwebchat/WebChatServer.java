@@ -55,6 +55,7 @@ public class WebChatServer {
     private HttpServer server;
     private ExecutorService executor;
     private volatile boolean running;
+    private static volatile boolean imageIoPluginsRegistered;
 
     public WebChatServer(BlueMapWebChatPlugin plugin, Storage storage, AuthManager auth, CaptchaManager captcha) {
         this.plugin = plugin;
@@ -85,6 +86,7 @@ public class WebChatServer {
         loadPersistedHistory();
         cleanupOldUploads();
         cleanupOldExternalMediaCache();
+        ensureImageIoPluginsRegistered();
         syncExistingGameEmojiPngSidecarsOnStartup();
 
         running = true;
@@ -126,6 +128,7 @@ public class WebChatServer {
         server.createContext(p + "/admin/delete-message", this::handleAdminDeleteMessage);
         server.createContext(p + "/admin/pin-message", this::handleAdminPinMessage);
         server.createContext(p + "/admin/unpin-message", this::handleAdminUnpinMessage);
+        server.createContext(p + "/admin/move-pin", this::handleAdminMovePin);
         server.createContext(p + "/admin/clear-history", this::handleAdminClearHistory);
         server.createContext(p + "/admin/emojis", this::handleAdminEmojis);
         server.createContext(p + "/admin/emojis/create-pack", this::handleAdminEmojiCreatePack);
@@ -376,6 +379,9 @@ public class WebChatServer {
                 .withRealSender(stripControl(realPlayerName, 64), stripControl(playerUuid, 64));
         addHistory(msg);
         broadcast(msg);
+        if (plugin.discordBridge() != null) {
+            plugin.discordBridge().sendGameMessage(msg);
+        }
     }
 
     public void publishFromDiscord(String sender, String message) {
@@ -1579,9 +1585,11 @@ public class WebChatServer {
     }
     private boolean gameLinkPngSidecarActive(ConfigValues config) {
         // PNG sidecars are a generic compatibility helper for external game-side
-        // emoji plugins that can only read PNG files. They are not tied to a
-        // specific plugin integration mode.
-        return config != null && config.emojiEnabled && config.emojiGameLinkEnabled;
+        // emoji plugins that can only read PNG files. They are intentionally
+        // independent from emoji.game-link.enabled: ImageEmojis-compatible token
+        // preserving mode normally keeps game-link disabled, but still needs
+        // PNG sidecars for GIF/JPG/WEBP uploads.
+        return config != null && config.emojiEnabled;
     }
 
     private boolean emojiHasPngSidecarSource(String ext) {
@@ -1589,8 +1597,26 @@ public class WebChatServer {
         return e.equals("gif") || e.equals("jpg") || e.equals("jpeg") || e.equals("webp");
     }
 
+    private void ensureImageIoPluginsRegistered() {
+        if (imageIoPluginsRegistered) return;
+        synchronized (WebChatServer.class) {
+            if (imageIoPluginsRegistered) return;
+            ClassLoader original = Thread.currentThread().getContextClassLoader();
+            try {
+                Thread.currentThread().setContextClassLoader(WebChatServer.class.getClassLoader());
+                ImageIO.scanForPlugins();
+                imageIoPluginsRegistered = true;
+            } catch (Throwable t) {
+                plugin.getLogger().warning("Failed to scan ImageIO plugins: " + t.getMessage());
+            } finally {
+                Thread.currentThread().setContextClassLoader(original);
+            }
+        }
+    }
+
     private byte[] convertImageBytesToPng(byte[] data) throws IOException {
         if (data == null || data.length == 0) return null;
+        ensureImageIoPluginsRegistered();
         BufferedImage image;
         try (InputStream in = new java.io.ByteArrayInputStream(data)) {
             image = ImageIO.read(in);
@@ -2497,6 +2523,76 @@ public class WebChatServer {
         return publicApiBaseUrl(ex) + "/uploads";
     }
 
+    public String externalEmojiLinksForDiscord(String message, int maxLinks) {
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.emojiEnabled || maxLinks <= 0) return "";
+        String base = externalEmojiBaseUrl(config);
+        if (base.isBlank()) return "";
+
+        EmojiCatalog catalog = scanEmojiCatalog(config);
+        if (catalog.items.isEmpty()) return "";
+        Map<String, EmojiItem> emojiById = new HashMap<>();
+        for (EmojiItem item : catalog.items) {
+            emojiById.put(item.id, item);
+        }
+        Map<String, String> aliasToId = emojiAliasToWebId(catalog, config);
+
+        List<String> urls = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        Matcher matcher = EMOJI_TOKEN_PATTERN.matcher(String.valueOf(message == null ? "" : message));
+        while (matcher.find() && urls.size() < maxLinks) {
+            EmojiItem item = emojiItemForToken(matcher.group(1), emojiById, aliasToId);
+            if (item == null || item.relativePath.isBlank()) continue;
+            String url = base + "/" + urlPath(item.relativePath);
+            if (seen.add(url)) urls.add(url);
+        }
+        return String.join("\n", urls);
+    }
+
+    private String externalEmojiBaseUrl(ConfigValues config) {
+        String explicit = externalResourceBaseUrl(config, config == null ? "" : config.emojiPublicBaseUrl, "emojis");
+        if (!explicit.isBlank()) return explicit;
+
+        String api = "";
+        if (config != null) {
+            api = String.valueOf(config.apiBaseUrl == null ? "" : config.apiBaseUrl).trim();
+            if (api.isBlank()) api = String.valueOf(config.standaloneWebApiBaseUrl == null ? "" : config.standaloneWebApiBaseUrl).trim();
+        }
+        String base = externalConfiguredBaseUrl(config, api);
+        if (base.isBlank()) {
+            String origin = configuredCorsOrigin(config);
+            String pathPrefix = config == null || config.pathPrefix == null || config.pathPrefix.isBlank()
+                    ? "/api" : config.pathPrefix;
+            if (!origin.isBlank()) base = trimTrailingSlash(origin + "/" + pathPrefix.replaceFirst("^/+", ""));
+        }
+        if (base.isBlank()) return "";
+        base = stripKnownResourceSuffix(base);
+        return trimTrailingSlash(base) + "/emojis";
+    }
+
+    private String externalResourceBaseUrl(ConfigValues config, String configured, String resource) {
+        String base = externalConfiguredBaseUrl(config, configured);
+        if (base.isBlank()) return "";
+        base = stripKnownResourceSuffix(base);
+        String suffix = "/" + resource;
+        if (base.equals(suffix) || base.endsWith(suffix)) return base;
+        if (looksLikeApiBase(base, config)) return base + suffix;
+        if (configured != null && (configured.endsWith("/" + resource) || configured.contains("/" + resource + "/"))) return base;
+        return base + suffix;
+    }
+
+    private String externalConfiguredBaseUrl(ConfigValues config, String configured) {
+        String value = String.valueOf(configured == null ? "" : configured).trim();
+        if (value.isBlank()) return "";
+        if (value.startsWith("http://") || value.startsWith("https://")) return trimTrailingSlash(value);
+        if (value.startsWith("//")) return trimTrailingSlash("https:" + value);
+
+        String origin = configuredCorsOrigin(config);
+        if (origin.isBlank()) return "";
+        if (value.startsWith("/")) return trimTrailingSlash(origin + value);
+        return trimTrailingSlash(origin + "/" + value.replaceFirst("^/+", ""));
+    }
+
     private String publicEmojiBaseUrl(HttpExchange ex) {
         ConfigValues config = plugin.configValues();
         String configured = config.emojiPublicBaseUrl;
@@ -3116,6 +3212,23 @@ public class WebChatServer {
     }
 
 
+    private void handleAdminMovePin(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        SessionContext ctx = requireRole(ex, Role.MODERATOR);
+        if (ctx == null) return;
+        if (!plugin.configValues().pinnedEnabled) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"pinned_disabled\"}");
+            return;
+        }
+        Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        String pinId = body.get("pinId");
+        String direction = body.get("direction");
+        boolean ok = storage.movePinnedMessage(pinId, direction);
+        if (ok) broadcastPinsChanged();
+        sendJson(ex, 200, "{\"ok\":" + ok + "}");
+    }
+
+
     private void handleAdminEmojis(HttpExchange ex) throws IOException {
         if (preflight(ex)) return;
         SessionContext ctx = requireRole(ex, Role.ADMIN);
@@ -3540,7 +3653,7 @@ public class WebChatServer {
     }
     private String messageForGameChat(String message, ConfigValues config) {
         String text = String.valueOf(message == null ? "" : message);
-        if (config == null || !config.emojiEnabled || !config.emojiGameLinkEnabled) return text;
+        if (config == null || !config.emojiEnabled || !config.emojiGameLinkEnabled || isEmojiGameTokenPreserveMode(config)) return text;
         Matcher matcher = EMOJI_TOKEN_PATTERN.matcher(text);
         if (!matcher.find()) return text;
 
@@ -3552,7 +3665,7 @@ public class WebChatServer {
         Map<String, String> aliasToId = emojiAliasToWebId(catalog, config);
         matcher.reset();
 
-        String mode = String.valueOf(config.emojiGameLinkMode == null ? "link" : config.emojiGameLinkMode).trim().toLowerCase(Locale.ROOT);
+        String mode = normalizedEmojiGameLinkMode(config);
         String shortBase = publicShortEmojiBaseUrlForGame(config);
         int maxLinks = Math.max(0, config.emojiGameLinkMaxLinksPerMessage);
         int linked = 0;
@@ -3799,35 +3912,44 @@ public class WebChatServer {
     }
 
     private boolean shouldPreservePlainBroadcastForGameEmojiTokens(String rawMessage, String renderedLine, ConfigValues config) {
-        if (config == null || !config.emojiEnabled || !config.emojiGameLinkEnabled) return false;
-        if (!config.emojiGameLinkPlainBroadcastWithUrls) return false;
-        if (!config.clickableUrlsInGame || !containsUrl(renderedLine)) return false;
-        // Some external game-side emoji plugins only rewrite plain broadcast/chat
-        // text and cannot see tokens inside Bungee components with click events.
-        // If the final line contains both a known custom emoji token and a URL,
-        // send the main line as plain chat and add URLs as separate clickable lines.
-        return containsKnownGameEmojiToken(String.valueOf(rawMessage == null ? "" : rawMessage), config)
-                || containsKnownGameEmojiToken(String.valueOf(renderedLine == null ? "" : renderedLine), config);
+        if (config == null || !config.clickableUrlsInGame || !containsUrl(renderedLine)) return false;
+        if (!isEmojiGameTokenPreserveMode(config)) return false;
+        // Preserve :pack/name: tokens for external game-side emoji plugins.
+        // Do not resolve BM Web Chat emoji IDs, do not append image URLs, and do not
+        // convert tokens to glyphs/symbols here. If the same line also contains URLs,
+        // keep a single plain Minecraft chat line so the token text remains visible to
+        // game-side emoji plugins.
+        return containsEmojiTokenLiteral(String.valueOf(rawMessage == null ? "" : rawMessage))
+                || containsEmojiTokenLiteral(String.valueOf(renderedLine == null ? "" : renderedLine));
     }
 
-    private boolean containsKnownGameEmojiToken(String text, ConfigValues config) {
+    private boolean isEmojiGameTokenPreserveMode(ConfigValues config) {
+        if (config == null || !config.emojiEnabled) return true;
+        if (!config.emojiGameLinkEnabled) return true;
+        return normalizedEmojiGameLinkMode(config).equals("preserve");
+    }
+
+    private String normalizedEmojiGameLinkMode(ConfigValues config) {
+        String mode = String.valueOf(config == null || config.emojiGameLinkMode == null ? "link" : config.emojiGameLinkMode).trim().toLowerCase(Locale.ROOT);
+        if (mode.equals("preserve") || mode.equals("token") || mode.equals("original") || mode.equals("none")) return "preserve";
+        if (mode.equals("label") || mode.equals("template") || mode.equals("text")) return "label";
+        return "link";
+    }
+
+    private boolean containsEmojiTokenLiteral(String text) {
         String raw = String.valueOf(text == null ? "" : text);
-        if (raw.isBlank()) return false;
-        Matcher matcher = EMOJI_TOKEN_PATTERN.matcher(raw);
-        if (!matcher.find()) return false;
-        EmojiCatalog catalog = scanEmojiCatalog(config);
-        if (catalog.items.isEmpty()) return false;
-        Map<String, EmojiItem> emojiById = new HashMap<>();
-        for (EmojiItem item : catalog.items) {
-            emojiById.put(item.id, item);
-        }
-        Map<String, String> aliasToId = emojiAliasToWebId(catalog, config);
-        matcher.reset();
-        while (matcher.find()) {
-            EmojiItem item = emojiItemForToken(matcher.group(1), emojiById, aliasToId);
-            if (item != null) return true;
-        }
-        return false;
+        return !raw.isBlank() && EMOJI_TOKEN_PATTERN.matcher(raw).find();
+    }
+
+    private String translateGameFormatCodes(String value) {
+        return ChatColor.translateAlternateColorCodes('&', String.valueOf(value == null ? "" : value));
+    }
+
+    private String sanitizeConfiguredGameLine(String value, int maxLength) {
+        // For configured game-chat formats only. This is used by reply.game-preview.format
+        // and reply.game-prefix.text after placeholder replacement so legacy codes such
+        // as &7 are always converted before the line is sent to Minecraft.
+        return sanitizeSingleGameLine(translateGameFormatCodes(value), maxLength);
     }
 
     private void sendToGame(ChatMessage msg, String format) {
@@ -3836,8 +3958,8 @@ public class WebChatServer {
 
         // Translate color/format codes only in configured templates, not in user text.
         // This keeps user-provided literals such as "&n", "&l", "&a" intact when relayed to game chat.
-        String template = ChatColor.translateAlternateColorCodes('&', format);
-        String gameMessage = messageForGameChat(msg.message, config);
+        String template = translateGameFormatCodes(format);
+        String gameMessage = messageForGameChat(msg == null ? "" : msg.message, config);
         String line = template
                 .replace("{player}", msg.sender)
                 .replace("{guest}", msg.sender)
@@ -3882,12 +4004,12 @@ public class WebChatServer {
         if (gamePreview.isBlank()) gamePreview = "...";
 
         String format = String.valueOf(config.replyGamePreviewFormat == null ? "" : config.replyGamePreviewFormat);
-        if (format.isBlank()) format = "&7↪ {sender}: {preview}";
-        String line = ChatColor.translateAlternateColorCodes('&', format)
+        if (format.isBlank()) format = "&7{sender}: {preview}";
+        String line = format
                 .replace("{sender}", sender)
                 .replace("{preview}", gamePreview)
                 .replace("{id}", stripControl(msg.replyToId, 96));
-        return sanitizeSingleGameLine(line, max > 0 ? max + 96 : 512).trim();
+        return sanitizeConfiguredGameLine(line, max > 0 ? max + 96 : 512).trim();
     }
 
     private String applyReplyGameLinePrefix(ChatMessage msg, String renderedLine, ConfigValues config) {
@@ -3896,7 +4018,8 @@ public class WebChatServer {
         if (msg.replyToId == null || msg.replyToId.isBlank()) return text;
         String prefix = formatReplyGamePrefix(msg, config);
         if (prefix.isBlank()) return text;
-        return replaceFirstBracketLabelOrPrepend(text, prefix, 96);
+        String line = replaceFirstBracketLabelOrPrepend(text, prefix, 96);
+        return line;
     }
 
     private String formatReplyGamePrefix(ChatMessage msg, ConfigValues config) {
@@ -3908,8 +4031,9 @@ public class WebChatServer {
                 .replace("{sender}", sender)
                 .replace("{preview}", preview)
                 .replace("{id}", stripControl(msg == null ? "" : msg.replyToId, 96));
-        prefix = ChatColor.translateAlternateColorCodes('&', prefix);
-        return sanitizeSingleGameLine(prefix, 160);
+        // Keep game-prefix color handling local to the configured reply prefix so
+        // normal user message text is not globally color-translated.
+        return sanitizeConfiguredGameLine(prefix, 160);
     }
 
     private String replaceFirstBracketLabelOrPrepend(String text, String prefix, int searchLimit) {
@@ -3967,12 +4091,11 @@ public class WebChatServer {
         }
 
         if (preservePlainForGameEmojiTokens) {
-            // Send the original line as plain chat first so external game-side emoji
-            // plugins can render :pack/name: tokens. Then add separate clickable URL
-            // reference lines, because those plugins often cannot see tokens inside
-            // Bungee clickable URL components.
+            // Keep a single plain Bukkit chat line so external game-side emoji
+            // plugins can render :pack/name: tokens. Do not repeat URL-only
+            // clickable reference lines here; that made URL fallback output appear
+            // as duplicated/comment-like two-line chat in Minecraft.
             Bukkit.broadcastMessage(line);
-            broadcastClickableUrlReferences(line);
             return;
         }
 

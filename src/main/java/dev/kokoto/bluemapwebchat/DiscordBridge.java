@@ -6,8 +6,12 @@ import org.bukkit.plugin.Plugin;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class DiscordBridge {
@@ -18,6 +22,7 @@ public class DiscordBridge {
     private volatile boolean started;
     private final Map<String, Long> recentDiscordInbound = new ConcurrentHashMap<>();
     private final Map<String, Long> recentDiscordEventIds = new ConcurrentHashMap<>();
+    private final Map<String, Long> recentDirectDiscordOutbound = new ConcurrentHashMap<>();
 
     public DiscordBridge(BlueMapWebChatPlugin plugin) {
         this.plugin = plugin;
@@ -37,12 +42,13 @@ public class DiscordBridge {
 
         started = true;
 
-        if (c.discordDiscordToWeb) {
+        if (needsJdaListener(c)) {
             startJdaListenerRetry();
         }
 
         plugin.getLogger().info("DiscordSRV bridge enabled. channel=" + c.discordChannel
                 + ", webToDiscord=" + c.discordWebToDiscord
+                + ", gameToDiscord=" + c.discordGameToDiscord
                 + ", discordToWeb=" + c.discordDiscordToWeb);
     }
 
@@ -62,6 +68,7 @@ public class DiscordBridge {
         jdaListener = null;
         recentDiscordInbound.clear();
         recentDiscordEventIds.clear();
+        recentDirectDiscordOutbound.clear();
         started = false;
     }
 
@@ -80,10 +87,31 @@ public class DiscordBridge {
         if (!allow) return;
 
         String text = format(c.discordWebToDiscordFormat, msg.sender, msg.role, msg.source, msg.message, c.discordChannel);
-        text = applyReplyRelayToDiscord(msg, text, c);
+        if (c.discordReplyRelayEnabled) {
+            text = applyReplyRelayToDiscord(msg, text, c);
+        }
+        text = appendWebEmojiLinksToDiscord(msg, text, c);
         if (text.isBlank()) return;
 
         sendDirectToDiscord(text);
+    }
+
+
+    public void sendGameMessage(ChatMessage msg) {
+        ConfigValues c = plugin.configValues();
+        if (msg == null || c == null || !c.discordEnabled || !c.discordGameToDiscord) return;
+
+        String text = format(c.discordGameToDiscordFormat, msg.sender, msg.role, msg.source, msg.message, c.discordChannel);
+        text = appendGameEmojiLinksToDiscord(msg, text, c);
+        if (text.isBlank()) return;
+
+        sendDirectToDiscord(text);
+    }
+
+    private boolean needsJdaListener(ConfigValues c) {
+        if (c == null || !c.discordEnabled) return false;
+        if (c.discordDiscordToWeb) return true;
+        return c.discordAppendGameEmojiLinks && c.discordMaxEmojiLinksPerMessage > 0;
     }
 
     private void startJdaListenerRetry() {
@@ -160,7 +188,7 @@ public class DiscordBridge {
     private void handleJdaEvent(Object event) {
         try {
             ConfigValues c = plugin.configValues();
-            if (!c.discordEnabled || !c.discordDiscordToWeb) return;
+            if (!c.discordEnabled) return;
 
             String eventName = event.getClass().getName();
             if (!eventName.endsWith("MessageReceivedEvent")) return;
@@ -170,7 +198,6 @@ public class DiscordBridge {
 
             Object author = call(event, "getAuthor");
             if (author == null) return;
-            if (c.discordIgnoreBotMessages && asBoolean(call(author, "isBot"))) return;
 
             Object message = call(event, "getMessage");
 
@@ -179,6 +206,12 @@ public class DiscordBridge {
             if (!eventId.isBlank()) recentDiscordEventIds.put(eventId, System.currentTimeMillis());
 
             String content = firstNonBlank(callString(message, "getContentRaw"), callString(message, "getContentDisplay"));
+            maybeAppendGameEmojiLinksToNativeDiscordMessage(message, author, content, c);
+
+            if (!c.discordDiscordToWeb) return;
+            if (c.discordIgnoreBotMessages && asBoolean(call(author, "isBot"))) return;
+
+            content = appendDiscordAttachmentUrls(content, message, 8);
             if (content.isBlank()) return;
 
             rememberDiscordInbound(content);
@@ -198,27 +231,131 @@ public class DiscordBridge {
         }
     }
 
+
+    private void maybeAppendGameEmojiLinksToNativeDiscordMessage(Object message, Object author, String content, ConfigValues c) {
+        if (message == null || c == null) return;
+        if (!c.discordAppendGameEmojiLinks || c.discordMaxEmojiLinksPerMessage <= 0) return;
+        if (content == null || content.isBlank()) return;
+
+        // This covers the normal DiscordSRV Minecraft -> Discord relay. Web/game messages sent
+        // directly by BM Web Chat are remembered and skipped so their own append settings stay authoritative.
+        if (!asBoolean(call(author, "isBot"))) return;
+        if (seenRecently(recentDirectDiscordOutbound, normalizeEcho(content), 60_000L)) return;
+
+        WebChatServer server = plugin.webServer();
+        if (server == null) return;
+        String links = server.externalEmojiLinksForDiscord(content, c.discordMaxEmojiLinksPerMessage);
+        if (links.isBlank()) return;
+        if (containsAnyLine(content, links)) return;
+
+        String updated = content.trim() + "\n" + links;
+        try {
+            Object action;
+            try {
+                action = message.getClass().getMethod("editMessage", CharSequence.class).invoke(message, updated);
+            } catch (NoSuchMethodException ex) {
+                action = message.getClass().getMethod("editMessage", String.class).invoke(message, updated);
+            }
+            action.getClass().getMethod("queue").invoke(action);
+        } catch (Throwable t) {
+            plugin.getLogger().fine("Failed to append BM Web Chat emoji links to DiscordSRV game relay message: " + t.getMessage());
+        }
+    }
+
+    private boolean containsAnyLine(String base, String lines) {
+        String value = String.valueOf(base == null ? "" : base);
+        String list = String.valueOf(lines == null ? "" : lines);
+        for (String line : list.split("\\R")) {
+            String item = line.trim();
+            if (!item.isBlank() && value.contains(item)) return true;
+        }
+        return false;
+    }
+
+    private String appendWebEmojiLinksToDiscord(ChatMessage msg, String renderedLine, ConfigValues c) {
+        String text = String.valueOf(renderedLine == null ? "" : renderedLine);
+        if (msg == null || c == null || !c.discordAppendWebEmojiLinks || c.discordMaxEmojiLinksPerMessage <= 0) return text;
+        WebChatServer server = plugin.webServer();
+        if (server == null) return text;
+        String links = server.externalEmojiLinksForDiscord(msg.message, c.discordMaxEmojiLinksPerMessage);
+        if (links.isBlank()) return text;
+        return text.isBlank() ? links : text + "\n" + links;
+    }
+
+    private String appendGameEmojiLinksToDiscord(ChatMessage msg, String renderedLine, ConfigValues c) {
+        String text = String.valueOf(renderedLine == null ? "" : renderedLine);
+        if (msg == null || c == null || !c.discordAppendGameEmojiLinks || c.discordMaxEmojiLinksPerMessage <= 0) return text;
+        WebChatServer server = plugin.webServer();
+        if (server == null) return text;
+        String links = server.externalEmojiLinksForDiscord(msg.message, c.discordMaxEmojiLinksPerMessage);
+        if (links.isBlank()) return text;
+        return text.isBlank() ? links : text + "\n" + links;
+    }
+
+    private String appendDiscordAttachmentUrls(String content, Object message, int maxUrls) {
+        String base = String.valueOf(content == null ? "" : content).trim();
+        List<String> urls = discordAttachmentImageUrls(message, maxUrls);
+        if (urls.isEmpty()) return base;
+        String joined = String.join("\n", urls);
+        return base.isBlank() ? joined : base + "\n" + joined;
+    }
+
+    private List<String> discordAttachmentImageUrls(Object message, int maxUrls) {
+        List<String> out = new ArrayList<>();
+        if (message == null || maxUrls <= 0) return out;
+        Object attachments = call(message, "getAttachments");
+        if (!(attachments instanceof Iterable<?> iterable)) return out;
+
+        Set<String> seen = new LinkedHashSet<>();
+        for (Object attachment : iterable) {
+            if (attachment == null) continue;
+            String url = firstNonBlank(callString(attachment, "getUrl"), callString(attachment, "getProxyUrl"));
+            if (url.isBlank()) continue;
+            String fileName = callString(attachment, "getFileName");
+            boolean image = asBoolean(call(attachment, "isImage")) || looksLikeImageAttachment(url) || looksLikeImageAttachment(fileName);
+            if (!image) continue;
+            if (seen.add(url)) {
+                out.add(url);
+                if (out.size() >= maxUrls) break;
+            }
+        }
+        return out;
+    }
+
+    private boolean looksLikeImageAttachment(String value) {
+        String v = String.valueOf(value == null ? "" : value).trim().toLowerCase(Locale.ROOT);
+        int q = v.indexOf('?');
+        if (q >= 0) v = v.substring(0, q);
+        return v.endsWith(".png") || v.endsWith(".jpg") || v.endsWith(".jpeg")
+                || v.endsWith(".gif") || v.endsWith(".webp") || v.endsWith(".bmp");
+    }
+
     private String applyReplyRelayToDiscord(ChatMessage msg, String renderedLine, ConfigValues c) {
         String line = String.valueOf(renderedLine == null ? "" : renderedLine);
         if (msg == null || c == null || msg.replyToId == null || msg.replyToId.isBlank()) return line;
 
-        if (c.replyGamePrefixEnabled) {
+        // Discord reply relay is intentionally controlled by discordsrv.reply-relay.*.
+        // Do not reuse the game-side reply settings here; otherwise Discord can receive
+        // the game reply prefix/preview even when Discord reply relay is disabled.
+        if (!c.discordReplyRelayEnabled) return line;
+
+        if (c.discordReplyPrefixEnabled) {
             line = replaceFirstBracketLabelOrPrepend(line, plainReplyPrefix(c), 96);
         }
 
-        if (!c.replyGamePreviewEnabled) return line;
+        if (!c.discordReplyPreviewEnabled) return line;
         String sender = safeText(msg.replyToSender);
         if (sender.isBlank()) sender = "Unknown";
-        String preview = truncateVisible(safeText(msg.replyToPreview), Math.max(0, c.replyGamePreviewMaxLength));
+        String preview = truncateVisible(safeText(msg.replyToPreview), Math.max(0, c.discordReplyPreviewMaxLength));
         if (preview.isBlank()) preview = "...";
-        return "↪ " + sender + ": " + preview + "\n" + line;
+        return sender + ": " + preview + "\n" + line;
     }
 
     private String plainReplyPrefix(ConfigValues c) {
         String value = c == null || c.replyGamePrefixText == null ? "" : c.replyGamePrefixText;
         value = value.replaceAll("(?i)&[0-9A-FK-ORX]", "");
         value = value.replaceAll("§.", "");
-        return safeText(value).isBlank() ? "[Reply] " : safeText(value) + (safeText(value).endsWith(" ") ? "" : " ");
+        return safeText(value).isBlank() ? "↪ [Reply] " : safeText(value) + (safeText(value).endsWith(" ") ? "" : " ");
     }
 
     private String replaceFirstBracketLabelOrPrepend(String text, String prefix, int searchLimit) {
@@ -250,6 +387,7 @@ public class DiscordBridge {
 
     private boolean sendDirectToDiscord(String text) {
         try {
+            rememberDirectDiscordOutbound(text);
             Object channel = getDiscordSrvTextChannel();
             if (channel == null) {
                 plugin.getLogger().warning("DiscordSRV channel not found: " + plugin.configValues().discordChannel);
@@ -296,6 +434,13 @@ public class DiscordBridge {
         return false;
     }
 
+    private void rememberDirectDiscordOutbound(String message) {
+        String key = normalizeEcho(message);
+        if (key.isBlank()) return;
+        recentDirectDiscordOutbound.put(key, System.currentTimeMillis());
+        pruneRecent(System.currentTimeMillis(), 60_000L);
+    }
+
     private void rememberDiscordInbound(String message) {
         ConfigValues c = plugin.configValues();
         if (!c.discordSuppressGameEcho) return;
@@ -316,6 +461,7 @@ public class DiscordBridge {
     private void pruneRecent(long now, long ttlMillis) {
         recentDiscordInbound.entrySet().removeIf(e -> now - e.getValue() > ttlMillis);
         recentDiscordEventIds.entrySet().removeIf(e -> now - e.getValue() > 60_000L);
+        recentDirectDiscordOutbound.entrySet().removeIf(e -> now - e.getValue() > 60_000L);
     }
 
     private String normalizeEcho(String value) {
@@ -423,7 +569,15 @@ public class DiscordBridge {
 
     private String safeText(String s) {
         if (s == null) return "";
-        return s.replace("\r", " ").replace("\n", " ").trim();
+        return stripMinecraftColorCodes(s).replace("\r", " ").replace("\n", " ").trim();
+    }
+
+    private String stripMinecraftColorCodes(String s) {
+        if (s == null || s.isEmpty()) return "";
+        // Strip RGB legacy sequences such as §x§8§a§b§4§f§e before normal legacy codes.
+        String out = s.replaceAll("(?i)§x(?:§[0-9a-f]){6}", "");
+        out = out.replaceAll("(?i)§[0-9a-fk-or]", "");
+        return out.replace("§", "");
     }
 
     private String sanitizeCommand(String s) {

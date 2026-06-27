@@ -33,6 +33,8 @@ web:
     moderationActionsEnable: Enable pin/delete
     moderationActionsDisable: Disable pin/delete
     unpin: unpin
+    moveUp: Move up
+    moveDown: Move down
     commands: Commands
     pip: PIP
     run: Run
@@ -85,6 +87,7 @@ web:
     saveFailed: 'Save failed: {error}'
     pinFailed: 'Pin failed: {error}'
     unpinFailed: 'Unpin failed: {error}'
+    movePinFailed: 'Move failed: {error}'
     emojiPackNameRequired: 'Enter a folder name.'
     emojiFileRequired: 'Choose an emoji file.'
     confirmDeleteEmoji: 'Delete this emoji?'

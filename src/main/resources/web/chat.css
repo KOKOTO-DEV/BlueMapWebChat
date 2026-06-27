@@ -2291,6 +2291,17 @@
   opacity: 0.75;
 }
 
+
+.bmwc-pinned-actions {
+  margin-left: 6px;
+}
+
+.bmwc-pinned-actions .bmwc-mini-action[disabled] {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
 @media (max-width: 420px) {
   .bmwc-pinned-bar {
     padding: 4px 6px;
@@ -4237,4 +4248,14 @@ body.bmwc-emoji-resizing #bmwc-root.bmwc-theme-system .bmwc-emoji-resize-handle:
   #bmwc-root.bmwc-theme-system .bmwc-reply-ref:hover {
     background: rgba(15, 23, 42, 0.1);
   }
+}
+
+/* Show the no-more-messages toast at the bottom when the user pulls past the latest edge. */
+#bmwc-root .bmwc-history-end.bmwc-history-end-bottom {
+  top: auto !important;
+  bottom: var(--bmwc-affordance-bottom, 72px) !important;
+}
+#bmwc-root .bmwc-history-end.bmwc-history-end-top {
+  top: var(--bmwc-affordance-top, 54px) !important;
+  bottom: auto !important;
 }

@@ -1,5 +1,6 @@
 package dev.kokoto.bluemapwebchat;
 
+import org.bukkit.ChatColor;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.List;
@@ -168,11 +169,20 @@ public class ConfigValues {
     public boolean discordSuppressGameEcho;
     public int discordSuppressGameEchoSeconds;
     public String discordWebToDiscordFormat;
+    public String discordGameToDiscordFormat;
     public String discordToWebSenderFormat;
     public String discordToWebMessageFormat;
+    public boolean discordGameToDiscord;
+    public boolean discordAppendGameEmojiLinks;
     public boolean discordSendWebUser;
     public boolean discordSendWebGuest;
     public boolean discordSendWebAdmin;
+    public boolean discordAppendWebEmojiLinks;
+    public int discordMaxEmojiLinksPerMessage;
+    public boolean discordReplyRelayEnabled;
+    public boolean discordReplyPrefixEnabled;
+    public boolean discordReplyPreviewEnabled;
+    public int discordReplyPreviewMaxLength;
 
     public boolean uploadEnabled;
     public boolean uploadAllowGuest;
@@ -213,7 +223,6 @@ public class ConfigValues {
     public String emojiGameLinkPublicApiBaseUrl;
     public String emojiGameLinkLabelFormat;
     public int emojiGameLinkMaxLinksPerMessage;
-    public boolean emojiGameLinkPlainBroadcastWithUrls;
     public String emojiGameLinkDefaultPack;
     public Map<String, String> emojiGameLinkAliases;
 
@@ -444,7 +453,7 @@ public class ConfigValues {
         v.guestAllowCustomName = c.getBoolean("guest.allow-custom-name", true);
         v.guestNamePrefix = c.getString("guest.name-prefix", "Guest-");
         v.guestCooldownSeconds = c.getInt("guest.cooldown-seconds", 5);
-        v.guestMaxMessagesPerMinute = c.getInt("guest.max-messages-per-minute", 6);
+        v.guestMaxMessagesPerMinute = c.getInt("guest.max-messages-per-minute", 50);
         v.guestBlockPlayerNameSpoofing = c.getBoolean("guest.block-player-name-spoofing", true);
         v.guestBlockedNames = c.getStringList("guest.blocked-names");
 
@@ -487,11 +496,23 @@ public class ConfigValues {
         v.discordSuppressGameEcho = c.getBoolean("discordsrv.suppress-game-echo", true);
         v.discordSuppressGameEchoSeconds = c.getInt("discordsrv.suppress-game-echo-seconds", 5);
         v.discordWebToDiscordFormat = c.getString("discordsrv.web-to-discord-format", "[Web] {sender}: {message}");
+        v.discordGameToDiscord = c.getBoolean("discordsrv.game-to-discord", false);
+        v.discordGameToDiscordFormat = c.getString("discordsrv.game-to-discord-format", "[Game] {sender}: {message}");
+        v.discordAppendGameEmojiLinks = c.getBoolean("discordsrv.append-game-emoji-links", true);
         v.discordToWebSenderFormat = c.getString("discordsrv.discord-to-web-sender-format", "Discord:{sender}");
         v.discordToWebMessageFormat = c.getString("discordsrv.discord-to-web-message-format", "{message}");
         v.discordSendWebUser = c.getBoolean("discordsrv.send-web-user-chat-to-discord", true);
         v.discordSendWebGuest = c.getBoolean("discordsrv.send-web-guest-chat-to-discord", false);
         v.discordSendWebAdmin = c.getBoolean("discordsrv.send-web-admin-chat-to-discord", true);
+        v.discordAppendWebEmojiLinks = c.getBoolean("discordsrv.append-web-emoji-links", false);
+        v.discordMaxEmojiLinksPerMessage = Math.max(0, c.getInt("discordsrv.max-emoji-links-per-message", 4));
+        // Discord reply relay is intentionally separate from reply.game-preview.
+        // The game preview can be useful in Minecraft chat, but duplicating the replied
+        // message in Discord often looks like an unexpected extra/comment line.
+        v.discordReplyRelayEnabled = c.getBoolean("discordsrv.reply-relay.enabled", false);
+        v.discordReplyPrefixEnabled = c.getBoolean("discordsrv.reply-relay.prefix-enabled", true);
+        v.discordReplyPreviewEnabled = c.getBoolean("discordsrv.reply-relay.preview-enabled", true);
+        v.discordReplyPreviewMaxLength = Math.max(0, c.getInt("discordsrv.reply-relay.preview-max-length", 120));
 
         v.uploadEnabled = c.getBoolean("upload.enabled", true);
         v.uploadAllowGuest = c.getBoolean("upload.allow-guest-upload", false);
@@ -540,9 +561,11 @@ public class ConfigValues {
         if (v.emojiAllowedExtensions == null || v.emojiAllowedExtensions.isEmpty()) {
             v.emojiAllowedExtensions = List.of("png", "jpg", "jpeg", "gif", "webp");
         }
-        v.emojiGameLinkEnabled = c.getBoolean("emoji.game-link.enabled", true);
+        v.emojiGameLinkEnabled = c.getBoolean("emoji.game-link.enabled", false);
         String emojiGameLinkMode = String.valueOf(c.getString("emoji.game-link.mode", "link")).trim().toLowerCase(Locale.ROOT);
-        if (emojiGameLinkMode.equals("label") || emojiGameLinkMode.equals("template") || emojiGameLinkMode.equals("text")) {
+        if (emojiGameLinkMode.equals("preserve") || emojiGameLinkMode.equals("token") || emojiGameLinkMode.equals("original") || emojiGameLinkMode.equals("none")) {
+            v.emojiGameLinkMode = "preserve";
+        } else if (emojiGameLinkMode.equals("label") || emojiGameLinkMode.equals("template") || emojiGameLinkMode.equals("text")) {
             v.emojiGameLinkMode = "label";
         } else {
             v.emojiGameLinkMode = "link";
@@ -550,7 +573,6 @@ public class ConfigValues {
         v.emojiGameLinkPublicApiBaseUrl = c.getString("emoji.game-link.public-api-base-url", "");
         v.emojiGameLinkLabelFormat = c.getString("emoji.game-link.label-format", ":{id}:");
         v.emojiGameLinkMaxLinksPerMessage = Math.max(0, c.getInt("emoji.game-link.max-links-per-message", 4));
-        v.emojiGameLinkPlainBroadcastWithUrls = c.getBoolean("emoji.game-link.plain-broadcast-with-urls", true);
         v.emojiGameLinkDefaultPack = String.valueOf(c.getString("emoji.game-link.default-pack", "")).trim();
         v.emojiGameLinkAliases = new LinkedHashMap<>();
         org.bukkit.configuration.ConfigurationSection gameLinkAliases = c.getConfigurationSection("emoji.game-link.aliases");
@@ -563,9 +585,9 @@ public class ConfigValues {
         }
 
         v.replyGamePrefixEnabled = c.getBoolean("reply.game-prefix.enabled", true);
-        v.replyGamePrefixText = c.getString("reply.game-prefix.text", "[Reply] ");
+        v.replyGamePrefixText = translateConfiguredGameFormat(c.getString("reply.game-prefix.text", "↪ [Reply] "));
         v.replyGamePreviewEnabled = c.getBoolean("reply.game-preview.enabled", true);
-        v.replyGamePreviewFormat = c.getString("reply.game-preview.format", "&7↪ {sender}: {preview}");
+        v.replyGamePreviewFormat = translateConfiguredGameFormat(c.getString("reply.game-preview.format", "&7{sender}: {preview}"));
         v.replyGamePreviewMaxLength = Math.max(0, c.getInt("reply.game-preview.max-length", 120));
 
         v.pinnedEnabled = c.getBoolean("pinned.enabled", true);
@@ -738,4 +760,8 @@ public class ConfigValues {
         while (s.endsWith("/")) s = s.substring(0, s.length() - 1);
         return s;
     }
+    private static String translateConfiguredGameFormat(String value) {
+        return ChatColor.translateAlternateColorCodes('&', String.valueOf(value == null ? "" : value));
+    }
+
 }

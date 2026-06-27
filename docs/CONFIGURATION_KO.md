@@ -98,25 +98,56 @@ emoji:
 - `pinned.show-to-logged-out`
 - `commands.max-length`
 
+## 게스트 채팅 제한
+
+```yaml
+guest:
+  cooldown-seconds: 6
+  max-messages-per-minute: 50
+```
+
+게스트 채팅은 `cooldown-seconds`와 `max-messages-per-minute` 두 설정으로 제한됩니다. 분당 메시지 기본값은 `50`입니다. 이미 생성된 서버의 설정 파일은 자동으로 덮어쓰기 되지 않으므로, 기존 설치에서 새 기본값을 쓰려면 `plugins/BlueMapWebChat/config.yml`을 직접 수정하세요.
+
 ## Minecraft 채팅 답글 표시
 
 ```yaml
 reply:
   game-preview:
     enabled: true
-    format: "&7↪ {sender}: {preview}"
+    format: "&7{sender}: {preview}"
     max-length: 120
 
   game-prefix:
     enabled: true
-    text: "[Reply] "
+    text: "↪ [Reply] "
 ```
 
 웹 또는 게스트 메시지가 다른 메시지에 답글을 달면 `game-preview.enabled`가 원문 미리보기를 실제 웹 메시지보다 먼저 Minecraft 채팅에 별도 한 줄로 보냅니다. 이렇게 하면 기존 웹→게임 채팅 포맷은 유지하면서, 원문 줄과 실제 메시지 줄의 URL을 각각 클릭 가능하게 유지할 수 있습니다.
 
-원문 미리보기는 일반 웹 메시지와 같은 웹→게임 커스텀 이모지 경로를 사용합니다. 원문 안의 커스텀 이모지 토큰은 `emoji.game-link.label-format` 기준으로 포맷되고, 긴 원문은 `max-length` 기준으로 `…` 처리됩니다. `0`으로 두면 원문 미리보기 자체의 길이 제한을 끕니다.
+원문 미리보기는 일반 웹 메시지와 같은 웹→게임 커스텀 이모지 처리를 사용합니다. 기본 토큰 보존 설정에서는 커스텀 이모지 토큰이 그대로 유지되고, `emoji.game-link.enabled`를 명시적으로 켠 경우 선택한 game-link mode가 적용됩니다. 긴 원문은 `max-length` 기준으로 `…` 처리됩니다. `0`으로 두면 원문 미리보기 자체의 길이 제한을 끕니다.
 
-`game-prefix`는 실제 답글 메시지 줄의 라벨/prefix를 제어합니다. 기본 웹 포맷에서는 `[Web] Player: message`를 `[Reply] Player: message`로 바꿉니다. BlueMapWebChat은 이미 렌더링된 전달 문자열의 앞부분에서 처음 나오는 대괄호 소스 라벨을 교체합니다. 대괄호 라벨이 없으면 prefix 텍스트를 앞에 붙입니다. 같은 답글 원문 미리보기와 라벨은 web-to-Discord 전달에도 적용됩니다.
+`game-prefix`는 실제 답글 메시지 줄의 라벨/prefix를 제어합니다. 기본 웹 포맷에서는 `[Web] Player: message`를 `↪ [Reply] Player: message`로 바꿉니다. BlueMapWebChat은 이미 렌더링된 전달 문자열의 앞부분에서 처음 나오는 대괄호 소스 라벨을 교체합니다. 대괄호 라벨이 없으면 prefix 텍스트를 앞에 붙입니다.
+
+`game-preview.format`과 `game-prefix.text`는 둘 다 `&7` 같은 Minecraft legacy 색상 코드를 지원합니다.
+
+## Discord 연동 옵션
+
+```yaml
+discordsrv:
+  append-web-emoji-links: false
+  game-to-discord: false
+  append-game-emoji-links: true
+  max-emoji-links-per-message: 4
+  reply-relay:
+    enabled: false
+    prefix-enabled: true
+    preview-enabled: true
+    preview-max-length: 120
+```
+
+`discordsrv.append-web-emoji-links`는 웹→Discord 메시지에 BM Web Chat 커스텀 이모지 토큰의 이미지 URL을 추가합니다. `discordsrv.append-game-emoji-links`는 가능한 경우 DiscordSRV의 일반 Minecraft→Discord 릴레이 메시지를 수정해서 게임에서 입력한 이모지 토큰의 이미지 URL을 추가합니다. 선택 기능인 `discordsrv.game-to-discord`는 BM Web Chat이 게임 채팅을 Discord로 직접 보내게 하는 기능이므로, DiscordSRV가 이미 일반 Minecraft 채팅을 릴레이하고 있다면 중복을 피하기 위해 꺼두세요. 이 설정들은 웹→Minecraft 채팅에만 적용되는 `emoji.game-link.*`와 별개입니다.
+
+`discordsrv.reply-relay`는 웹 답글 원문 미리보기를 Discord에도 보낼지 제어합니다. Discord 메시지에 댓글처럼 보이는 추가 줄이 생기지 않도록 기본값은 비활성화입니다.
 
 ## 고정 메시지
 
@@ -170,16 +201,21 @@ player-display:
 
 BlueMapWebChat은 커스텀 이모지를 `plugins/BlueMapWebChat/emojis` 아래에 저장합니다. 하위 폴더는 이모지 팩으로 처리됩니다.
 
-`emoji.game-link.mode`는 `link`와 `label`만 지원합니다.
+기본값에서는 `emoji.game-link.enabled`가 `false`이므로 웹→게임 메시지의 `:pack/name:`, `:emoji:pack/name:` 같은 커스텀 이모지 토큰을 그대로 보존합니다. ImageEmojis나 다른 게임 측 이모지 플러그인이 Minecraft 채팅에서 토큰을 렌더링한다면 이 기본값을 사용하세요.
 
+`emoji.game-link.enabled`가 `true`일 때 `emoji.game-link.mode`는 `preserve`, `link`, `label`을 지원합니다.
+
+- `preserve`: game-link가 켜져 있어도 토큰 보존 동작을 강제합니다.
 - `link`: `label-format` 텍스트와 BM Web Chat 짧은 이미지 링크를 같이 보냅니다.
 - `label`: `label-format` 텍스트만 보냅니다.
 
-BM Web Chat은 ImageEmojis나 다른 게임 측 이모지 플러그인을 직접 호출하지 않고, 리소스팩이나 생성된 glyph도 읽지 않습니다. 외부 게임 측 이모지 플러그인이 같은 토큰 텍스트를 사용한다면 Minecraft 채팅에서 해당 토큰을 렌더링할 수 있습니다.
+`emoji.game-link.*`는 웹→Minecraft 채팅에만 적용됩니다. Discord 이미지 미리보기 링크는 웹→Discord용 `discordsrv.append-web-emoji-links`와 게임→Discord용 `discordsrv.append-game-emoji-links`로 분리해서 제어합니다. `append-game-emoji-links`는 DiscordSRV의 일반 Minecraft→Discord 릴레이 메시지를 가능한 경우 수정하며, `game-to-discord`는 BM Web Chat이 게임 채팅을 Discord로 직접 보낼 때만 필요합니다.
 
-`plain-broadcast-with-urls`는 한 메시지에 커스텀 이모지 토큰과 URL이 같이 있을 때의 처리 방식을 정합니다. 기본값 `true`에서는 원문 줄을 plain Bukkit 채팅으로 보내 게임 측 이모지 플러그인이 토큰을 렌더링하게 하고, 각 URL은 별도의 클릭 가능한 참조 줄로 다시 보냅니다. 이모지가 URL 앞에 있든 뒤에 있든 동일하게 처리됩니다.
+BM Web Chat은 ImageEmojis나 다른 게임 측 이모지 플러그인을 직접 호출하지 않고, 리소스팩이나 생성된 glyph도 읽지 않습니다. BM Web Chat은 토큰 텍스트를 보존하고, 가능하면 ImageEmojis보다 먼저 로드되어 게임 측 렌더링 전에 원문 채팅 텍스트를 잡도록 합니다.
 
-`default-pack`과 `aliases`는 짧은 게임 측 토큰을 BM Web Chat의 pack/name id로 매핑할 때 사용합니다. 예를 들면 다음과 같습니다.
+토큰 보존 동작이 활성 상태이고 같은 줄에 URL도 포함되어 있으면, BM Web Chat은 URL 참조 줄을 반복해서 보내지 않고 한 줄의 plain Minecraft 채팅으로 유지합니다. 이렇게 해야 게임 쪽 이모지 플러그인이 원래 토큰 문자열을 읽을 수 있습니다.
+
+`default-pack`과 `aliases`는 flat 게임 측 토큰을 BM Web Chat의 pack/name id로 매핑할 때 사용합니다. 예:
 
 ```yaml
 emoji:
@@ -189,7 +225,7 @@ emoji:
       wave: "default/wave"
 ```
 
-GIF/JPG/JPEG/WEBP 이모지 원본은 PNG만 읽는 게임 측 이모지 플러그인과의 호환을 위해 같은 폴더에 PNG sidecar가 자동 생성됩니다. 웹 UI는 원본 파일을 사용하므로 GIF 애니메이션은 유지됩니다.
+GIF/JPG/JPEG/WEBP 이모지 원본은 PNG만 읽는 게임 측 이모지 플러그인과의 호환을 위해 같은 폴더에 PNG sidecar를 자동 생성합니다. 웹 UI는 원본 파일을 사용하므로 GIF 애니메이션은 유지됩니다.
 
 ## 명령어 패널
 

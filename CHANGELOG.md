@@ -1,6 +1,63 @@
 # Changelog
 
 
+## 4.1.0
+
+### Pinned message ordering
+
+- Added manual pinned-message ordering with up/down controls in the pinned-message management UI.
+- Added the `/admin/move-pin` API and persistent `sortOrder` storage while keeping backward compatibility with existing pinned messages.
+
+### Custom emoji relay compatibility
+
+- Preserved custom emoji token text by default for game-side emoji plugins such as ImageEmojis.
+- Kept `link` and `label` game-link modes for servers that do not use a game-side emoji plugin, and added an explicit `preserve` mode for token-preserving behavior.
+- Removed ImageEmojis-specific glyph/resource-pack conversion paths from BM Web Chat; token text is now the canonical relay format.
+- Improved game-to-web original-message capture with optional Paper/Purpur `AsyncChatEvent` support and Bukkit/Spigot fallback handling.
+
+### Custom emoji sidecars and WebP support
+
+- Generalized PNG sidecar generation for GIF/JPG/JPEG/WEBP custom emoji files whenever custom emoji support is enabled.
+- Added WebP ImageIO support through TwelveMonkeys ImageIO so WebP custom emoji files can generate PNG sidecars reliably.
+- Kept the web UI rendering the original uploaded emoji file so animated GIFs remain animated in the browser.
+
+### Discord relay
+
+- Kept optional web-to-Discord custom emoji image URL appending for BM Web Chat emoji tokens, disabled by default.
+- Added optional game-to-Discord relay with game-side custom emoji URL appending, disabled by default to avoid duplicate DiscordSRV Minecraft chat relay.
+- Fixed Discord reply relay so `discordsrv.reply-relay.enabled`, `prefix-enabled`, and `preview-enabled` are respected independently from game-side reply settings.
+- Kept Discord-to-web image attachment relay and Minecraft legacy color-code stripping for Discord output.
+
+### History loading and edge notices
+
+- Improved top and bottom edge history loading retries when older or newer messages are still available.
+- Added a bottom-edge "No more messages to display" toast after repeated extra-scroll attempts at the latest loaded message while keeping newer-history retry requests immediate.
+- Kept the existing top-edge no-more-history notice for the oldest loaded history edge.
+
+
+## 4.0.1
+
+### Discord relay fixes
+
+- Fixed Discord -> web image attachment relay by appending Discord image attachment URLs to the web message so the existing media preview system can render them.
+- Stripped Minecraft legacy formatting codes from BM Web Chat's web -> Discord output, including standard codes such as `§a`, `§l`, `§r` and RGB sequences such as `§x§8§a§b§4§f§e`.
+- Added optional Discord-side image preview links for BM Web Chat custom emoji tokens such as `:pack/name:`.
+- Added `discordsrv.append-web-emoji-links` and `discordsrv.max-emoji-links-per-message`.
+
+### Reply relay fixes
+
+- Changed game-side reply labeling to render the normal web -> game relay line first and then replace the source label with the configured reply label.
+- Changed reply relay output from `[Web] Player: message` to `[Reply] Player: message` by default.
+- Applied the same reply preview and reply label behavior to web -> Discord relay output.
+
+### Release cleanup
+
+- Bumped the project version to `4.0.1`.
+- Refreshed default configuration comments, README files, configuration references, and i18n documentation for the 4.0.1 release.
+- Documented the Discord attachment, color-code cleanup, and custom emoji link behavior.
+
+
+
 ## 4.0.0
 
 ### Replies, history, and scrolling

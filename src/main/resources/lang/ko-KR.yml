@@ -33,6 +33,8 @@ web:
     moderationActionsEnable: 고정 / 삭제 활성화
     moderationActionsDisable: 고정 / 삭제 비활성화
     unpin: 해제
+    moveUp: 위로 이동
+    moveDown: 아래로 이동
     commands: 명령어
     pip: PIP
     run: 실행
@@ -85,6 +87,7 @@ web:
     saveFailed: '저장 실패: {error}'
     pinFailed: '고정 실패: {error}'
     unpinFailed: '고정 해제 실패: {error}'
+    movePinFailed: '순서 변경 실패: {error}'
     emojiPackNameRequired: '폴더 이름을 입력하세요.'
     emojiFileRequired: '이모지 파일을 선택하세요.'
     confirmDeleteEmoji: '이 이모지를 삭제할까요?'

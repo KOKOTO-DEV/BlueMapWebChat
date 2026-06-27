@@ -90,25 +90,56 @@ emoji:
 - `pinned.show-to-logged-out`
 - `commands.max-length`
 
+## 访客聊天限制
+
+```yaml
+guest:
+  cooldown-seconds: 6
+  max-messages-per-minute: 50
+```
+
+访客聊天同时受 `cooldown-seconds` 和 `max-messages-per-minute` 限制。每分钟消息数默认值为 `50`。已有服务器的配置文件不会自动覆盖；如果要在现有安装中使用新的默认值，请手动更新 `plugins/BlueMapWebChat/config.yml`。
+
 ## Minecraft 聊天中的回复显示
 
 ```yaml
 reply:
   game-preview:
     enabled: true
-    format: "&7↪ {sender}: {preview}"
+    format: "&7{sender}: {preview}"
     max-length: 120
 
   game-prefix:
     enabled: true
-    text: "[Reply] "
+    text: "↪ [Reply] "
 ```
 
 当 Web 或访客消息回复另一条消息时，`game-preview.enabled` 会先在 Minecraft 聊天中单独发送一行被回复消息的预览，然后再发送实际 Web 消息。这样可以保持原有 Web→游戏聊天格式，同时让引用行和正文行中的 URL 都保持可点击。
 
-预览文本会经过与普通 Web 消息相同的 Web→游戏自定义表情路径。预览中的自定义表情 token 会按 `emoji.game-link.label-format` 格式化，较长预览会按 `max-length` 使用 `…` 省略；设为 `0` 可关闭预览专用截断。
+预览文本会经过与普通 Web 消息相同的 Web→游戏自定义表情处理。使用默认 token 保留设置时，自定义表情 token 会保持不变；明确启用 `emoji.game-link.enabled` 时，会应用所选的 game-link mode。较长预览会按 `max-length` 使用 `…` 省略；设为 `0` 可关闭预览专用截断。
 
-`game-prefix` 控制实际回复消息行的标签/prefix。使用默认 Web 格式时，它会把 `[Web] Player: message` 改为 `[Reply] Player: message`。BlueMapWebChat 会在已经渲染完成的转发行开头附近替换第一个方括号来源标签；如果找不到方括号标签，则会把 prefix 文本加到最前面。同样的回复预览和标签也会应用到 web-to-Discord 转发。
+`game-prefix` 控制实际回复消息行的标签/prefix。使用默认 Web 格式时，它会把 `[Web] Player: message` 改为 `↪ [Reply] Player: message`。BlueMapWebChat 会替换已渲染 relay 行开头附近第一个方括号来源标签；如果找不到这样的标签，则会把 prefix 文本加到前面。
+
+`game-preview.format` 和 `game-prefix.text` 都支持 `&7` 这类 Minecraft legacy 颜色代码。
+
+## Discord 转发选项
+
+```yaml
+discordsrv:
+  append-web-emoji-links: false
+  game-to-discord: false
+  append-game-emoji-links: true
+  max-emoji-links-per-message: 4
+  reply-relay:
+    enabled: false
+    prefix-enabled: true
+    preview-enabled: true
+    preview-max-length: 120
+```
+
+`discordsrv.append-web-emoji-links` 会把 BM Web Chat 自定义表情 token 的图片 URL 附加到 Web→Discord 消息中。`discordsrv.append-game-emoji-links` 会在可能的情况下编辑 DiscordSRV 的普通 Minecraft→Discord 转发消息，为游戏侧 token 附加图片 URL。可选的 `discordsrv.game-to-discord` 是让 BM Web Chat 直接把游戏聊天发送到 Discord 的功能；如果 DiscordSRV 已经在转发普通 Minecraft 聊天，请保持关闭以避免重复消息。这些设置与只影响 Web→Minecraft 聊天的 `emoji.game-link.*` 分离。
+
+`discordsrv.reply-relay` 控制是否也把 Web 回复预览发送到 Discord。默认关闭，以避免 Discord 消息出现类似额外评论的行。
 
 ## 置顶消息
 
@@ -142,18 +173,23 @@ player-display:
 
 ## 自定义表情与游戏侧表情插件
 
-BlueMapWebChat 将自定义表情保存到 `plugins/BlueMapWebChat/emojis`。子文件夹会作为表情包处理。
+BlueMapWebChat 会把自定义表情文件保存到 `plugins/BlueMapWebChat/emojis`。子文件夹会作为表情包处理。
 
-`emoji.game-link.mode` 只支持 `link` 和 `label`。
+默认情况下，`emoji.game-link.enabled` 为 `false`，因此 Web→游戏消息会保留 `:pack/name:`、`:emoji:pack/name:` 这样的自定义表情 token。若 ImageEmojis 或其他游戏侧表情插件会在 Minecraft 聊天中渲染 token，请使用这个默认行为。
 
-- `link`: 发送 `label-format` 文本以及 BM Web Chat 的短图片链接。
+当 `emoji.game-link.enabled` 为 `true` 时，`emoji.game-link.mode` 支持 `preserve`、`link` 和 `label`。
+
+- `preserve`: 即使 game-link 已启用，也强制保持 token 不变。
+- `link`: 发送 `label-format` 文本，并附加一个短 BM Web Chat 图片链接。
 - `label`: 只发送 `label-format` 文本。
 
-BM Web Chat 不会直接调用 ImageEmojis 或其他游戏侧表情插件，也不会读取资源包或生成的 glyph。如果外部游戏侧表情插件使用相同的 token 文本，它可以在 Minecraft 聊天中渲染该 token。
+`emoji.game-link.*` 只影响 Web→Minecraft 聊天。Discord 图片预览链接分别由 Web→Discord 的 `discordsrv.append-web-emoji-links` 和 Game→Discord 的 `discordsrv.append-game-emoji-links` 控制。`append-game-emoji-links` 会在可能的情况下编辑 DiscordSRV 的普通 Minecraft→Discord 转发消息；只有当你希望 BM Web Chat 直接发送游戏聊天到 Discord 时才需要 `game-to-discord`。
 
-`plain-broadcast-with-urls` 控制同一条消息同时包含自定义表情 token 和 URL 时的处理方式。默认值 `true` 会先把原始行作为 plain Bukkit 聊天发送，让游戏侧表情插件渲染 token，然后把每个 URL 再作为单独的可点击引用行发送。无论表情在 URL 前还是后，都会按同样方式处理。
+BM Web Chat 不会直接调用 ImageEmojis 或其他游戏侧表情插件，也不会读取资源包或生成的 glyph。它会保留 token 文本，并尽量在 ImageEmojis 之前加载，以便在游戏侧渲染前捕获原始聊天文本。
 
-`default-pack` 和 `aliases` 用于把较短的游戏侧 token 映射到 BM Web Chat 的 pack/name id。例如：
+当 token 保留行为生效且同一行中也包含 URL 时，BM Web Chat 会保留为一行 plain Minecraft 聊天，而不会重复发送 URL 引用行。这样游戏侧表情插件仍然可以读取原始 token 文本。
+
+`default-pack` 和 `aliases` 可用于把扁平的游戏侧 token 映射回 BM Web Chat 的 pack/name id。例如：
 
 ```yaml
 emoji:
@@ -163,7 +199,7 @@ emoji:
       wave: "default/wave"
 ```
 
-GIF/JPG/JPEG/WEBP 表情原始文件会自动在同一文件夹生成 PNG sidecar，以兼容只能读取 PNG 的游戏侧表情插件。Web UI 会继续使用原始文件，因此 GIF 动画会保留。
+GIF/JPG/JPEG/WEBP 表情原文件会自动获得同文件夹 PNG sidecar，以兼容只读取 PNG 文件的游戏侧表情插件。Web UI 会继续使用原始文件，因此 GIF 动画会保留。
 
 ## 命令面板
 
