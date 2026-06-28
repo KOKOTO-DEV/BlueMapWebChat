@@ -36,6 +36,7 @@ web:
     moveUp: 위로 이동
     moveDown: 아래로 이동
     commands: 명령어
+    search: 검색
     pip: PIP
     run: 실행
     jumpLatest: 최신 메시지로 이동
@@ -137,6 +138,26 @@ web:
     tabLogin: 로그인
     tabLink: 연동
     description: 이미 연동한 계정으로 로그인합니다.
+  search:
+    title: 메시지 검색
+    placeholder: 메시지 내용 또는 작성자 검색
+    searching: 검색 중...
+    noResults: 일치하는 메시지가 없습니다.
+    resultCount: '{count}개 결과'
+    failed: 검색 실패.
+    options: 옵션
+    from: 시작
+    to: 종료
+    sender: 작성자
+    senderPlaceholder: 작성자 선택 입력
+    source: 출처
+    sourceAll: 전체
+    sourceGame: 게임
+    sourceWeb: 웹
+    sourceDiscord: Discord
+    sourceSystem: 시스템/이벤트
+    includeSystem: 시스템/이벤트 메시지 포함
+    enterQueryOrFilter: 검색어를 입력하거나 옵션을 하나 이상 선택하세요.
   link:
     description: 게임 안에서 아래 명령어를 입력하세요.
     commandHint: /bmchat auth <code>

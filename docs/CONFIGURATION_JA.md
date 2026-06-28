@@ -68,11 +68,14 @@ emoji:
 - 先頭 `/` のない相対値、例: `bmwc/api`、`bmwc/api/uploads`、`bmwc/api/emojis` は、`http.cors-origin` が実際の origin のときその origin を前に付けます。`cors-origin: "*"` の場合は `/bmwc/api...` のような同一 origin の絶対パスとして扱います。
 - `https://map.example.com/bmwc/api` のような完全 URL はそのまま使います。
 
+## チャット履歴保存
+
+チャット履歴は `chat.history-storage` で `memory`、`jsonl`、`sqlite` のいずれかを選びます。`chat.history-size` と `chat.history-retention-days` は 3 つのモードで共通です。`0` は件数/期間の制限なしを意味します。`chat.history-file` は JSONL のみ、`chat.history-sqlite-file` は SQLite のみで使われます。
+
 ## 0 が無制限/最大値なしを意味する項目
 
 - `chat.history-size`
 - `chat.history-retention-days`
-- `chat.history-persist-retention-days`
 - `chat.history-page-size`
 - `chat.max-message-length`
 - `chat.max-url-message-length`
@@ -328,3 +331,7 @@ ui:
 
 
 管理者向けカスタム絵文字メモ: 絵文字ファイル名またはフォルダー名を変更すると `:emoji:pack/name:` トークンも変わります。古いトークンを含む既存メッセージは、古いファイル/フォルダー名を残さない限り表示されなくなる場合があります。
+
+## メッセージ検索
+
+保存履歴が有効な場合、チャットパネル右上のフローティング領域の虫眼鏡ボタンと `/history/search` API でメッセージ本文と送信者を検索できます。検索オプションでは日付/時刻範囲、送信者、ソース、システム/イベントの含有を指定できます。検索結果はスクロール可能な一覧で表示され、チャットのテーマとフォント設定に従います。検索結果をクリックすると、既存の周辺履歴読み込みで該当メッセージへ移動します。i18n キー付きのシステム／イベントメッセージは、可能な場合は要求された Web UI 言語で検索・表示されます。 検索は `search.enabled` で有効/無効を切り替えられ、`search.result-limit` だけで Web UI の結果数と `/history/search` API の上限を制御します。別の内部最大値はなく、2000 に設定すれば最大 2000 件、10 に設定すれば最大 10 件を返します。10000 や 100000 のような非常に大きい値も受け付けますが、検索速度の低下、応答サイズの増加、CPU・メモリ・DB 負荷の増加につながる可能性があります。既定値は 50 で、通常利用では 50〜200 を推奨します。既存の config.yml にはこれらの項目を手動で追加するか、既定設定とマージしてください。

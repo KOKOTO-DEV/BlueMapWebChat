@@ -62,6 +62,7 @@
     themeSyncTimer: null,
     loginModalOpen: false,
     prefsModalOpen: false,
+    searchModalOpen: false,
     lastLoginButtonActivateAt: 0,
     dragStart: null,
     messages: [],
@@ -2861,7 +2862,7 @@
             <button class="bmwc-button" id="bmwc-min">_</button>
           </div>
         </div>
-        <div class="bmwc-pinned-bar bmwc-hidden" id="bmwc-pinned-bar" data-open-pins="1">
+        <div class="bmwc-pinned-bar bmwc-hidden" id="bmwc-pinned-bar">
           <button class="bmwc-pinned-open" id="bmwc-pinned-open" type="button" data-open-pins="1">
             <span class="bmwc-pinned-icon">📌</span>
             <span id="bmwc-pinned-label">${t("pinned.count", "Pinned messages: {count}").replace("{count}", "0")}</span>
@@ -2876,6 +2877,7 @@
           <span class="bmwc-jump-latest-icon">↓</span>
           <span id="bmwc-jump-latest-label">${t("button.jumpLatest", "Jump to latest")}</span>
         </button>
+        <button class="bmwc-button bmwc-search-button bmwc-search-float bmwc-hidden" id="bmwc-search-open" type="button" title="${t("button.search", "Search")}" aria-label="${t("button.search", "Search")}">⌕</button>
         <div class="bmwc-emoji-resize-handle bmwc-hidden" id="bmwc-emoji-resize" title="${t("button.resizeEmojiPanel", "Drag to resize emoji picker")}" aria-label="${t("button.resizeEmojiPanel", "Drag to resize emoji picker")}"></div>
         <div class="bmwc-form">
           <div class="bmwc-row" id="bmwc-guest-row">
@@ -2939,6 +2941,12 @@
     const jumpLatest = document.getElementById("bmwc-jump-latest");
     if (jumpLatest) jumpLatest.addEventListener("click", () => {
       forceLatestChatView("jump-latest");
+    });
+    const searchOpen = document.getElementById("bmwc-search-open");
+    if (searchOpen) searchOpen.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!state.minimized) openSearchModal();
     });
     const commandBtn = document.getElementById("bmwc-command");
     if (commandBtn) commandBtn.addEventListener("click", () => openCommandModal());
@@ -8105,15 +8113,29 @@
   }
 
   function renderPinnedBar() {
+    const root = document.getElementById("bmwc-root");
     const bar = document.getElementById("bmwc-pinned-bar");
     const opener = document.getElementById("bmwc-pinned-open");
     const label = document.getElementById("bmwc-pinned-label");
+    const search = document.getElementById("bmwc-search-open");
     if (!bar || !label) return;
     const count = Array.isArray(state.pins) ? state.pins.length : 0;
-    const visible = canViewPinnedMessages() && state.pinsEnabled !== false && count > 0 && !state.minimized;
-    bar.classList.toggle("bmwc-hidden", !visible);
-    if (!visible) return;
-    const rootWidth = document.getElementById("bmwc-root")?.getBoundingClientRect().width || window.innerWidth || 999;
+    const pinsVisible = canViewPinnedMessages() && state.pinsEnabled !== false && count > 0 && !state.minimized;
+    const searchVisible = searchEnabled() && !state.minimized && !guestChatHidden();
+    bar.classList.toggle("bmwc-hidden", !pinsVisible);
+    if (root) root.classList.toggle("bmwc-has-pinned-bar", !!pinsVisible);
+    if (opener) opener.classList.toggle("bmwc-hidden", !pinsVisible);
+    if (search) search.classList.toggle("bmwc-hidden", !searchVisible);
+    if (!pinsVisible) {
+      if (label) {
+        label.textContent = "";
+        label.title = "";
+      }
+      if (opener) opener.title = "";
+      bar.title = "";
+      return;
+    }
+    const rootWidth = root?.getBoundingClientRect().width || window.innerWidth || 999;
     // Default chat width is around 372px, so do not collapse to a plain count there.
     // Only use compact count when the bar is truly too narrow to show a useful title.
     const compact = rootWidth < 260;
@@ -9254,6 +9276,225 @@
     postFrame("openUserPreferences", payload);
   }
 
+
+
+  function searchResultPreviewText(msg) {
+    const text = plainLegacyText(plainDisplayMessageText(msg)).replace(/\s+/g, " ").trim();
+    if (text.length <= 180) return text;
+    return text.slice(0, 177) + "...";
+  }
+
+  function renderSearchResults(container, messages) {
+    if (!container) return;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      container.innerHTML = `<div class="bmwc-search-status">${t("search.noResults", "No matching messages.")}</div>`;
+      return;
+    }
+    container.innerHTML = messages.map(msg => {
+      const id = esc(msg.id || "");
+      const sender = esc(stripMinecraftColorCodes(displaySender(msg) || ""));
+      const time = esc(formatMessageTime(msg.time || Date.now()));
+      const source = esc(msg.source || "");
+      const preview = esc(searchResultPreviewText(msg));
+      return `<button type="button" class="bmwc-search-result" data-id="${id}">
+        <span class="bmwc-search-result-meta"><strong>${sender}</strong> <span>${time}</span> <span>${source}</span></span>
+        <span class="bmwc-search-result-preview">${preview}</span>
+      </button>`;
+    }).join("");
+  }
+
+  function applySearchModalTheme(backdrop) {
+    const root = document.getElementById("bmwc-root");
+    if (!root || !backdrop) return;
+    const cs = getComputedStyle(root);
+    const vars = [
+      "--bmwc-font-size", "--bmwc-message-font-size", "--bmwc-input-font-size", "--bmwc-button-font-size",
+      "--bmwc-text-color", "--bmwc-muted-color", "--bmwc-border-color", "--bmwc-button-text",
+      "--bmwc-button-bg", "--bmwc-button-hover-bg", "--bmwc-input-bg", "--bmwc-link-color",
+      "--bmwc-modal-bg-rgb", "--bmwc-panel-opacity", "--bmwc-shadow-color"
+    ];
+    vars.forEach(name => {
+      const value = cs.getPropertyValue(name);
+      if (value) backdrop.style.setProperty(name, value.trim());
+    });
+    backdrop.style.fontFamily = cs.fontFamily || "";
+    ["bmwc-theme-light", "bmwc-theme-dark", "bmwc-theme-system", "bmwc-theme-high-contrast"].forEach(cls => {
+      backdrop.classList.toggle(cls, root.classList.contains(cls));
+    });
+  }
+
+  function currentSearchLanguage() {
+    return String(state.selectedLanguage || localStorage.getItem("bmwc.language") || "").trim();
+  }
+
+  function searchEnabled() {
+    const c = state.config || {};
+    return c.searchEnabled !== false;
+  }
+
+  function configuredSearchResultLimit() {
+    const c = state.config || {};
+    const raw = Number(c.searchResultLimit);
+    const limit = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 50;
+    return Math.max(1, Math.min(500, limit));
+  }
+
+  function searchDateMillis(input) {
+    const raw = String(input && input.value || "").trim();
+    if (!raw) return "";
+    const time = new Date(raw).getTime();
+    return Number.isFinite(time) ? String(time) : "";
+  }
+
+  function searchSourceValue(select) {
+    const value = String(select && select.value || "").trim().toLowerCase();
+    return ["game", "web", "discord", "system"].includes(value) ? value : "";
+  }
+
+  function openSearchModal() {
+    if (!searchEnabled()) return;
+    if (state.searchModalOpen) {
+      const existing = document.querySelector(".bmwc-search-modal-backdrop");
+      const input = existing && existing.querySelector("#bmwc-search-query");
+      if (input) input.focus();
+      return;
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "bmwc-modal-backdrop bmwc-search-modal-backdrop";
+    applySearchModalTheme(wrap);
+    wrap.innerHTML = `
+      <div class="bmwc-modal bmwc-search-modal" role="dialog" aria-modal="true" aria-label="${t("search.title", "Search messages")}">
+        <div class="bmwc-search-head">
+          <h3>${t("search.title", "Search messages")}</h3>
+          <button class="bmwc-button bmwc-search-x" id="bmwc-search-close-x" type="button" aria-label="${t("button.close", "Close")}">×</button>
+        </div>
+        <div class="bmwc-search-row">
+          <input class="bmwc-input" id="bmwc-search-query" maxlength="120" placeholder="${t("search.placeholder", "Search message text or sender")}">
+          <button class="bmwc-button" id="bmwc-search-run" type="button">${t("button.search", "Search")}</button>
+        </div>
+        <details class="bmwc-search-options" id="bmwc-search-options">
+          <summary>${t("search.options", "Options")}</summary>
+          <div class="bmwc-search-options-grid">
+            <label><span>${t("search.from", "From")}</span><input class="bmwc-input" id="bmwc-search-from" type="datetime-local"></label>
+            <label><span>${t("search.to", "To")}</span><input class="bmwc-input" id="bmwc-search-to" type="datetime-local"></label>
+            <label><span>${t("search.sender", "Sender")}</span><input class="bmwc-input" id="bmwc-search-sender" maxlength="64" placeholder="${t("search.senderPlaceholder", "Optional sender")}"></label>
+            <label><span>${t("search.source", "Source")}</span><select class="bmwc-input" id="bmwc-search-source">
+              <option value="">${t("search.sourceAll", "All")}</option>
+              <option value="game">${t("search.sourceGame", "Game")}</option>
+              <option value="web">${t("search.sourceWeb", "Web")}</option>
+              <option value="discord">${t("search.sourceDiscord", "Discord")}</option>
+              <option value="system">${t("search.sourceSystem", "System/Event")}</option>
+            </select></label>
+          </div>
+          <label class="bmwc-search-check"><input id="bmwc-search-include-system" type="checkbox" checked> <span>${t("search.includeSystem", "Include system/event messages")}</span></label>
+        </details>
+        <div class="bmwc-search-status" id="bmwc-search-status"></div>
+        <div class="bmwc-search-results" id="bmwc-search-results"></div>
+        <div class="bmwc-search-footer">
+          <button class="bmwc-button" id="bmwc-search-close" type="button">${t("button.close", "Close")}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+    state.searchModalOpen = true;
+
+    const input = wrap.querySelector("#bmwc-search-query");
+    const run = wrap.querySelector("#bmwc-search-run");
+    const close = wrap.querySelector("#bmwc-search-close");
+    const closeX = wrap.querySelector("#bmwc-search-close-x");
+    const status = wrap.querySelector("#bmwc-search-status");
+    const results = wrap.querySelector("#bmwc-search-results");
+    const fromInput = wrap.querySelector("#bmwc-search-from");
+    const toInput = wrap.querySelector("#bmwc-search-to");
+    const senderInput = wrap.querySelector("#bmwc-search-sender");
+    const sourceSelect = wrap.querySelector("#bmwc-search-source");
+    const includeSystemInput = wrap.querySelector("#bmwc-search-include-system");
+
+    const closeModal = () => {
+      if (wrap.parentNode) wrap.remove();
+      state.searchModalOpen = false;
+    };
+
+    const stopMapEvent = event => {
+      event.stopPropagation();
+    };
+    ["click", "dblclick", "mousedown", "mouseup", "pointerdown", "pointerup", "pointermove", "touchstart", "touchmove", "touchend", "wheel", "keydown", "keyup", "keypress"].forEach(type => {
+      wrap.addEventListener(type, stopMapEvent, false);
+    });
+    wrap.addEventListener("click", event => {
+      if (event.target === wrap) closeModal();
+    });
+
+    const doSearch = async () => {
+      const query = String(input && input.value || "").trim();
+      const from = searchDateMillis(fromInput);
+      const to = searchDateMillis(toInput);
+      const sender = String(senderInput && senderInput.value || "").trim();
+      const source = searchSourceValue(sourceSelect);
+      const includeSystem = !includeSystemInput || includeSystemInput.checked;
+      const hasFilter = !!(from || to || sender || source || !includeSystem);
+      if (!query && !hasFilter) {
+        if (results) results.innerHTML = "";
+        if (status) status.textContent = t("search.enterQueryOrFilter", "Enter a search term or choose at least one option.");
+        if (input) input.focus();
+        return;
+      }
+      if (status) status.textContent = t("search.searching", "Searching...");
+      if (results) results.innerHTML = "";
+      if (run) run.disabled = true;
+      try {
+        const lang = currentSearchLanguage();
+        const limit = configuredSearchResultLimit();
+        const params = new URLSearchParams();
+        if (query) params.set("q", query);
+        params.set("limit", String(limit));
+        if (lang) params.set("lang", lang);
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
+        if (sender) params.set("sender", sender);
+        if (source) params.set("source", source);
+        if (!includeSystem) params.set("includeSystem", "false");
+        const data = await api(`/history/search?${params.toString()}`, {timeoutMs: 15000});
+        const messages = Array.isArray(data && data.messages) ? data.messages : [];
+        if (status) status.textContent = messages.length ? fmt("search.resultCount", "{count} results", {count: messages.length}) : "";
+        renderSearchResults(results, messages);
+      } catch (_) {
+        if (status) status.textContent = t("search.failed", "Search failed.");
+      } finally {
+        if (run) run.disabled = false;
+      }
+    };
+
+    if (run) run.addEventListener("click", doSearch);
+    if (close) close.addEventListener("click", closeModal);
+    if (closeX) closeX.addEventListener("click", closeModal);
+    [input, fromInput, toInput, senderInput].forEach(el => {
+      if (!el) return;
+      el.addEventListener("keydown", event => {
+        if (event.key === "Enter" && !event.isComposing) {
+          event.preventDefault();
+          doSearch();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          closeModal();
+        }
+      });
+    });
+    if (sourceSelect) sourceSelect.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeModal();
+      }
+    });
+    if (results) results.addEventListener("click", event => {
+      const item = event.target && event.target.closest ? event.target.closest(".bmwc-search-result[data-id]") : null;
+      if (!item) return;
+      const id = item.dataset.id || "";
+      closeModal();
+      if (id) jumpToReplyTarget(id);
+    });
+    setTimeout(() => { if (input) input.focus(); }, 0);
+  }
 
   function openLoginModal() {
     if (state.minimized) {

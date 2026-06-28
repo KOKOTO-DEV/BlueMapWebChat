@@ -33,10 +33,13 @@ public class ConfigValues {
 
     public int historySize;
     public int historyRetentionDays;
-    public int historyPersistRetentionDays;
-    public boolean historyPersist;
+    public String historyStorage;
     public String historyFile;
+    public String historySqliteFile;
+    public boolean historySqliteMigrateJsonl;
     public int historyPageSize;
+    public boolean searchEnabled;
+    public int searchResultLimit;
     public int maxMessageLength;
     public int maxUrlMessageLength;
     public String webUserToGameFormat;
@@ -316,11 +319,18 @@ public class ConfigValues {
         v.historySize = c.getInt("chat.history-size", 1000);
         v.historyRetentionDays = c.getInt("chat.history-retention-days", 5);
         if (v.historyRetentionDays < 0) v.historyRetentionDays = 0;
-        v.historyPersistRetentionDays = c.getInt("chat.history-persist-retention-days", 5);
-        if (v.historyPersistRetentionDays < 0) v.historyPersistRetentionDays = 0;
-        v.historyPersist = c.getBoolean("chat.history-persist", false);
+        String configuredHistoryStorage = c.getString("chat.history-storage", "sqlite");
+        configuredHistoryStorage = configuredHistoryStorage == null ? "sqlite" : configuredHistoryStorage.trim().toLowerCase(Locale.ROOT);
+        if (configuredHistoryStorage.equals("memory") || configuredHistoryStorage.equals("none")) configuredHistoryStorage = "memory";
+        else if (configuredHistoryStorage.equals("json") || configuredHistoryStorage.equals("jsonl") || configuredHistoryStorage.equals("file")) configuredHistoryStorage = "jsonl";
+        else configuredHistoryStorage = "sqlite";
+        v.historyStorage = configuredHistoryStorage;
         v.historyFile = c.getString("chat.history-file", "history.jsonl");
+        v.historySqliteFile = c.getString("chat.history-sqlite-file", "history.db");
+        v.historySqliteMigrateJsonl = c.getBoolean("chat.history-sqlite-migrate-jsonl", true);
         v.historyPageSize = Math.max(0, c.getInt("chat.history-page-size", 80));
+        v.searchEnabled = c.getBoolean("search.enabled", true);
+        v.searchResultLimit = Math.max(1, c.getInt("search.result-limit", 50));
         v.maxMessageLength = Math.max(0, c.getInt("chat.max-message-length", 120));
         v.maxUrlMessageLength = Math.max(0, c.getInt("chat.max-url-message-length", 2048));
         if (v.maxMessageLength > 0 && v.maxUrlMessageLength > 0 && v.maxUrlMessageLength < v.maxMessageLength) v.maxUrlMessageLength = v.maxMessageLength;

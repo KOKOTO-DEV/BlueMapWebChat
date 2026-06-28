@@ -39,6 +39,7 @@ public class WebChatServer {
     private final CaptchaManager captcha;
     private final RateLimiter rateLimiter = new RateLimiter();
     private final Deque<ChatMessage> history = new ArrayDeque<>();
+    private SqliteHistoryStore sqliteHistory;
     private final Set<SseClient> clients = ConcurrentHashMap.newKeySet();
     private static final Pattern URL_PATTERN = Pattern.compile("(?i)\\b((?:https?://|www\\.)[^\\s<>\"]+)");
     // Keep this aligned with the frontend customEmojiTokenRegex().
@@ -54,6 +55,9 @@ public class WebChatServer {
 
     private HttpServer server;
     private ExecutorService executor;
+    private ExecutorService historyExecutor;
+    private volatile long lastSqlitePruneAt;
+    private int sqliteWritesSincePrune;
     private volatile boolean running;
     private static volatile boolean imageIoPluginsRegistered;
 
@@ -72,6 +76,11 @@ public class WebChatServer {
             t.setDaemon(true);
             return t;
         });
+        historyExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "BlueMapWebChat-History");
+            t.setDaemon(true);
+            return t;
+        });
         server.setExecutor(executor);
 
         if (config.standaloneWebEnabled) {
@@ -83,6 +92,7 @@ public class WebChatServer {
             createApiContexts(apiPrefix);
         }
 
+        initializeHistoryStorage();
         loadPersistedHistory();
         cleanupOldUploads();
         cleanupOldExternalMediaCache();
@@ -99,6 +109,7 @@ public class WebChatServer {
         server.createContext(p + "/lang", this::handleLang);
         server.createContext(p + "/history", this::handleHistory);
         server.createContext(p + "/history/around", this::handleHistoryAround);
+        server.createContext(p + "/history/search", this::handleHistorySearch);
         server.createContext(p + "/pins", this::handlePins);
         server.createContext(p + "/stream", this::handleStream);
         server.createContext(p + "/send", this::handleSend);
@@ -235,6 +246,20 @@ public class WebChatServer {
 
     public void stop() {
         savePersistedHistory();
+        if (historyExecutor != null) {
+            historyExecutor.shutdown();
+            try {
+                if (!historyExecutor.awaitTermination(5, TimeUnit.SECONDS)) historyExecutor.shutdownNow();
+            } catch (InterruptedException ex) {
+                historyExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            historyExecutor = null;
+        }
+        if (sqliteHistory != null) {
+            sqliteHistory.close();
+            sqliteHistory = null;
+        }
         running = false;
         for (SseClient c : clients) {
             c.close();
@@ -474,9 +499,10 @@ public class WebChatServer {
         m.put("maxMessageInputLength", effectiveInputLengthLimit(c));
         m.put("historySize", c.historySize);
         m.put("historyRetentionDays", c.historyRetentionDays);
-        m.put("historyPersistRetentionDays", c.historyPersistRetentionDays);
-        m.put("historyPersist", c.historyPersist);
+        m.put("historyStorage", c.historyStorage);
         m.put("historyPageSize", c.historyPageSize);
+        m.put("searchEnabled", c.searchEnabled);
+        m.put("searchResultLimit", c.searchResultLimit);
         m.put("language", c.uiLanguage);
         m.put("uiTimeZone", c.uiTimeZone);
         m.put("linkifyUrls", c.linkifyUrls);
@@ -581,68 +607,59 @@ public class WebChatServer {
         String oldestId = "";
         String newestId = "";
 
-        boolean pruned;
-        synchronized (history) {
-            pruned = pruneHistoryLocked();
-            List<ChatMessage> all = new ArrayList<>(history);
+        if (sqliteHistoryEnabled()) {
+            SqliteHistoryStore.Page dbPage = sqliteHistory.page(before, after, limit, sqliteCutoffMillis());
+            page.addAll(dbPage.messages);
+            hasBefore = dbPage.hasBefore;
+            hasAfter = dbPage.hasAfter;
+            oldestId = dbPage.oldestId;
+            newestId = dbPage.newestId;
+        } else {
+            boolean pruned;
+            synchronized (history) {
+                pruned = pruneHistoryLocked();
+                List<ChatMessage> all = new ArrayList<>(history);
 
-            int startIndex;
-            int endIndex;
-            if (after != null) {
-                startIndex = all.size();
-                for (int i = 0; i < all.size(); i++) {
-                    if (after.equals(all.get(i).id)) {
-                        startIndex = i + 1;
-                        break;
-                    }
-                }
-                endIndex = limit <= 0 ? all.size() : Math.min(all.size(), startIndex + limit);
-            } else {
-                endIndex = all.size();
-                if (before != null) {
-                    for (int i = all.size() - 1; i >= 0; i--) {
-                        if (before.equals(all.get(i).id)) {
-                            endIndex = i;
+                int startIndex;
+                int endIndex;
+                if (after != null) {
+                    startIndex = all.size();
+                    for (int i = 0; i < all.size(); i++) {
+                        if (after.equals(all.get(i).id)) {
+                            startIndex = i + 1;
                             break;
                         }
                     }
+                    endIndex = limit <= 0 ? all.size() : Math.min(all.size(), startIndex + limit);
+                } else {
+                    endIndex = all.size();
+                    if (before != null) {
+                        for (int i = all.size() - 1; i >= 0; i--) {
+                            if (before.equals(all.get(i).id)) {
+                                endIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                    startIndex = limit <= 0 ? 0 : Math.max(0, endIndex - limit);
                 }
-                startIndex = limit <= 0 ? 0 : Math.max(0, endIndex - limit);
-            }
 
-            startIndex = Math.max(0, Math.min(startIndex, all.size()));
-            endIndex = Math.max(startIndex, Math.min(endIndex, all.size()));
-            for (int i = startIndex; i < endIndex; i++) {
-                page.add(all.get(i));
+                startIndex = Math.max(0, Math.min(startIndex, all.size()));
+                endIndex = Math.max(startIndex, Math.min(endIndex, all.size()));
+                for (int i = startIndex; i < endIndex; i++) page.add(all.get(i));
+                hasBefore = startIndex > 0;
+                hasAfter = endIndex < all.size();
+                if (!page.isEmpty()) {
+                    oldestId = page.get(0).id;
+                    newestId = page.get(page.size() - 1).id;
+                }
             }
-
-            hasBefore = startIndex > 0;
-            hasAfter = endIndex < all.size();
-            if (!page.isEmpty()) {
-                oldestId = page.get(0).id;
-                newestId = page.get(page.size() - 1).id;
-            }
-        }
-
-        if (pruned && config.historyPersist) {
-            savePersistedHistory();
+            if (pruned && legacyJsonlHistoryEnabled()) savePersistedHistory();
         }
 
         List<String> items = new ArrayList<>();
-        for (ChatMessage m : page) {
-            items.add(m.toJson());
-        }
+        for (ChatMessage m : page) items.add(m.toJson());
 
-        Map<String, Object> res = new LinkedHashMap<>();
-        res.put("ok", true);
-        res.put("messages", items);
-        res.put("hasMore", hasBefore);
-        res.put("hasBefore", hasBefore);
-        res.put("hasAfter", hasAfter);
-        res.put("oldestId", oldestId);
-        res.put("newestId", newestId);
-
-        // messages are already JSON strings, so build this response manually.
         sendJson(ex, 200, "{\"ok\":true,\"messages\":[" + String.join(",", items) + "]"
                 + ",\"hasMore\":" + hasBefore
                 + ",\"hasBefore\":" + hasBefore
@@ -670,7 +687,7 @@ public class WebChatServer {
         int before = boundedInt(q.get("before"), 40, 0, 200);
         int after = boundedInt(q.get("after"), 40, 0, 200);
         AroundHistoryResult around = findHistoryAround(targetId, before, after);
-        if (around.pruned && config.historyPersist) {
+        if (around.pruned && legacyJsonlHistoryEnabled()) {
             savePersistedHistory();
         }
         if (around.targetIndex < 0) {
@@ -692,6 +709,62 @@ public class WebChatServer {
                 + ",\"oldestId\":" + JsonUtil.quote(oldestId)
                 + ",\"newestId\":" + JsonUtil.quote(newestId)
                 + "}");
+    }
+
+    private void handleHistorySearch(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.searchEnabled) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"search_disabled\"}");
+            return;
+        }
+
+        Map<String, String> q = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
+        String query = stripControl(q.get("q"), 120).trim();
+        String lang = stripControl(q.get("lang"), 32).trim();
+        Map<String, String> searchStrings = plugin.langManager().webStringsFor(lang);
+        int limit = boundedInt(q.get("limit"), config.searchResultLimit, 1, config.searchResultLimit);
+        long from = searchTimeMillis(q.get("from"), Long.MIN_VALUE);
+        long to = searchTimeMillis(q.get("to"), Long.MAX_VALUE);
+        if (from != Long.MIN_VALUE && to != Long.MAX_VALUE && from > to) {
+            long tmp = from;
+            from = to;
+            to = tmp;
+        }
+        String senderFilter = stripControl(q.get("sender"), 64).trim();
+        String sourceFilter = normalizeSearchSource(q.get("source"));
+        boolean includeSystem = !"false".equalsIgnoreCase(String.valueOf(q.get("includeSystem")));
+        boolean hasFilter = from != Long.MIN_VALUE || to != Long.MAX_VALUE
+                || !senderFilter.isBlank() || !sourceFilter.isBlank() || !includeSystem;
+        if (query.isBlank() && !hasFilter) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"missing_query_or_filter\"}");
+            return;
+        }
+
+        List<ChatMessage> result;
+        if (sqliteHistoryEnabled()) {
+            long cutoff = sqliteCutoffMillis();
+            result = sqliteHistory.search(query, limit, cutoff, from, to, senderFilter, sourceFilter, includeSystem);
+            // SQL can search stored raw text directly. System/event messages may
+            // be persisted with an English fallback plus an i18n key, so add a
+            // second pass over i18n-backed rows using the requested web language.
+            appendSqliteLocalizedSearchMatches(result, query, limit, cutoff, searchStrings, from, to, senderFilter, sourceFilter, includeSystem);
+            // Keep search useful even when the SQLite file has just been created,
+            // migration was skipped, or very recent messages are still only present
+            // in the in-memory cache for this server session.
+            appendMemorySearchMatches(result, query, limit, cutoff, searchStrings, from, to, senderFilter, sourceFilter, includeSystem);
+        } else {
+            result = searchInMemoryAndJsonl(query, limit, searchStrings, from, to, senderFilter, sourceFilter, includeSystem);
+        }
+
+        List<String> items = new ArrayList<>();
+        for (ChatMessage msg : result) items.add(msg.toJson());
+        sendJson(ex, 200, "{\"ok\":true,\"messages\":[" + String.join(",", items) + "]}");
     }
 
     private void handlePins(HttpExchange ex) throws IOException {
@@ -838,15 +911,14 @@ public class WebChatServer {
         ChatMessage msg = new ChatMessage(System.currentTimeMillis(), "web", plugin.displayNameForAccount(ctx.account), ctx.account.role.name(), message)
                 .withRealSender(stripControl(ctx.account.safeUsername(), 64), stripControl(ctx.account.uuid, 64));
         attachReplyIfPresent(msg, replyToId, replyToSender, replyToPreview);
-        sendToGame(msg, ctx.account.role == Role.ADMIN
-                ? plugin.configValues().webAdminToGameFormat
-                : plugin.configValues().webUserToGameFormat);
-        if (plugin.configValues().broadcastWebChatToWeb) {
+        ConfigValues c = plugin.configValues();
+        if (c.broadcastWebChatToWeb) {
             addHistory(msg);
             broadcast(msg);
         }
-        plugin.discordBridge().sendWebMessage(msg);
         sendJson(ex, 200, "{\"ok\":true}");
+        sendToGame(msg, ctx.account.role == Role.ADMIN ? c.webAdminToGameFormat : c.webUserToGameFormat);
+        plugin.discordBridge().sendWebMessage(msg);
     }
 
     private void handleGuestSend(HttpExchange ex, Map<String, String> body, String ip, String message, String replyToId, String replyToSender, String replyToPreview) throws IOException {
@@ -904,14 +976,14 @@ public class WebChatServer {
         prewarmExternalMediaCache(message);
         ChatMessage msg = new ChatMessage(System.currentTimeMillis(), "guest", guestName, "GUEST", message);
         attachReplyIfPresent(msg, replyToId, replyToSender, replyToPreview);
-        sendToGame(msg, config.webGuestToGameFormat);
         if (config.broadcastWebChatToWeb) {
             addHistory(msg);
             broadcast(msg);
         }
-        plugin.discordBridge().sendWebMessage(msg);
         String extra = captchaPass == null ? "" : ",\"captchaPass\":" + JsonUtil.quote(captchaPass);
         sendJson(ex, 200, "{\"ok\":true" + extra + "}");
+        sendToGame(msg, config.webGuestToGameFormat);
+        plugin.discordBridge().sendWebMessage(msg);
     }
 
 
@@ -3160,8 +3232,12 @@ public class WebChatServer {
                 }
             }
         }
+        if (sqliteHistoryEnabled()) {
+            boolean dbOk = sqliteHistory.markHidden(id);
+            ok = ok || dbOk;
+        }
         if (ok) {
-            savePersistedHistory();
+            if (legacyJsonlHistoryEnabled()) savePersistedHistory();
             broadcastEvent("delete", "{\"id\":" + JsonUtil.quote(id) + "}");
         }
         sendJson(ex, 200, "{\"ok\":" + ok + "}");
@@ -3186,6 +3262,10 @@ public class WebChatServer {
                     break;
                 }
             }
+        }
+        if (found == null && sqliteHistoryEnabled()) {
+            ChatMessage dbMsg = sqliteHistory.find(id);
+            if (dbMsg != null && !dbMsg.hidden) found = dbMsg;
         }
         if (found == null) {
             sendJson(ex, 404, "{\"ok\":false,\"error\":\"message_not_found\"}");
@@ -3616,7 +3696,8 @@ public class WebChatServer {
         synchronized (history) {
             history.clear();
         }
-        savePersistedHistory();
+        if (sqliteHistoryEnabled()) sqliteHistory.clear();
+        else savePersistedHistory();
         broadcastEvent("clear", "{\"ok\":true}");
         sendJson(ex, 200, "{\"ok\":true}");
     }
@@ -4228,6 +4309,15 @@ public class WebChatServer {
         AroundHistoryResult result = new AroundHistoryResult();
         if (targetId == null || targetId.isBlank()) return result;
 
+        if (sqliteHistoryEnabled()) {
+            SqliteHistoryStore.AroundPage page = sqliteHistory.around(targetId, before, after, sqliteCutoffMillis());
+            result.messages.addAll(page.messages);
+            result.targetIndex = page.targetIndex;
+            result.hasBefore = page.hasBefore;
+            result.hasAfter = page.hasAfter;
+            return result;
+        }
+
         synchronized (history) {
             result.pruned = pruneHistoryLocked();
             List<ChatMessage> all = new ArrayList<>(history);
@@ -4236,18 +4326,18 @@ public class WebChatServer {
         }
 
         ConfigValues config = plugin.configValues();
-        if (!config.historyPersist) return result;
+        if (!legacyJsonlHistoryEnabled()) return result;
         Path path = historyPath();
         if (!Files.exists(path)) return result;
 
-        long persistCutoff = retentionCutoffMillis(config.historyPersistRetentionDays);
+        long persistCutoff = retentionCutoffMillis(config.historyRetentionDays);
         List<ChatMessage> all = new ArrayList<>();
         try {
             for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
                 if (line == null || line.isBlank()) continue;
                 ChatMessage msg = ChatMessage.fromMap(JsonUtil.parseFlatObject(line));
                 if (msg.message == null || msg.message.isBlank()) continue;
-                if (isOlderThan(msg, persistCutoff)) continue;
+                if (msg.hidden || isOlderThan(msg, persistCutoff)) continue;
                 all.add(msg);
             }
         } catch (IOException ex) {
@@ -4266,7 +4356,7 @@ public class WebChatServer {
         result.hasAfter = false;
         for (int i = 0; i < all.size(); i++) {
             ChatMessage msg = all.get(i);
-            if (msg != null && targetId.equals(msg.id)) {
+            if (msg != null && !msg.hidden && targetId.equals(msg.id)) {
                 result.targetIndex = i;
                 break;
             }
@@ -4278,20 +4368,186 @@ public class WebChatServer {
         result.hasAfter = endExclusive < all.size();
         for (int i = start; i < endExclusive; i++) {
             ChatMessage msg = all.get(i);
-            if (msg != null) result.messages.add(msg);
+            if (msg != null && !msg.hidden) result.messages.add(msg);
         }
     }
 
     private ChatMessage findHistoryMessageById(String id) {
         if (id == null || id.isBlank()) return null;
+        if (sqliteHistoryEnabled()) {
+            ChatMessage msg = sqliteHistory.find(id);
+            if (msg != null) return msg;
+        }
         synchronized (history) {
             for (ChatMessage msg : history) {
-                if (msg != null && id.equals(msg.id)) return msg;
+                if (msg != null && !msg.hidden && id.equals(msg.id)) return msg;
             }
         }
         AroundHistoryResult around = findHistoryAround(id, 0, 0);
         if (around.targetIndex >= 0 && !around.messages.isEmpty()) return around.messages.get(0);
         return null;
+    }
+
+    private void appendMemorySearchMatches(List<ChatMessage> result, String query, int limit, long cutoff, Map<String, String> strings,
+                                           long from, long to, String senderFilter, String sourceFilter, boolean includeSystem) {
+        if (result == null) return;
+        String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
+        int actualLimit = Math.max(1, limit <= 0 ? plugin.configValues().searchResultLimit : limit);
+        if (result.size() >= actualLimit) return;
+        String senderLower = senderFilter == null ? "" : senderFilter.toLowerCase(Locale.ROOT).trim();
+        Set<String> seen = new HashSet<>();
+        for (ChatMessage msg : result) if (msg != null && msg.id != null) seen.add(msg.id);
+        synchronized (history) {
+            List<ChatMessage> all = new ArrayList<>(history);
+            for (int i = all.size() - 1; i >= 0 && result.size() < actualLimit; i--) {
+                ChatMessage msg = all.get(i);
+                if (msg == null || (msg.id != null && seen.contains(msg.id))) continue;
+                if (historySearchMatches(msg, q, cutoff, strings, from, to, senderLower, sourceFilter, includeSystem)) {
+                    result.add(msg);
+                    if (msg.id != null) seen.add(msg.id);
+                }
+            }
+        }
+    }
+
+    private List<ChatMessage> searchInMemoryAndJsonl(String query, int limit, Map<String, String> strings,
+                                                     long from, long to, String senderFilter, String sourceFilter, boolean includeSystem) {
+        List<ChatMessage> result = new ArrayList<>();
+        String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
+        int actualLimit = Math.max(1, limit <= 0 ? plugin.configValues().searchResultLimit : limit);
+        long cutoff = retentionCutoffMillis(plugin.configValues().historyRetentionDays);
+        String senderLower = senderFilter == null ? "" : senderFilter.toLowerCase(Locale.ROOT).trim();
+
+        synchronized (history) {
+            List<ChatMessage> all = new ArrayList<>(history);
+            for (int i = all.size() - 1; i >= 0 && result.size() < actualLimit; i--) {
+                ChatMessage msg = all.get(i);
+                if (historySearchMatches(msg, q, cutoff, strings, from, to, senderLower, sourceFilter, includeSystem)) result.add(msg);
+            }
+        }
+        if (result.size() >= actualLimit || !legacyJsonlHistoryEnabled()) return result;
+
+        Path path = historyPath();
+        if (!Files.exists(path)) return result;
+        Set<String> seen = new HashSet<>();
+        for (ChatMessage msg : result) if (msg.id != null) seen.add(msg.id);
+        try {
+            List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+            for (int i = lines.size() - 1; i >= 0 && result.size() < actualLimit; i--) {
+                String line = lines.get(i);
+                if (line == null || line.isBlank()) continue;
+                ChatMessage msg = ChatMessage.fromMap(JsonUtil.parseFlatObject(line));
+                if (msg.id != null && seen.contains(msg.id)) continue;
+                if (historySearchMatches(msg, q, cutoff, strings, from, to, senderLower, sourceFilter, includeSystem)) {
+                    result.add(msg);
+                    if (msg.id != null) seen.add(msg.id);
+                }
+            }
+        } catch (IOException ex) {
+            plugin.getLogger().warning("Failed to search JSONL chat history " + path + ": " + ex.getMessage());
+        }
+        return result;
+    }
+
+    private void appendSqliteLocalizedSearchMatches(List<ChatMessage> result, String query, int limit, long cutoff, Map<String, String> strings,
+                                                    long from, long to, String senderFilter, String sourceFilter, boolean includeSystem) {
+        if (result == null) return;
+        String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
+        int actualLimit = Math.max(1, limit <= 0 ? plugin.configValues().searchResultLimit : limit);
+        if (result.size() >= actualLimit) return;
+        String senderLower = senderFilter == null ? "" : senderFilter.toLowerCase(Locale.ROOT).trim();
+        Set<String> seen = new HashSet<>();
+        for (ChatMessage msg : result) if (msg != null && msg.id != null) seen.add(msg.id);
+        for (ChatMessage msg : sqliteHistory.i18nSearchCandidates(cutoff, actualLimit, from, to, sourceFilter, includeSystem)) {
+            if (result.size() >= actualLimit) break;
+            if (msg == null || (msg.id != null && seen.contains(msg.id))) continue;
+            if (historySearchMatches(msg, q, cutoff, strings, from, to, senderLower, sourceFilter, includeSystem)) {
+                result.add(msg);
+                if (msg.id != null) seen.add(msg.id);
+            }
+        }
+    }
+
+    private boolean historySearchMatches(ChatMessage msg, String queryLower, long cutoff, Map<String, String> strings,
+                                         long from, long to, String senderLower, String sourceFilter, boolean includeSystem) {
+        if (msg == null || msg.hidden || isOlderThan(msg, cutoff)) return false;
+        if (!historyFilterMatches(msg, from, to, senderLower, sourceFilter, includeSystem)) return false;
+        if (queryLower == null || queryLower.isBlank()) return true;
+        String haystack = (String.valueOf(msg.sender == null ? "" : msg.sender) + "\n"
+                + String.valueOf(msg.realSender == null ? "" : msg.realSender) + "\n"
+                + String.valueOf(msg.message == null ? "" : msg.message) + "\n"
+                + localizedMessageText(msg, strings) + "\n"
+                + localizedSenderText(msg, strings) + "\n"
+                + localizedSourceText(msg, strings)).toLowerCase(Locale.ROOT);
+        return haystack.contains(queryLower);
+    }
+
+    private boolean historyFilterMatches(ChatMessage msg, long from, long to, String senderLower, String sourceFilter, boolean includeSystem) {
+        if (msg == null) return false;
+        if (from != Long.MIN_VALUE && msg.time < from) return false;
+        if (to != Long.MAX_VALUE && msg.time > to) return false;
+        String source = String.valueOf(msg.source == null ? "" : msg.source).toLowerCase(Locale.ROOT).trim();
+        if (!includeSystem && isSystemLikeSource(source)) return false;
+        String normalizedSource = normalizeSearchSource(sourceFilter);
+        if (!normalizedSource.isBlank()) {
+            if ("system".equals(normalizedSource)) {
+                if (!isSystemLikeSource(source)) return false;
+            } else if (!normalizedSource.equals(source)) {
+                return false;
+            }
+        }
+        if (senderLower != null && !senderLower.isBlank()) {
+            String senderHaystack = (String.valueOf(msg.sender == null ? "" : msg.sender) + "\n"
+                    + String.valueOf(msg.realSender == null ? "" : msg.realSender)).toLowerCase(Locale.ROOT);
+            if (!senderHaystack.contains(senderLower)) return false;
+        }
+        return true;
+    }
+
+    private boolean isSystemLikeSource(String source) {
+        String s = source == null ? "" : source.toLowerCase(Locale.ROOT).trim();
+        return s.equals("system") || s.equals("event") || s.equals("server");
+    }
+
+    private String localizedMessageText(ChatMessage msg, Map<String, String> strings) {
+        if (msg == null) return "";
+        if (msg.hidden) return stringValue(strings, "message.deleted", "[deleted]");
+        String fallback = String.valueOf(msg.message == null ? "" : msg.message);
+        String key = String.valueOf(msg.i18nKey == null ? "" : msg.i18nKey).trim();
+        if (key.isBlank()) return fallback;
+        String value = stringValue(strings, key, fallback);
+        Map<String, String> vars = JsonUtil.parseFlatObject(msg.i18nArgs);
+        for (Map.Entry<String, String> entry : vars.entrySet()) {
+            value = value.replace("{" + entry.getKey() + "}", entry.getValue() == null ? "" : entry.getValue());
+        }
+        return value;
+    }
+
+    private String localizedSenderText(ChatMessage msg, Map<String, String> strings) {
+        if (msg == null) return "";
+        String source = String.valueOf(msg.source == null ? "" : msg.source).toLowerCase(Locale.ROOT);
+        String sender = String.valueOf(msg.sender == null ? "" : msg.sender);
+        String senderKey = sender.toLowerCase(Locale.ROOT);
+        if (source.equals("event") || source.equals("system") || source.equals("server")) {
+            if (senderKey.equals("server")) return stringValue(strings, "sender.server", "Server");
+            if (senderKey.equals("command")) return stringValue(strings, "sender.command", "Command");
+            if (senderKey.equals("system")) return stringValue(strings, "sender.system", "System");
+        }
+        if (source.equals("discord") && senderKey.equals("discord")) return stringValue(strings, "sender.discord", "Discord");
+        return sender;
+    }
+
+    private String localizedSourceText(ChatMessage msg, Map<String, String> strings) {
+        String source = String.valueOf(msg == null || msg.source == null ? "" : msg.source).toLowerCase(Locale.ROOT);
+        return source.isBlank() ? "" : stringValue(strings, "source." + source, source);
+    }
+
+    private String stringValue(Map<String, String> strings, String key, String fallback) {
+        if (strings != null && key != null) {
+            String value = strings.get(key);
+            if (value != null) return value;
+        }
+        return fallback == null ? "" : fallback;
     }
 
     private String messageReplyPreview(ChatMessage msg) {
@@ -4336,13 +4592,48 @@ public class WebChatServer {
         }
 
         ConfigValues config = plugin.configValues();
-        if (config.historyPersist) {
-            if (pruned || config.historySize > 0 || config.historyRetentionDays > 0) {
-                savePersistedHistory();
-            } else {
-                appendPersistedHistory(msg);
-            }
+        if (sqliteHistoryEnabled()) {
+            enqueueSqliteHistoryWrite(msg, config);
+        } else if (legacyJsonlHistoryEnabled()) {
+            if (pruned || config.historySize > 0 || config.historyRetentionDays > 0) savePersistedHistory();
+            else appendPersistedHistory(msg);
         }
+    }
+
+    private void enqueueSqliteHistoryWrite(ChatMessage msg, ConfigValues config) {
+        if (msg == null || sqliteHistory == null) return;
+        ExecutorService worker = historyExecutor;
+        Runnable task = () -> {
+            SqliteHistoryStore store = sqliteHistory;
+            if (store == null) return;
+            store.insert(msg);
+            if (shouldPruneSqliteHistory(config)) {
+                store.prune(config == null ? 0 : config.historySize, sqliteCutoffMillis());
+            }
+        };
+        if (worker == null || worker.isShutdown()) {
+            task.run();
+            return;
+        }
+        try {
+            worker.execute(task);
+        } catch (RejectedExecutionException ex) {
+            task.run();
+        }
+    }
+
+    private synchronized boolean shouldPruneSqliteHistory(ConfigValues config) {
+        long now = System.currentTimeMillis();
+        int writes = ++sqliteWritesSincePrune;
+        boolean countLimited = config != null && config.historySize > 0;
+        boolean retentionLimited = config != null && config.historyRetentionDays > 0;
+        if (!countLimited && !retentionLimited) return false;
+        if (writes >= 100 || lastSqlitePruneAt <= 0 || now - lastSqlitePruneAt >= 60_000L) {
+            sqliteWritesSincePrune = 0;
+            lastSqlitePruneAt = now;
+            return true;
+        }
+        return false;
     }
 
     private long retentionCutoffMillis(int retentionDays) {
@@ -4366,15 +4657,57 @@ public class WebChatServer {
             }
         }
 
-        // history-size: 0 means unlimited by count.
-        if (config.historySize > 0) {
-            while (history.size() > config.historySize) {
+        // history-size: 0 means unlimited by count for persisted storage.
+        // SQLite still keeps a bounded in-memory cache so long-lived logs do not
+        // grow the server heap indefinitely during one server session.
+        int memoryLimit = config.historySize > 0 ? config.historySize : (sqliteHistoryEnabled() ? sqliteMemoryCacheLimit() : 0);
+        if (memoryLimit > 0) {
+            while (history.size() > memoryLimit) {
                 history.removeFirst();
                 changed = true;
             }
         }
 
         return changed;
+    }
+
+    private boolean sqliteHistoryEnabled() {
+        return sqliteHistory != null && "sqlite".equalsIgnoreCase(String.valueOf(plugin.configValues().historyStorage));
+    }
+
+    private boolean legacyJsonlHistoryEnabled() {
+        ConfigValues config = plugin.configValues();
+        return !sqliteHistoryEnabled() && "jsonl".equalsIgnoreCase(String.valueOf(config.historyStorage));
+    }
+
+    private long sqliteCutoffMillis() {
+        ConfigValues config = plugin.configValues();
+        return retentionCutoffMillis(config == null ? 0 : config.historyRetentionDays);
+    }
+
+    private Path sqliteHistoryPath() {
+        ConfigValues config = plugin.configValues();
+        String file = config.historySqliteFile == null || config.historySqliteFile.isBlank() ? "history.db" : config.historySqliteFile.trim();
+        Path path = Path.of(file);
+        if (!path.isAbsolute()) path = plugin.getDataFolder().toPath().resolve(path);
+        return path.normalize();
+    }
+
+    private void initializeHistoryStorage() {
+        ConfigValues config = plugin.configValues();
+        if (!"sqlite".equalsIgnoreCase(String.valueOf(config.historyStorage))) return;
+        try {
+            sqliteHistory = SqliteHistoryStore.open(plugin, sqliteHistoryPath());
+            if (config.historySqliteMigrateJsonl) {
+                int migrated = sqliteHistory.migrateJsonlIfEmpty(historyPath(), sqliteCutoffMillis(), config.historySize);
+                if (migrated > 0) plugin.getLogger().info("Migrated " + migrated + " JSONL chat history messages to SQLite: " + sqliteHistory.path());
+            }
+            sqliteHistory.prune(config.historySize, sqliteCutoffMillis());
+            plugin.getLogger().info("Using SQLite chat history: " + sqliteHistory.path());
+        } catch (Exception ex) {
+            sqliteHistory = null;
+            plugin.getLogger().warning("Failed to open SQLite chat history. Falling back to in-memory/JSONL history: " + ex.getMessage());
+        }
     }
 
     private Path historyPath() {
@@ -4391,14 +4724,24 @@ public class WebChatServer {
 
     private void loadPersistedHistory() {
         ConfigValues config = plugin.configValues();
-        if (!config.historyPersist) return;
+        if (sqliteHistoryEnabled()) {
+            SqliteHistoryStore.Page latest = sqliteHistory.latest(sqliteMemoryCacheLimit(), sqliteCutoffMillis());
+            synchronized (history) {
+                history.clear();
+                history.addAll(latest.messages);
+                pruneHistoryLocked();
+            }
+            plugin.getLogger().info("Loaded " + latest.messages.size() + " recent SQLite chat history messages into memory cache.");
+            return;
+        }
+        if (!legacyJsonlHistoryEnabled()) return;
 
         Path path = historyPath();
         if (!Files.exists(path)) return;
 
         int loaded = 0;
         int skippedExpired = 0;
-        long persistCutoff = retentionCutoffMillis(config.historyPersistRetentionDays);
+        long persistCutoff = retentionCutoffMillis(config.historyRetentionDays);
         synchronized (history) {
             history.clear();
             try {
@@ -4422,9 +4765,15 @@ public class WebChatServer {
         plugin.getLogger().info("Loaded " + loaded + " persisted web chat history messages" + (skippedExpired > 0 ? " and pruned " + skippedExpired + " expired persisted messages." : "."));
     }
 
+    private int sqliteMemoryCacheLimit() {
+        ConfigValues config = plugin.configValues();
+        if (config.historySize > 0) return Math.max(100, Math.min(5000, config.historySize));
+        return 1000;
+    }
+
     private void appendPersistedHistory(ChatMessage msg) {
         ConfigValues config = plugin.configValues();
-        if (!config.historyPersist) return;
+        if (!legacyJsonlHistoryEnabled()) return;
         Path path = historyPath();
         try {
             Files.createDirectories(path.getParent());
@@ -4437,11 +4786,11 @@ public class WebChatServer {
 
     private void savePersistedHistory() {
         ConfigValues config = plugin.configValues();
-        if (!config.historyPersist) return;
+        if (!legacyJsonlHistoryEnabled()) return;
 
         Path path = historyPath();
         StringBuilder sb = new StringBuilder();
-        long persistCutoff = retentionCutoffMillis(config.historyPersistRetentionDays);
+        long persistCutoff = retentionCutoffMillis(config.historyRetentionDays);
         synchronized (history) {
             pruneHistoryLocked();
             for (ChatMessage msg : history) {
@@ -4536,6 +4885,26 @@ public class WebChatServer {
         String seed = ip == null ? "" : ip;
         int number = 1000 + Math.floorMod(seed.hashCode(), 9000);
         return prefix + number;
+    }
+
+    private long searchTimeMillis(String raw, long fallback) {
+        if (raw == null || raw.isBlank()) return fallback;
+        try {
+            long value = Long.parseLong(raw.trim());
+            // Browser Date.getTime() uses milliseconds. Treat very small values as
+            // invalid instead of accidentally filtering near 1970.
+            return value > 946684800000L ? value : fallback;
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private String normalizeSearchSource(String raw) {
+        String value = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        if (value.equals("all")) return "";
+        if (value.equals("game") || value.equals("web") || value.equals("discord") || value.equals("system")) return value;
+        if (value.equals("event") || value.equals("server")) return "system";
+        return "";
     }
 
     private int boundedInt(String raw, int fallback, int min, int max) {

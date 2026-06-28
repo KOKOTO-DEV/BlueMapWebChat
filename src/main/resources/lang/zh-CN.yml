@@ -36,6 +36,7 @@ web:
     moveUp: 上移
     moveDown: 下移
     commands: 命令
+    search: 搜索
     pip: PIP
     run: 运行
     jumpLatest: 跳到最新消息
@@ -137,6 +138,26 @@ web:
     tabLogin: 登录
     tabLink: 绑定
     description: 使用已绑定账户登录。
+  search:
+    title: 搜索消息
+    placeholder: 搜索消息内容或发送者
+    searching: 正在搜索...
+    noResults: 没有匹配的消息。
+    resultCount: '{count} 个结果'
+    failed: 搜索失败。
+    options: 选项
+    from: 开始
+    to: 结束
+    sender: 发送者
+    senderPlaceholder: 可选发送者
+    source: 来源
+    sourceAll: 全部
+    sourceGame: 游戏
+    sourceWeb: 网页
+    sourceDiscord: Discord
+    sourceSystem: 系统/事件
+    includeSystem: 包含系统/事件消息
+    enterQueryOrFilter: 请输入搜索词，或至少选择一个选项。
   link:
     description: 请在游戏内输入以下命令。
     commandHint: /bmchat auth <code>

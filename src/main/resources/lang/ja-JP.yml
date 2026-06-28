@@ -36,6 +36,7 @@ web:
     moveUp: 上へ移動
     moveDown: 下へ移動
     commands: コマンド
+    search: 検索
     pip: PIP
     run: 実行
     jumpLatest: 最新メッセージへ
@@ -137,6 +138,26 @@ web:
     tabLogin: ログイン
     tabLink: 連携
     description: 連携済みアカウントでログインします。
+  search:
+    title: メッセージ検索
+    placeholder: メッセージ本文または送信者を検索
+    searching: 検索中...
+    noResults: 一致するメッセージがありません。
+    resultCount: '{count} 件の結果'
+    failed: 検索に失敗しました。
+    options: オプション
+    from: 開始
+    to: 終了
+    sender: 送信者
+    senderPlaceholder: 任意の送信者
+    source: ソース
+    sourceAll: すべて
+    sourceGame: ゲーム
+    sourceWeb: Web
+    sourceDiscord: Discord
+    sourceSystem: システム/イベント
+    includeSystem: システム/イベントメッセージを含める
+    enterQueryOrFilter: 検索語を入力するか、少なくとも1つのオプションを選択してください。
   link:
     description: ゲーム内で次のコマンドを入力してください。
     commandHint: /bmchat auth <code>

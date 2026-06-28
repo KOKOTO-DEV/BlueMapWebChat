@@ -2203,7 +2203,10 @@
   padding: 6px 8px;
   border-bottom: 1px solid rgba(255,255,255,0.10);
   background: rgba(255, 207, 90, 0.10);
-  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
@@ -2211,7 +2214,8 @@
 }
 
 .bmwc-pinned-open {
-  width: 100%;
+  flex: 1 1 auto;
+  width: auto;
   min-height: 34px;
   border: 0;
   border-radius: 8px;
@@ -4258,4 +4262,257 @@ body.bmwc-emoji-resizing #bmwc-root.bmwc-theme-system .bmwc-emoji-resize-handle:
 #bmwc-root .bmwc-history-end.bmwc-history-end-top {
   top: var(--bmwc-affordance-top, 54px) !important;
   bottom: auto !important;
+}
+
+/* Message search UI. The search button is an independent floating control
+   inside the chat panel, so it does not change the input row or pinned bar layout. */
+#bmwc-root .bmwc-search-float {
+  position: absolute;
+  top: 54px;
+  right: 10px;
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.16)) !important;
+  border-radius: 999px;
+  color: var(--bmwc-button-text, var(--bmwc-text-color, #fff)) !important;
+  background: var(--bmwc-button-bg, rgba(28, 35, 48, 0.92)) !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.24);
+  backdrop-filter: blur(8px);
+  text-align: center;
+  font-size: max(14px, var(--bmwc-button-font-size, 12px)) !important;
+  line-height: 1;
+}
+#bmwc-root.bmwc-has-pinned-bar .bmwc-search-float {
+  top: 98px;
+}
+#bmwc-root .bmwc-search-float:hover,
+#bmwc-root .bmwc-search-float:focus-visible {
+  background: var(--bmwc-button-hover-bg, rgba(42, 52, 70, 0.96)) !important;
+  outline: none;
+}
+#bmwc-root.bmwc-minimized .bmwc-search-button,
+#bmwc-root.bmwc-guest-hidden .bmwc-search-button {
+  display: none !important;
+}
+.bmwc-search-modal-backdrop {
+  padding: 18px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  color: var(--bmwc-text-color, #fff);
+}
+.bmwc-search-modal {
+  width: min(760px, calc(100vw - 36px));
+  max-width: calc(100vw - 36px);
+  max-height: min(82vh, 760px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: var(--bmwc-font-size, 13px);
+  color: var(--bmwc-text-color, #fff);
+  background: rgba(var(--bmwc-modal-bg-rgb, 29, 29, 36), var(--bmwc-panel-opacity, 0.96));
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.14));
+  box-shadow: 0 10px 46px var(--bmwc-shadow-color, rgba(0,0,0,0.45));
+}
+.bmwc-search-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bmwc-search-head h3 {
+  margin: 0;
+  font-size: max(16px, calc(var(--bmwc-font-size, 13px) * 1.25));
+}
+.bmwc-search-x {
+  flex: 0 0 auto;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 !important;
+  font-size: 18px !important;
+  line-height: 1;
+}
+.bmwc-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+.bmwc-search-row .bmwc-input {
+  width: 100%;
+  min-height: 38px;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: var(--bmwc-input-font-size, 13px) !important;
+}
+.bmwc-search-row .bmwc-button {
+  min-height: 38px;
+  white-space: nowrap;
+  font-size: var(--bmwc-button-font-size, 12px) !important;
+}
+.bmwc-search-options {
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.12));
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--bmwc-surface-bg, rgba(255,255,255,0.045));
+  color: var(--bmwc-text-color, #fff);
+}
+.bmwc-search-options summary {
+  cursor: pointer;
+  user-select: none;
+  font-weight: 650;
+  color: var(--bmwc-text-color, #fff);
+}
+.bmwc-search-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 9px;
+}
+.bmwc-search-options-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: var(--bmwc-muted-color, rgba(255,255,255,0.72));
+  font-size: max(10.5px, calc(var(--bmwc-message-font-size, 13px) * 0.82));
+}
+.bmwc-search-options-grid .bmwc-input {
+  min-height: 34px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.bmwc-search-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  color: var(--bmwc-muted-color, rgba(255,255,255,0.72));
+  font-size: max(10.5px, calc(var(--bmwc-message-font-size, 13px) * 0.84));
+}
+.bmwc-search-check input {
+  accent-color: var(--bmwc-link-color, #60a5fa);
+}
+.bmwc-search-modal-backdrop.bmwc-theme-light .bmwc-search-options,
+.bmwc-search-modal-backdrop.bmwc-theme-system .bmwc-search-options {
+  color: var(--bmwc-text-color, #111827);
+  background: var(--bmwc-surface-bg, rgba(15,23,42,0.045));
+}
+.bmwc-search-modal-backdrop.bmwc-theme-light .bmwc-search-options summary,
+.bmwc-search-modal-backdrop.bmwc-theme-system .bmwc-search-options summary {
+  color: var(--bmwc-text-color, #111827);
+}
+.bmwc-search-status {
+  min-height: 18px;
+  font-size: max(10.5px, calc(var(--bmwc-message-font-size, 13px) * 0.82));
+  color: var(--bmwc-muted-color, rgba(255,255,255,0.72));
+}
+.bmwc-search-results {
+  flex: 1 1 auto;
+  min-height: min(300px, 36vh);
+  max-height: min(58vh, 540px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 2px 4px 2px 0;
+}
+.bmwc-search-result {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.12));
+  border-radius: 10px;
+  padding: 9px 10px;
+  text-align: left;
+  background: var(--bmwc-surface-bg, rgba(255,255,255,0.06));
+  color: var(--bmwc-text-color, #fff);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--bmwc-message-font-size, 13px);
+}
+.bmwc-search-result:hover,
+.bmwc-search-result:focus-visible {
+  background: var(--bmwc-surface-hover-bg, rgba(255,255,255,0.12));
+  outline: none;
+}
+.bmwc-search-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  margin-bottom: 5px;
+  font-size: max(10.5px, calc(var(--bmwc-message-font-size, 13px) * 0.82));
+  color: var(--bmwc-muted-color, rgba(255,255,255,0.7));
+}
+.bmwc-search-result-preview {
+  display: block;
+  font-size: var(--bmwc-message-font-size, 13px);
+  line-height: 1.38;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.bmwc-search-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.bmwc-search-modal-backdrop .bmwc-button {
+  color: var(--bmwc-button-text, var(--bmwc-text-color, #fff)) !important;
+  background: var(--bmwc-button-bg, rgba(255,255,255,0.13)) !important;
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.14)) !important;
+}
+.bmwc-search-modal-backdrop .bmwc-button:hover,
+.bmwc-search-modal-backdrop .bmwc-button:focus-visible {
+  background: var(--bmwc-button-hover-bg, rgba(255,255,255,0.22)) !important;
+}
+.bmwc-search-modal-backdrop .bmwc-input {
+  color: var(--bmwc-text-color, #fff) !important;
+  background: var(--bmwc-input-bg, rgba(0,0,0,0.24)) !important;
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.18)) !important;
+}
+.bmwc-search-modal-backdrop.bmwc-theme-light .bmwc-search-modal,
+.bmwc-search-modal-backdrop.bmwc-theme-system .bmwc-search-modal {
+  color: var(--bmwc-text-color, #111827);
+}
+.bmwc-search-modal-backdrop.bmwc-theme-light .bmwc-search-result,
+.bmwc-search-modal-backdrop.bmwc-theme-system .bmwc-search-result {
+  color: var(--bmwc-text-color, #111827);
+  background: var(--bmwc-surface-bg, rgba(15,23,42,0.045));
+}
+.bmwc-search-modal-backdrop.bmwc-theme-light .bmwc-search-result:hover,
+.bmwc-search-modal-backdrop.bmwc-theme-system .bmwc-search-result:hover {
+  background: var(--bmwc-surface-hover-bg, rgba(15,23,42,0.09));
+}
+@media (max-width: 520px) {
+  .bmwc-search-modal-backdrop {
+    padding: 10px;
+  }
+  .bmwc-search-modal {
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+  .bmwc-search-row,
+  .bmwc-search-options-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bmwc-search-row .bmwc-button {
+    width: 100%;
+  }
+  .bmwc-search-results {
+    min-height: 260px;
+    max-height: 58vh;
+  }
 }

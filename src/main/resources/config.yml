@@ -1,4 +1,4 @@
-# BlueMapWebChat 4.1.1 configuration
+# BlueMapWebChat 4.2.0 configuration
 #
 # URL / HTTP / HTTPS quick guide
 # ───────────────────────
@@ -96,12 +96,22 @@ standalone-web:
   api-base-url: ""
 
 chat:
-  history-size: 1000
+  # History storage backend.
+  # sqlite = recommended persistent storage for long-lived chat history and search.
+  # jsonl = legacy single-file persistence using history-file.
+  # memory = keep only in-memory history for the current server session.
+  history-storage: "sqlite"
+  # Shared by memory/jsonl/sqlite. 0 = unlimited by count.
+  history-size: 0
+  # Shared by memory/jsonl/sqlite. 0 = unlimited by age.
   history-retention-days: 5
-  history-persist: false
-  history-persist-retention-days: 5
+  # JSONL history file. Relative paths are stored under the plugin data folder.
   history-file: "history.jsonl"
-  # Messages fetched per history request. 0 = all available history.
+  # SQLite DB file. Relative paths are stored under the plugin data folder.
+  history-sqlite-file: "history.db"
+  # Import history-file into SQLite once when the DB is empty.
+  history-sqlite-migrate-jsonl: true
+  # Messages fetched per history request. 0 = server default page limit.
   history-page-size: 80
 
   # 0 = unlimited. max-url-message-length also uses 0 = unlimited.
@@ -162,6 +172,17 @@ announcements:
   web-logout:
     enabled: false
     message: "🌐 {name} logged out of web chat."
+
+search:
+  # Enable the web message search button and /history/search API.
+  enabled: true
+  # Number of search results returned by the web UI and /history/search API.
+  # This is the only search result count limit. There is no separate internal maximum.
+  # Setting this to 2000 returns up to 2000 results; setting it to 10 returns up to 10.
+  # Very large values such as 10000 or 100000 are accepted, but can make searches slow,
+  # increase response size, and add significant CPU, memory, and database load.
+  # Recommended: 50-200 for normal use. Raise only when you need large admin searches.
+  result-limit: 50
 
 ui:
   # Default UI language. Supported values: en-US, ko-KR, ja-JP, zh-CN.

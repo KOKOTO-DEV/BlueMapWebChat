@@ -170,3 +170,7 @@ bluemapwebchat.admin
 
 
 URL 设置说明：HTTPS 反向代理模式下，将 `web-addon.api-base-url` 设为 `/bmwc/api` 这样的公开 API 路径。`standalone-web.api-base-url`、`upload.public-base-url`、`emoji.public-base-url` 通常留空。留空时，standalone 会复用 web-addon API base，上传/表情会自动追加 `/uploads` 和 `/emojis`。也支持显式值 `/bmwc/api`、`/bmwc/api/uploads`、`/bmwc/api/emojis`。不带前导 `/` 的相对值会在 `http.cors-origin` 为实际 origin 时基于该 origin 解析。
+
+## SQLite 历史搜索
+
+使用 SQLite 历史存储时，可以通过聊天面板右上角的浮动区域的放大镜按钮搜索消息内容和发送者。搜索选项也可指定日期/时间范围、发送者、来源以及是否包含系统/事件消息。搜索结果会显示在可滚动列表中，并遵循聊天主题和字体设置。点击搜索结果会使用现有的周边历史加载跳转到对应消息。带有 i18n 键的系统/事件消息会尽可能按当前选择的 Web UI 语言搜索和显示。仅用 `search.result-limit` 同时控制 Web UI 结果数量和 `/history/search` API 限制，没有单独的内部最大值。10000 或 100000 这类非常大的值也会被接受，但可能导致搜索变慢、响应体变大，并显著增加 CPU、内存和数据库负载。

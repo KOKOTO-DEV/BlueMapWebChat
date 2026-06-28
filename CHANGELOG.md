@@ -1,5 +1,82 @@
 # Changelog
 
+## 4.2.0
+
+### SQLite history storage
+
+- Added SQLite chat history storage and made `chat.history-storage: "sqlite"` the recommended/default backend for new configurations.
+- Kept `jsonl` and `memory` history-storage modes for compatibility.
+- Unified history retention settings so `chat.history-size` and `chat.history-retention-days` are used by `memory`, `jsonl`, and `sqlite`.
+- Removed the old `chat.history-persist` and `chat.history-persist-retention-days` settings. Persistence is now selected only by `chat.history-storage`.
+- Added `chat.history-sqlite-file` to control the SQLite DB file path. The default is `history.db` in the plugin data folder.
+- Added `chat.history-sqlite-migrate-jsonl`; when enabled, an empty SQLite DB imports the existing legacy `chat.history-file` JSONL log once.
+- Moved history paging, newer/older history loading, reply-jump lookup, deletion, pinned-message target lookup, retention cleanup, and search lookup to SQLite-backed queries when SQLite storage is enabled.
+- Excluded SQLite messages marked as hidden from normal history, around-message lookup, and search results.
+- Made SQLite writes asynchronous so web messages are broadcast to connected web clients immediately without waiting for DB insert/prune work.
+- Reduced normal-send pruning overhead while keeping retention cleanup active in the background.
+
+Changed history configuration:
+
+```yml
+chat:
+  # History storage backend.
+  # sqlite = recommended persistent storage for long-lived chat history and search.
+  # jsonl = legacy single-file persistence using history-file.
+  # memory = keep only in-memory history for the current server session.
+  history-storage: "sqlite"
+  # Shared by memory/jsonl/sqlite. 0 = unlimited by count.
+  history-size: 0
+  # Shared by memory/jsonl/sqlite. 0 = unlimited by age.
+  history-retention-days: 5
+  # JSONL history file. Relative paths are stored under the plugin data folder.
+  history-file: "history.jsonl"
+  # SQLite DB file. Relative paths are stored under the plugin data folder.
+  history-sqlite-file: "history.db"
+  # Import history-file into SQLite once when the DB is empty.
+  history-sqlite-migrate-jsonl: true
+```
+
+Removed history configuration:
+
+```yml
+chat:
+  history-persist: false
+  history-persist-retention-days: 5
+```
+
+### Message search
+
+- Added the `/history/search` API for searching message text, sender names, and stored display names, with optional date/time, sender, source, and system/event filters.
+- Added the in-chat message search UI with an options section for date/time ranges, sender filtering, source filtering, and system/event inclusion, plus result-click jump using the existing history-around navigation.
+- Moved the search button out of the crowded message input row and into the floating chat-panel area.
+- Enlarged the search modal and added a scrollable results pane for easier review of long result sets.
+- Applied chat font and theme variables to the search modal, inputs, buttons, status text, and result items so light/dark chat themes remain readable.
+- Isolated search modal keyboard, wheel, touch, and pointer events from the BlueMap map while preserving search, close, and result-click handling.
+- Localized i18n-backed system/event messages in search results and included the requested web UI language in search matching, so translated system messages can be found by their displayed text.
+- Added `search.enabled` and `search.result-limit` settings for disabling search and controlling the search result count.
+- `search.result-limit` is the only search result count limit. There is no separate search-result maximum setting or internal hard-coded maximum. Very large values are accepted but may be expensive.
+
+New search configuration:
+
+```yml
+search:
+  # Enable the web message search button and /history/search API.
+  enabled: true
+  # Number of search results returned by the web UI and /history/search API.
+  # This is the only search result count limit. There is no separate internal maximum.
+  # Setting this to 2000 returns up to 2000 results; setting it to 10 returns up to 10.
+  # Very large values such as 10000 or 100000 are accepted, but can make searches slow,
+  # increase response size, and add significant CPU, memory, and database load.
+  # Recommended: 50-200 for normal use. Raise only when you need large admin searches.
+  result-limit: 50
+```
+
+### Upgrade notes
+
+- Existing `config.yml` files are not rewritten automatically. To use SQLite/search after upgrading from 4.1.1, add or merge the actual configuration blocks shown above.
+- Because 4.2.0 changes history and search configuration significantly, the safest upgrade path is to stop the server, back up the existing `config.yml`, delete `config.yml`, start the server once to regenerate it, and then reapply your custom settings manually.
+- Back up `history.jsonl`, `history.db`, `history.db-wal`, and `history.db-shm` before testing migration, changing storage backends, or editing the database manually.
+
 ## 4.1.1
 
 ### Pinned messages and player display
@@ -56,6 +133,7 @@
 - Improved top and bottom edge history loading retries when older or newer messages are still available.
 - Added a bottom-edge “No more messages to display” toast after repeated extra-scroll attempts at the latest loaded message while keeping newer-history retry requests immediate.
 - Kept the existing top-edge no-more-history notice for the oldest loaded history edge.
+
 ## 4.0.1
 
 ### Discord relay fixes

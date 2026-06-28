@@ -68,11 +68,14 @@ emoji:
 - 不带前导 `/` 的相对值，例如 `bmwc/api`、`bmwc/api/uploads`、`bmwc/api/emojis`，会在 `http.cors-origin` 为实际 origin 时自动加上该 origin。若 `cors-origin: "*"`，则按同源绝对路径 `/bmwc/api...` 处理。
 - `https://map.example.com/bmwc/api` 这样的完整 URL 会原样使用。
 
+## 聊天记录存储
+
+聊天记录通过 `chat.history-storage` 选择 `memory`、`jsonl` 或 `sqlite`。`chat.history-size` 和 `chat.history-retention-days` 在三种模式中共用。`0` 表示不限制数量/期限。`chat.history-file` 仅用于 JSONL，`chat.history-sqlite-file` 仅用于 SQLite。
+
 ## 0 表示无限制/无最大值的选项
 
 - `chat.history-size`
 - `chat.history-retention-days`
-- `chat.history-persist-retention-days`
 - `chat.history-page-size`
 - `chat.max-message-length`
 - `chat.max-url-message-length`
@@ -328,3 +331,7 @@ ui:
 
 
 管理员自定义表情说明：重命名表情文件或文件夹会改变 `:emoji:pack/name:` 标记。引用旧标记的既有聊天消息可能不再渲染，除非保留旧文件/文件夹名称。
+
+## 消息搜索
+
+启用存储历史记录时，可以通过聊天面板右上角的浮动区域的放大镜按钮和 `/history/search` API 搜索消息内容和发送者。搜索选项可按日期/时间范围、发送者、来源以及是否包含系统/事件消息进行筛选。搜索结果会显示在可滚动列表中，并遵循聊天主题和字体设置。点击搜索结果会使用现有的周边历史加载跳转到对应消息。带有 i18n 键的系统/事件消息会尽可能按请求的 Web UI 语言搜索和显示。 可通过 `search.enabled` 启用/禁用搜索，且仅用 `search.result-limit` 同时控制 Web UI 结果数量和 `/history/search` API 限制。没有单独的内部最大值：设置为 2000 时最多返回 2000 条，设置为 10 时最多返回 10 条。10000 或 100000 这类非常大的值也会被接受，但可能导致搜索变慢、响应体变大，并显著增加 CPU、内存和数据库负载。默认值为 50，普通使用建议 50-200。旧版 config.yml 需要手动添加这些项目，或与默认配置合并。

@@ -2,8 +2,6 @@
 
 A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can run as a BlueMap web addon, as a standalone `/chat` page served by the plugin, or both at the same time.
 
-<img width="1057" height="682" alt="Image" src="https://github.com/user-attachments/assets/722761ea-94a4-4da9-be79-3cd04997c166" />
-
 ## Features
 
 - BlueMap embedded chat panel and standalone web chat page
@@ -125,6 +123,14 @@ See `docs/CADDY_HTTPS_EN.md` for details.
 - `commands.allow-all`: allow arbitrary console commands instead of presets only
 - `commands.run-from-chat-input`: allow `/command` execution from the normal chat input
 - `ui.picture-in-picture.enabled`: controls both the PIP button and PIP execution
+
+## SQLite history
+
+Chat history uses SQLite by default in new configs (`chat.history-storage: "sqlite"`). This keeps long-lived logs in `plugins/BlueMapWebChat/history.db` and makes paging, reply jumps, deletion, and retention cleanup easier to maintain than the legacy single JSONL file.
+
+Legacy modes remain available: use `chat.history-storage: "jsonl"` for the old `history.jsonl` file, or `"memory"` for session-only history. `chat.history-size` and `chat.history-retention-days` apply to memory, JSONL, and SQLite. If `chat.history-sqlite-migrate-jsonl` is true, an empty SQLite DB imports the existing JSONL history once.
+
+A `/history/search` API and in-chat search modal are available for message text and sender searches, with optional date/time range, sender, source, and system/event filters. The search button is placed in the floating chat-panel area so the message input row stays compact, and the search modal follows the configured chat theme/font settings with a scrollable result list. i18n-backed system/event messages are searched and displayed in the selected web UI language when possible. Search can be disabled with `search.enabled`, and the single `search.result-limit` setting controls both the web UI result count and the `/history/search` API limit. There is no separate internal maximum: setting it to 2000 returns up to 2000 results, while setting it to 10 returns up to 10. Very large values such as 10000 or 100000 are accepted, but they can slow searches, increase response size, and add significant CPU, memory, and database load. The default is 50, and 50-200 is recommended for normal use. Existing config files from older versions need these keys added manually or merged from the default config.
 
 ## Custom emoji and game-side emoji plugins
 

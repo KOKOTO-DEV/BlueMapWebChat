@@ -72,6 +72,22 @@ emoji:
 
 `emoji.max-total-size-mb` limits total custom emoji storage. When the limit is exceeded, admin uploads show a localized warning instead of failing silently. `emoji.show-storage-usage` controls whether current emoji storage is shown in the admin emoji manager, and `emoji.show-storage-limit` controls whether the total limit is shown.
 
+## Chat history storage
+
+`chat.history-storage` controls the backend used for stored chat history. New configs use `sqlite`, which stores messages in `chat.history-sqlite-file` (`history.db` by default). SQLite is recommended for long-lived logs because before/after history pages, reply-jump lookup, deletion, and retention cleanup can use indexed queries.
+
+Supported values:
+
+- `sqlite`: persistent SQLite DB, recommended.
+- `jsonl`: legacy single-file persistence using `chat.history-file`.
+- `memory`: session-only in-memory history.
+
+`chat.history-size` and `chat.history-retention-days` are shared by `memory`, `jsonl`, and `sqlite`. `0` means unlimited for each setting. `chat.history-file` is used only by JSONL; `chat.history-sqlite-file` is used only by SQLite. When `chat.history-sqlite-migrate-jsonl` is true, an empty SQLite DB imports `chat.history-file` once. Keep normal file backups of `history.db` before manual editing, large cleanup, or migration.
+
+## Message search
+
+`/history/search` and the in-chat search modal are available for message text and sender searches when stored history is enabled. The search options section can filter by date/time range, sender, source, and system/event inclusion. The search button is in the floating chat-panel area so the input row stays compact, and search results use a scrollable list with the configured chat theme/font settings. Search results can jump to the matching message using the existing history-around navigation. i18n-backed system/event messages are searched and displayed in the requested web UI language when possible. Search can be disabled with `search.enabled`, and the single `search.result-limit` setting controls both the web UI result count and the `/history/search` API limit. There is no separate internal maximum: setting it to 2000 returns up to 2000 results, while setting it to 10 returns up to 10. Very large values such as 10000 or 100000 are accepted, but they can slow searches, increase response size, and add significant CPU, memory, and database load. The default is 50, and 50-200 is recommended for normal use. Existing config files from older versions need these keys added manually or merged from the default config.
+
 ## UI time zone
 
 `ui.time-zone` controls the time zone used for chat timestamps. Use `local` for the browser/device time zone, `UTC`, or an IANA time zone such as `Asia/Seoul`. Invalid values fall back to local time in the web UI.
@@ -80,7 +96,6 @@ emoji:
 
 - `chat.history-size`
 - `chat.history-retention-days`
-- `chat.history-persist-retention-days`
 - `chat.history-page-size`
 - `chat.max-message-length`
 - `chat.max-url-message-length`

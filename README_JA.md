@@ -170,3 +170,7 @@ bluemapwebchat.admin
 
 
 URL 設定メモ: HTTPS リバースプロキシでは `web-addon.api-base-url` を `/bmwc/api` のような公開 API 経路に設定します。`standalone-web.api-base-url`、`upload.public-base-url`、`emoji.public-base-url` は通常空のままにします。空の場合、standalone は web-addon の API base を再利用し、upload/emoji は `/uploads` と `/emojis` を自動で付けます。`/bmwc/api`、`/bmwc/api/uploads`、`/bmwc/api/emojis` の明示指定も使用できます。先頭 `/` のない相対値は `http.cors-origin` が実際の origin のとき、その origin に対して解決されます。
+
+## SQLite 履歴検索
+
+SQLite 履歴ストレージを使用している場合、チャットパネル右上のフローティング領域の虫眼鏡ボタンからメッセージ本文と送信者を検索できます。検索オプションでは日付/時刻範囲、送信者、ソース、システム/イベントの含有も指定できます。検索結果はスクロール可能な一覧で表示され、チャットのテーマとフォント設定に従います。検索結果をクリックすると、既存の周辺履歴読み込みで該当メッセージへ移動します。i18n キー付きのシステム／イベントメッセージは、可能な場合は選択中の Web UI 言語で検索・表示されます。`search.result-limit` だけで Web UI の結果数と `/history/search` API の上限を制御し、別の内部最大値はありません。10000 や 100000 のような非常に大きい値も受け付けますが、検索速度の低下、応答サイズの増加、CPU・メモリ・DB 負荷の増加につながる可能性があります。

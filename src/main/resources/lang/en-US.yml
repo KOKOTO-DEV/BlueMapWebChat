@@ -36,6 +36,7 @@ web:
     moveUp: Move up
     moveDown: Move down
     commands: Commands
+    search: Search
     pip: PIP
     run: Run
     jumpLatest: Jump to latest
@@ -137,6 +138,26 @@ web:
     tabLogin: Login
     tabLink: Link
     description: Log in with an already linked account.
+  search:
+    title: Search messages
+    placeholder: Search message text or sender
+    searching: Searching...
+    noResults: No matching messages.
+    resultCount: '{count} result(s)'
+    failed: Search failed.
+    options: Options
+    from: From
+    to: To
+    sender: Sender
+    senderPlaceholder: Optional sender
+    source: Source
+    sourceAll: All
+    sourceGame: Game
+    sourceWeb: Web
+    sourceDiscord: Discord
+    sourceSystem: System/Event
+    includeSystem: Include system/event messages
+    enterQueryOrFilter: Enter a search term or choose at least one option.
   link:
     description: Run the command below in game.
     commandHint: /bmchat auth <code>
