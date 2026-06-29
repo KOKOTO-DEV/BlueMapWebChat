@@ -19,7 +19,7 @@ When `enabled: false`, the plugin does not start the HTTP server, web addon inst
 
 ### Thread-style direct messages
 
-- Changed the in-game DM sent confirmation to use the new `command.dmSentEcho` key so existing language files still show the sent body (`to: {player} {message}` / `보냄: {player} {message}`).
+- Changed the in-game DM sent confirmation to use the new `command.dmSentEcho` key so existing language files still show the sent body (`to: {player} {message}`).
 - Added optional 1:1 direct message threads for linked/known Minecraft players.
 - Direct message targets are limited to players with a stored UUID/name, usually from joining the server at least once or linking a web account.
 - Messages are stored by UUID and displayed as `display name (real account name)` where both values are available.
