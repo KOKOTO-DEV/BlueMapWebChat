@@ -2,6 +2,10 @@
 
 本文说明 `plugins/BlueMapWebChat/config.yml`。
 
+## 总开关
+
+新生成的 config 顶层默认为 `enabled: false`。在此状态下，BlueMapWebChat 只会生成/读取配置，/bmchat reload 仍可使用，但不会启动 Web/聊天服务、监听器、Discord 集成、私信存储、插件网页安装、上传/表情初始化或清理任务。已有 config 如果没有此键，为了升级兼容会视为已启用。请先检查存储方式、保留期限、上传、预览、认证和对外公开设置，再改为 `enabled: true`。
+
 ## 部署模式
 
 ### BlueMap 插件模式
@@ -70,7 +74,13 @@ emoji:
 
 ## 聊天记录存储
 
-聊天记录通过 `chat.history-storage` 选择 `memory`、`jsonl` 或 `sqlite`。`chat.history-size` 和 `chat.history-retention-days` 在三种模式中共用。`0` 表示不限制数量/期限。`chat.history-file` 仅用于 JSONL，`chat.history-sqlite-file` 仅用于 SQLite。
+聊天记录通过 `chat.history-storage` 选择 `memory`、`jsonl` 或 `sqlite`。`chat.history-size` 和 `chat.history-retention-days` 在三种模式中共用。`0` 表示不限制数量/期限。新生成的 config 顶层默认为 `enabled: false`，因此在检查这些值并设置 `enabled: true` 前不会执行清理任务。如果服务器策略需要自动清理旧聊天，请设置正数保留天数，例如 `30` 或 `90`。上传和外部媒体缓存保留设置也按同样方式工作。`chat.history-file` 仅用于 JSONL，`chat.history-sqlite-file` 仅用于 SQLite。
+
+## 1:1 私信会话线程
+
+启用 `direct-message.enabled` 后，可以使用 1:1 会话线程式消息箱。目标仅限已有 UUID/名称记录的已关联或曾加入玩家。线程使用排序后的两个 UUID 作为键，因此 A→B 与 B→A 总是进入同一个会话。消息会保存到 `direct-message.storage` 指定的专用 DM 存储。`auto` 会在公开聊天使用 `jsonl` 存储时让 DM 也使用 JSONL，其他情况下使用 SQLite。SQLite 使用 `direct-message.sqlite-file`，JSONL 使用 `direct-message.jsonl-file`。
+
+`direct-message.retention-days: 0` 表示无保留期限。大于 0 的值会显示在 DM 窗口标题旁作为保留期限，超过该天数的 DM 原文会被物理删除。`direct-message.max-messages-per-thread: 0` 表示不按线程消息数清理。`direct-message.confirm-hide` 控制 Web UI 在从自己视图隐藏 DM 前是否显示确认框。由于私信会保存在服务器上，此功能默认关闭。
 
 ## 0 表示无限制/无最大值的选项
 
@@ -92,6 +102,9 @@ emoji:
 - `pinned.max-pins`
 - `pinned.show-to-logged-out`
 - `commands.max-length`
+- `direct-message.retention-days`
+- `direct-message.max-messages-per-thread`
+- `direct-message.max-message-length`
 
 ## 访客聊天限制
 
@@ -283,6 +296,8 @@ ui:
 ### 表情容量显示
 
 `emoji.max-total-size-mb` 用于限制自定义表情的总容量。超过限制时，管理员上传界面会显示警告。`emoji.show-storage-usage` 控制是否显示当前表情容量，`emoji.show-storage-limit` 控制是否显示总容量限制。
+
+
 
 ## UI 时区
 

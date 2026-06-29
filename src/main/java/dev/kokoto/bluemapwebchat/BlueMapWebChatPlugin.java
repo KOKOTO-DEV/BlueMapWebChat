@@ -3,6 +3,7 @@ package dev.kokoto.bluemapwebchat;
 import org.bukkit.ChatColor;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
+import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.nio.file.Files;
@@ -19,13 +20,20 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
     private ModerationManager moderationManager;
     private LangManager langManager;
     private DiscordBridge discordBridge;
+    private DirectMessageStore directMessages;
     private WebChatServer webServer;
+    private ChatListener chatListener;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         reloadConfig();
         configValues = ConfigValues.load(getConfig());
+        registerCommandExecutor();
+        if (!configValues.pluginEnabled) {
+            getLogger().info("BlueMapWebChat is disabled by config. Set enabled: true in config.yml to start web/chat services. /bmchat reload remains available.");
+            return;
+        }
 
         storage = new Storage(this);
         storage.load();
@@ -39,21 +47,15 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
         captchaManager = new CaptchaManager();
         authManager = new AuthManager(this, storage);
         discordBridge = new DiscordBridge(this);
+        directMessages = new DirectMessageStore(this);
+        directMessages.open();
 
         installAssets();
         ensureEmojiDirectory();
         startWebServer();
         discordBridge.start();
 
-        getServer().getPluginManager().registerEvents(new ChatListener(this), this);
-        getServer().getPluginManager().registerEvents(new EventAnnouncementListener(this), this);
-
-        BmChatCommand cmd = new BmChatCommand(this);
-        PluginCommand pluginCommand = getCommand("bmchat");
-        if (pluginCommand != null) {
-            pluginCommand.setExecutor(cmd);
-            pluginCommand.setTabCompleter(cmd);
-        }
+        registerRuntimeListeners();
 
         publishAnnouncement("server-start", Map.of("server", getServer().getName()));
 
@@ -62,34 +64,47 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        publishAnnouncement("server-stop", Map.of("server", getServer().getName()));
-        if (discordBridge != null) {
-            discordBridge.stop();
+        if (configValues != null && configValues.pluginEnabled) {
+            publishAnnouncement("server-stop", Map.of("server", getServer().getName()));
         }
-        if (webServer != null) {
-            webServer.stop();
-        }
-        if (storage != null) {
-            storage.saveAll();
-        }
-        if (moderationManager != null) {
-            moderationManager.save();
-        }
+        stopRuntimeServices();
+        saveRuntimeState();
         getLogger().info("BlueMapWebChat disabled.");
     }
 
     public void reloadPlugin() {
-        if (discordBridge != null) {
-            discordBridge.stop();
-        }
-        if (webServer != null) {
-            webServer.stop();
-        }
+        stopRuntimeServices();
+        saveRuntimeState();
         reloadConfig();
         configValues = ConfigValues.load(getConfig());
-        storage.saveAll();
-        moderationManager.save();
+        if (!configValues.pluginEnabled) {
+            registerCommandExecutor();
+            getLogger().info("BlueMapWebChat is disabled by config. Web/chat services are stopped. /bmchat reload remains available.");
+            return;
+        }
+        registerCommandExecutor();
+        if (storage == null) {
+            storage = new Storage(this);
+            storage.load();
+        } else {
+            storage.saveAll();
+        }
+        if (moderationManager == null) {
+            moderationManager = new ModerationManager(this);
+        } else {
+            moderationManager.save();
+        }
         moderationManager.load();
+        if (captchaManager == null) {
+            captchaManager = new CaptchaManager();
+        }
+        if (authManager == null) {
+            authManager = new AuthManager(this, storage);
+        }
+        if (directMessages == null) {
+            directMessages = new DirectMessageStore(this);
+        }
+        directMessages.open();
         if (langManager == null) {
             langManager = new LangManager(this);
         }
@@ -101,6 +116,49 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
             discordBridge = new DiscordBridge(this);
         }
         discordBridge.start();
+        registerRuntimeListeners();
+    }
+
+
+    private void registerCommandExecutor() {
+        BmChatCommand cmd = new BmChatCommand(this);
+        PluginCommand pluginCommand = getCommand("bmchat");
+        if (pluginCommand != null) {
+            pluginCommand.setExecutor(cmd);
+            pluginCommand.setTabCompleter(cmd);
+        }
+    }
+
+    private void registerRuntimeListeners() {
+        chatListener = new ChatListener(this);
+        getServer().getPluginManager().registerEvents(chatListener, this);
+        getServer().getPluginManager().registerEvents(new EventAnnouncementListener(this), this);
+    }
+
+    private void stopRuntimeServices() {
+        if (discordBridge != null) {
+            discordBridge.stop();
+            discordBridge = null;
+        }
+        if (webServer != null) {
+            webServer.stop();
+            webServer = null;
+        }
+        if (directMessages != null) {
+            directMessages.close();
+            directMessages = null;
+        }
+        HandlerList.unregisterAll(this);
+        chatListener = null;
+    }
+
+    private void saveRuntimeState() {
+        if (storage != null) {
+            storage.saveAll();
+        }
+        if (moderationManager != null) {
+            moderationManager.save();
+        }
     }
 
     private void installAssets() {
@@ -134,6 +192,10 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
         }
     }
 
+
+    public ChatListener chatListener() {
+        return chatListener;
+    }
 
     public void publishAnnouncement(String key, Map<String, String> placeholders) {
         ConfigValues config = configValues;
@@ -246,6 +308,10 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
 
     public DiscordBridge discordBridge() {
         return discordBridge;
+    }
+
+    public DirectMessageStore directMessages() {
+        return directMessages;
     }
 
     public LangManager langManager() {

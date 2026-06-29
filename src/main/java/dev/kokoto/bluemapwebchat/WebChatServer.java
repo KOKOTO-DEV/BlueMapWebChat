@@ -113,6 +113,12 @@ public class WebChatServer {
         server.createContext(p + "/pins", this::handlePins);
         server.createContext(p + "/stream", this::handleStream);
         server.createContext(p + "/send", this::handleSend);
+        server.createContext(p + "/dm/threads", this::handleDmThreads);
+        server.createContext(p + "/dm/messages", this::handleDmMessages);
+        server.createContext(p + "/dm/players", this::handleDmPlayers);
+        server.createContext(p + "/dm/send", this::handleDmSend);
+        server.createContext(p + "/dm/read", this::handleDmRead);
+        server.createContext(p + "/dm/hide-message", this::handleDmHideMessage);
         server.createContext(p + "/commands", this::handleCommands);
         server.createContext(p + "/commands/run", this::handleCommandRun);
         server.createContext(p + "/upload", this::handleUpload);
@@ -503,6 +509,13 @@ public class WebChatServer {
         m.put("historyPageSize", c.historyPageSize);
         m.put("searchEnabled", c.searchEnabled);
         m.put("searchResultLimit", c.searchResultLimit);
+        m.put("directMessageEnabled", c.directMessageEnabled);
+        m.put("directMessageAllowWebSend", c.directMessageAllowWebSend);
+        m.put("directMessageMaxMessageLength", c.directMessageMaxMessageLength);
+        m.put("directMessageRetentionDays", c.directMessageRetentionDays);
+        m.put("directMessageWebUnreadBadge", c.directMessageWebUnreadBadge);
+        m.put("directMessageConfirmHide", c.directMessageConfirmHide);
+        m.put("directMessageStorage", c.directMessageStorage);
         m.put("language", c.uiLanguage);
         m.put("uiTimeZone", c.uiTimeZone);
         m.put("linkifyUrls", c.linkifyUrls);
@@ -807,6 +820,10 @@ public class WebChatServer {
             return;
         }
 
+        Map<String, String> streamQuery = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
+        SessionContext streamContext = storage.getSession(streamQuery.get("token"));
+        String streamAccountUuid = streamContext == null || streamContext.account == null || streamContext.account.uuid == null ? "" : streamContext.account.uuid.trim().toLowerCase(Locale.ROOT);
+
         addCors(ex);
         addSecurityHeaders(ex);
         Headers h = ex.getResponseHeaders();
@@ -815,7 +832,7 @@ public class WebChatServer {
         h.set("Connection", "keep-alive");
         ex.sendResponseHeaders(200, 0);
 
-        SseClient client = new SseClient(ex.getResponseBody(), ip);
+        SseClient client = new SseClient(ex.getResponseBody(), ip, streamAccountUuid);
         clients.add(client);
         try {
             client.sendRaw("event: ready\ndata: {\"ok\":true}\n\n");
@@ -879,6 +896,243 @@ public class WebChatServer {
         handleGuestSend(ex, body, ip, message, replyToId, replyToSender, replyToPreview);
     }
 
+
+
+
+    private void handleDmThreads(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.directMessageEnabled || plugin.directMessages() == null || !plugin.directMessages().available()) {
+            sendJson(ex, 200, "{\"ok\":true,\"enabled\":false,\"unread\":0,\"threads\":[]}");
+            return;
+        }
+        SessionContext ctx = sessionFromQuery(ex);
+        if (!validDmUser(ctx)) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}");
+            return;
+        }
+        Map<String, String> q = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
+        int limit = boundedInt(q.get("limit"), 200, 1, 0);
+        List<String> items = new ArrayList<>();
+        for (DirectMessageThread thread : plugin.directMessages().listThreads(ctx.account.uuid, limit)) {
+            items.add(thread.toJson());
+        }
+        int unread = plugin.directMessages().unreadCount(ctx.account.uuid);
+        sendJson(ex, 200, "{\"ok\":true,\"enabled\":true,\"unread\":" + unread + ",\"threads\":[" + String.join(",", items) + "]}");
+    }
+
+    private void handleDmMessages(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.directMessageEnabled || plugin.directMessages() == null || !plugin.directMessages().available()) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"dm_disabled\"}");
+            return;
+        }
+        SessionContext ctx = sessionFromQuery(ex);
+        if (!validDmUser(ctx)) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}");
+            return;
+        }
+        Map<String, String> q = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
+        String threadId = stripControl(q.get("threadId"), 160).trim();
+        if (threadId.isBlank()) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"missing_thread\"}");
+            return;
+        }
+        long before = parseLong(q.get("before"), 0L);
+        int limit = boundedInt(q.get("limit"), 100, 1, 0);
+        List<String> items = new ArrayList<>();
+        for (DirectMessageMessage message : plugin.directMessages().listMessages(ctx.account.uuid, threadId, before, limit)) {
+            items.add(message.toJson());
+        }
+        int unread = plugin.directMessages().unreadCount(ctx.account.uuid);
+        sendJson(ex, 200, "{\"ok\":true,\"unread\":" + unread + ",\"messages\":[" + String.join(",", items) + "]}");
+    }
+
+    private void handleDmPlayers(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.directMessageEnabled) {
+            sendJson(ex, 200, "{\"ok\":true,\"enabled\":false,\"players\":[]}");
+            return;
+        }
+        SessionContext ctx = sessionFromQuery(ex);
+        if (!validDmUser(ctx)) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}");
+            return;
+        }
+        Map<String, String> q = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
+        String query = stripControl(q.get("q"), 80).trim();
+        int limit = boundedInt(q.get("limit"), 20, 1, 0);
+        List<String> items = new ArrayList<>();
+        String self = ctx.account.uuid == null ? "" : ctx.account.uuid.trim().toLowerCase(Locale.ROOT);
+        for (PlayerIdentity player : storage.listKnownPlayers(query, limit + 1)) {
+            if (player.uuid.equalsIgnoreCase(self)) continue;
+            items.add(player.toJson());
+            if (items.size() >= limit) break;
+        }
+        sendJson(ex, 200, "{\"ok\":true,\"enabled\":true,\"players\":[" + String.join(",", items) + "]}");
+    }
+
+    private void handleDmSend(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.directMessageEnabled || plugin.directMessages() == null || !plugin.directMessages().available()) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"dm_disabled\"}");
+            return;
+        }
+        if (!config.directMessageAllowWebSend) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"web_send_disabled\"}");
+            return;
+        }
+        Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        SessionContext ctx = storage.getSession(body.get("token"));
+        if (!validDmUser(ctx)) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}");
+            return;
+        }
+        String targetUuid = stripControl(body.get("targetUuid"), 80).trim();
+        if (targetUuid.isBlank()) {
+            PlayerIdentity target = storage.findKnownPlayer(body.get("target"));
+            if (target != null) targetUuid = target.uuid;
+        }
+        PlayerIdentity target = storage.findKnownPlayerByUuid(targetUuid);
+        if (target == null || target.uuid == null || target.uuid.isBlank()) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"player_not_found\"}");
+            return;
+        }
+        String message = stripDirectMessage(body.get("message"), config.directMessageMaxMessageLength);
+        if (message.isBlank()) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"empty_message\"}");
+            return;
+        }
+        DirectMessageStore.SendResult result = plugin.directMessages().send(ctx.account.uuid, target.uuid, message);
+        if (!result.ok) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}");
+            return;
+        }
+        publishDirectMessageUpdate(ctx.account.uuid, target.uuid, result.thread == null ? "" : result.thread.id);
+        notifyOnlineDirectMessage(ctx.account, target, message);
+        String threadJson = result.thread == null ? "null" : result.thread.toJson();
+        String messageJson = result.message == null ? "null" : result.message.toJson();
+        int unread = plugin.directMessages().unreadCount(ctx.account.uuid);
+        sendJson(ex, 200, "{\"ok\":true,\"unread\":" + unread + ",\"thread\":" + threadJson + ",\"message\":" + messageJson + "}");
+    }
+
+    private void handleDmRead(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.directMessageEnabled || plugin.directMessages() == null || !plugin.directMessages().available()) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"dm_disabled\"}");
+            return;
+        }
+        Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        SessionContext ctx = storage.getSession(body.get("token"));
+        if (!validDmUser(ctx)) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}");
+            return;
+        }
+        String threadId = stripControl(body.get("threadId"), 160).trim();
+        boolean ok = plugin.directMessages().markRead(threadId, ctx.account.uuid);
+        sendJson(ex, 200, "{\"ok\":" + ok + ",\"unread\":" + plugin.directMessages().unreadCount(ctx.account.uuid) + "}");
+    }
+
+    private void handleDmHideMessage(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.directMessageEnabled || plugin.directMessages() == null || !plugin.directMessages().available()) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"dm_disabled\"}");
+            return;
+        }
+        Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        SessionContext ctx = storage.getSession(body.get("token"));
+        if (!validDmUser(ctx)) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}");
+            return;
+        }
+        long messageId = parseLong(body.get("messageId"), 0L);
+        if (messageId <= 0) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"missing_message\"}");
+            return;
+        }
+        String threadId = plugin.directMessages().threadIdForMessage(ctx.account.uuid, messageId);
+        boolean ok = plugin.directMessages().hideMessage(ctx.account.uuid, messageId);
+        if (ok && !threadId.isBlank()) {
+            publishDirectMessageUpdate(ctx.account.uuid, ctx.account.uuid, threadId);
+        }
+        sendJson(ex, 200, "{\"ok\":" + ok + ",\"unread\":" + plugin.directMessages().unreadCount(ctx.account.uuid) + "}");
+    }
+
+    private SessionContext sessionFromQuery(HttpExchange ex) {
+        Map<String, String> q = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
+        return storage.getSession(q.get("token"));
+    }
+
+    private boolean validDmUser(SessionContext ctx) {
+        return ctx != null && ctx.account != null && ctx.account.role.atLeast(Role.USER)
+                && ctx.account.uuid != null && !ctx.account.uuid.isBlank();
+    }
+
+    private String stripDirectMessage(String raw, int maxLength) {
+        String out = String.valueOf(raw == null ? "" : raw);
+        // Keep the same raw text semantics as normal chat: color codes and
+        // :pack/name: custom emoji tokens are stored and delivered unchanged.
+        out = out.replaceAll("[\\p{Cntrl}&&[^\\r\\n\\t]]", "").trim();
+        if (maxLength > 0 && out.length() > maxLength) out = out.substring(0, maxLength);
+        return out;
+    }
+
+    private void notifyOnlineDirectMessage(Account sender, PlayerIdentity target, String message) {
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.directMessageNotifyOnMessage) return;
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            try {
+                Player recipient = Bukkit.getPlayer(java.util.UUID.fromString(target.uuid));
+                if (recipient == null || !recipient.isOnline()) return;
+                String senderName = plugin.displayNameForAccount(sender);
+                String body = colorizeForGame(trimForNotice(message, 100));
+                java.util.Map<String, String> vars = new java.util.HashMap<>();
+                vars.put("player", ChatColor.RESET + senderName + ChatColor.LIGHT_PURPLE);
+                vars.put("message", ChatColor.RESET + body);
+                recipient.sendMessage(ChatColor.LIGHT_PURPLE + plugin.langManager().text("command.dmIncoming", "DM from {player}: {message}", vars));
+            } catch (IllegalArgumentException ignored) {
+            }
+        });
+    }
+
+    private String colorizeForGame(String value) {
+        return ChatColor.translateAlternateColorCodes('&', String.valueOf(value == null ? "" : value));
+    }
+
+    private String trimForNotice(String value, int max) {
+        String out = value == null ? "" : value.replace('\n', ' ').replace('\r', ' ').trim();
+        if (max > 0 && out.length() > max) return out.substring(0, Math.max(0, max - 1)) + "…";
+        return out;
+    }
 
     private boolean emojiTokenLimitExceeded(String message, ConfigValues config) {
         if (config == null || !config.emojiEnabled || config.emojiMessageTokenLimit <= 0) return false;
@@ -4822,6 +5076,36 @@ public class WebChatServer {
         broadcastEvent("chat", msg.toJson());
     }
 
+
+
+    public void publishDirectMessageUpdate(String userUuidA, String userUuidB, String threadId) {
+        String a = String.valueOf(userUuidA == null ? "" : userUuidA).trim().toLowerCase(Locale.ROOT);
+        String b = String.valueOf(userUuidB == null ? "" : userUuidB).trim().toLowerCase(Locale.ROOT);
+        String id = String.valueOf(threadId == null ? "" : threadId).trim();
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("ok", true);
+        m.put("threadId", id);
+        m.put("userA", a);
+        m.put("userB", b);
+        broadcastDirectMessageEvent(JsonUtil.obj(m), a, b);
+    }
+
+    private void broadcastDirectMessageEvent(String json, String userUuidA, String userUuidB) {
+        String a = String.valueOf(userUuidA == null ? "" : userUuidA).trim().toLowerCase(Locale.ROOT);
+        String b = String.valueOf(userUuidB == null ? "" : userUuidB).trim().toLowerCase(Locale.ROOT);
+        String data = "event: dm\ndata: " + json + "\n\n";
+        for (SseClient client : new ArrayList<>(clients)) {
+            String clientUuid = client.accountUuid == null ? "" : client.accountUuid;
+            if (!clientUuid.equals(a) && !clientUuid.equals(b)) continue;
+            try {
+                client.sendRaw(data);
+            } catch (IOException ex) {
+                clients.remove(client);
+                client.close();
+            }
+        }
+    }
+
     private void broadcastEvent(String event, String json) {
         String data = "event: " + event + "\ndata: " + json + "\n\n";
         for (SseClient client : new ArrayList<>(clients)) {
@@ -5034,11 +5318,13 @@ public class WebChatServer {
     private static final class SseClient {
         private final OutputStream out;
         private final String ip;
+        private final String accountUuid;
         private volatile boolean open = true;
 
-        private SseClient(OutputStream out, String ip) {
+        private SseClient(OutputStream out, String ip, String accountUuid) {
             this.out = out;
             this.ip = ip == null ? "" : ip;
+            this.accountUuid = accountUuid == null ? "" : accountUuid;
         }
 
         synchronized void sendRaw(String s) throws IOException {

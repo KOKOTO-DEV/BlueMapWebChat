@@ -8,11 +8,11 @@ web:
     reconnecting: reconnecting...
     loggedIn: logged in
   button:
-    emoji: "Emoji"
+    emoji: Emoji
     admin: Admin
     login: Login
     upload: Attach
-    resizeEmojiPanel: 'Drag to resize emoji picker'
+    resizeEmojiPanel: Drag to resize emoji picker
     resize: Resize
     send: Send
     reset: Reset
@@ -28,7 +28,7 @@ web:
     unmute: Unmute
     revoke: Revoke
     delete: delete
-    reply: "reply"
+    reply: reply
     pin: pin
     moderationActionsEnable: Enable pin/delete
     moderationActionsDisable: Disable pin/delete
@@ -37,18 +37,19 @@ web:
     moveDown: Move down
     commands: Commands
     search: Search
+    directMessages: Messages
     pip: PIP
     run: Run
     jumpLatest: Jump to latest
-    createPack: 'Create folder'
-    uploadEmoji: 'Upload'
-    deselectAll: 'Clear all'
-    selectAll: 'Select all'
-    deleteSelected: 'Delete selected'
-    deletePack: 'Delete folder'
-    change: 'Change'
-    rename: 'Change'
-    renamePack: 'Rename folder'
+    createPack: Create folder
+    uploadEmoji: Upload
+    deselectAll: Clear all
+    selectAll: Select all
+    deleteSelected: Delete selected
+    deletePack: Delete folder
+    change: Change
+    rename: Change
+    renamePack: Rename folder
   placeholder:
     guestName: Guest name
     captchaAnswer: answer
@@ -59,18 +60,18 @@ web:
     muteTarget: Guest name or IP
     minutes: minutes
     reason: reason
-    emojiPack: 'new pack/folder name'
+    emojiPack: new pack/folder name
   reply:
-    composing: "Replying to {sender}"
-    jump: "Jump to replied message"
-    notFound: "The referenced message could not be found."
+    composing: Replying to {sender}
+    jump: Jump to replied message
+    notFound: The referenced message could not be found.
   message:
     deleted: '[deleted]'
   emoji:
-    empty: "No emojis configured."
-    emptyPack: 'No emojis here.'
+    empty: No emojis configured.
+    emptyPack: No emojis here.
   alert:
-    emojiTooMany: "Only {max} emoji(s) can be used in one message."
+    emojiTooMany: Only {max} emoji(s) can be used in one message.
     rateLimited: You are sending messages too quickly. Please wait.
     sendFailed: 'Send failed: {error}'
     serverUnavailable: Cannot connect to chat server.
@@ -89,15 +90,18 @@ web:
     pinFailed: 'Pin failed: {error}'
     unpinFailed: 'Unpin failed: {error}'
     movePinFailed: 'Move failed: {error}'
-    emojiPackNameRequired: 'Enter a folder name.'
-    emojiFileRequired: 'Choose an emoji file.'
-    confirmDeleteEmoji: 'Delete this emoji?'
-    emojiSelectRequired: 'Select emojis to delete.'
-    confirmDeleteSelectedEmoji: 'Delete {count} selected emojis?'
-    confirmDeleteEmojiPack: 'Delete folder {pack} and all emojis inside?'
-    emojiRenameNameRequired: 'Enter a new name.'
-    confirmRenameEmoji: 'Rename this emoji to {name}? Existing emoji tokens using the old name will no longer match.'
-    confirmRenameEmojiPack: 'Rename folder {pack} to {name}? Emoji tokens in this folder will change.'
+    emojiPackNameRequired: Enter a folder name.
+    emojiFileRequired: Choose an emoji file.
+    confirmDeleteEmoji: Delete this emoji?
+    emojiSelectRequired: Select emojis to delete.
+    confirmDeleteSelectedEmoji: Delete {count} selected emojis?
+    confirmDeleteEmojiPack: Delete folder {pack} and all emojis inside?
+    emojiRenameNameRequired: Enter a new name.
+    confirmRenameEmoji: Rename this emoji to {name}? Existing emoji tokens using the old name will no longer match.
+    confirmRenameEmojiPack: Rename folder {pack} to {name}? Emoji tokens in this folder will change.
+    dmLoadFailed: "Failed to load messages: {error}"
+    dmSendFailed: "Failed to send message: {error}"
+    dmHideFailed: "Failed to hide message: {error}"
     renameFailed: 'Rename failed: {error}'
   admin:
     title: BlueMap Chat Admin
@@ -117,22 +121,22 @@ web:
     currentMutes: Current mutes
     expires: expires
     never: never
-    emojis: 'Emojis'
-    emojiTitle: 'Custom emojis'
-    emojiCurrent: 'Current emojis'
-    emojiLimits: 'Per file {file} KB / total {total} MB'
-    emojiFileLimit: 'Per file {file}'
-    emojiStorageUsage: 'Storage {current} / {total}'
-    emojiStorageCurrent: 'Storage {current}'
-    emojiStorageLimit: 'Storage limit {total}'
-    unlimited: 'unlimited'
-    emojiFolderSelect: 'Emoji folder'
+    emojis: Emojis
+    emojiTitle: Custom emojis
+    emojiCurrent: Current emojis
+    emojiLimits: Per file {file} KB / total {total} MB
+    emojiFileLimit: Per file {file}
+    emojiStorageUsage: Storage {current} / {total}
+    emojiStorageCurrent: Storage {current}
+    emojiStorageLimit: Storage limit {total}
+    unlimited: unlimited
+    emojiFolderSelect: Emoji folder
     emojiPackCount: '{count} emojis'
-    emojiNoFileSelected: 'No file selected'
+    emojiNoFileSelected: No file selected
   prompt:
-    createEmojiPack: 'New folder name'
-    renameEmoji: 'New emoji name'
-    renameEmojiPack: 'New folder name'
+    createEmojiPack: New folder name
+    renameEmoji: New emoji name
+    renameEmojiPack: New folder name
   login:
     title: BlueMap Chat Login
     tabLogin: Login
@@ -271,7 +275,7 @@ web:
     multipart_required: Upload request is invalid
     file_too_large: File is too large
     total_size_exceeded: Total emoji storage limit exceeded
-    total_size_exceededWithUsage: 'Total emoji storage limit exceeded. Current {current}, selected {file}, maximum {max}.'
+    total_size_exceededWithUsage: Total emoji storage limit exceeded. Current {current}, selected {file}, maximum {max}.
     file_missing: No file was uploaded
     upload_permission_denied: You do not have permission to upload files
     extension_not_allowed: This file type is not allowed
@@ -297,6 +301,33 @@ web:
     invalid_command: Invalid command
     command_failed: Command failed
     command_too_long: Command is too long
+    dmLoadFailed: 'Failed to load messages: {error}'
+    dmSendFailed: 'Failed to send message: {error}'
+    dmHideFailed: 'Failed to hide message: {error}'
+    dm_disabled: Direct messages are disabled
+    web_send_disabled: Web direct-message sending is disabled
+    player_not_found: Player not found
+    self_message: You cannot send a direct message to yourself
+  dm:
+    title: Messages
+    noThreads: No message threads.
+    selectThread: Select a thread
+    emptyThread: No messages yet.
+    searchPlayer: Search player
+    newMessage: New message
+    selectPlayerFirst: Select a player first.
+    showThreads: Show conversations
+    hideThreads: Hide conversations
+    showThreadsShort: Show
+    hideThreadsShort: Hide
+    confirmHideMessage: Hide this message from your view?
+    hideMessage: Hide this message for me
+    threadList: Conversations
+    showConversationList: Show list
+    showCurrentConversation: Current only
+    retentionLimited: "(Retention: {days} days)"
+    retentionUnlimited: "(Retention: no time limit)"
+    backToList: Back to conversation list
   announcement:
     minecraft-join: 🟢 {player} joined the server.
     minecraft-quit: 🔴 {player} left the server.
@@ -312,7 +343,7 @@ web:
     web-login: 🌐 {name} logged in to web chat.
     web-logout: 🌐 {name} logged out of web chat.
   sender:
-    unknown: "Unknown"
+    unknown: Unknown
     server: Server
     discord: Discord
     originalId: 'Original ID: {name}'
@@ -329,6 +360,7 @@ web:
     onlyPlayers: This command can only be used by players.
     noPermission: You do not have permission.
     passwordSet: Web chat password has been set.
+    disabledByConfig: BlueMapWebChat is disabled in config.yml.
     configReloaded: BlueMapWebChat configuration reloaded.
     guestNoMutes: There are no guest/IP mutes.
     guestMutesTitle: 'BlueMapWebChat mutes:'
@@ -355,10 +387,41 @@ web:
     helpGuest: Manage guest/IP mutes
     helpSessions: List web sessions
     helpRevoke: Revoke web sessions
+    helpDm: Send a direct message
+    helpDmRead: Read a direct message thread
+    dmDisabled: Direct messages are disabled.
+    dmTitle: 'Direct messages: {count} unread'
+    dmTitlePage: 'Direct messages: {count} unread (page {page}/{pages})'
+    dmListNavHint: 'Use /bmchat dm list prev for newer conversations, /bmchat dm list next for older conversations.'
+    dmListFirstPage: 'You are already on the newest conversation list page.'
+    dmListLastPage: 'You are already on the oldest conversation list page.'
+    dmNoThreads: No direct message threads.
+    dmGameSendDisabled: Sending direct messages from game is disabled.
+    dmDirectInputRequired: "Direct messages must be typed directly by the player."
+    dmPlayerNotFound: Player not found. The player must have joined at least once.
+    dmEmpty: Message is empty.
+    dmFailed: 'Direct message failed: {error}'
+    dmSent: 'Sent to {player}: {message}'
+    dmSentEcho: 'to: {player} {message}'
+    dmIncoming: 'DM from {player}: {message}'
+    dmReadTitle: 'Direct messages with {player}:'
+    dmReadTitlePage: 'Direct messages with {player} (page {page}/{pages}):'
+    dmReadPageHint: 'Next page: /bmchat dm read {player} {page} {pageSize}'
+    dmReadNavHint: 'Use /bmchat dm prev for newer messages, /bmchat dm next for older messages.'
+    dmReadNoCursor: 'Open a thread first: /bmchat dm read <player>'
+    dmReadFirstPage: 'You are already on the newest page.'
+    dmReadLastPage: 'You are already on the oldest page.'
+    dmNoMessages: No messages in this thread.
+    dmMe: me
+    dmHideHint: 'Hide one from your view: /bmchat dm hide <messageId>'
+    dmInvalidMessageId: Invalid message id.
+    dmHideFailed: "Failed to hide message."
+    dmHidden: Message hidden from your view.
     never: never
     authInvalid: Invalid authentication request.
     authCodeExpired: The authentication code is missing or expired.
     authComplete: Web chat account linking is complete. Return to your browser.
+    dmUnreadNotice: You have {count} unread direct message(s). Open the web chat message box or use /bmchat dm list.
   pinned:
     count: 'Pinned messages: {count}'
     compact: '{count}'
@@ -389,7 +452,15 @@ web:
       Custom announcement text in config.yml remains the fallback text.
   history:
     end: No more messages to display.
-    loading: "Loading history.\nPlease wait."
-    failed: "Load failed.\nTry again shortly."
-    timeout: "Slow response.\nTry again shortly."
-    offline: "Offline.\nCheck connection."
+    loading: 'Loading history.
+
+      Please wait.'
+    failed: 'Load failed.
+
+      Try again shortly.'
+    timeout: 'Slow response.
+
+      Try again shortly.'
+    offline: 'Offline.
+
+      Check connection.'

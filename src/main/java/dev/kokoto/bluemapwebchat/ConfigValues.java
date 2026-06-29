@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Locale;
 
 public class ConfigValues {
+    public boolean pluginEnabled;
     public String httpHost;
     public int httpPort;
     public String pathPrefix;
@@ -40,6 +41,20 @@ public class ConfigValues {
     public int historyPageSize;
     public boolean searchEnabled;
     public int searchResultLimit;
+
+    public boolean directMessageEnabled;
+    public boolean directMessageAllowWebSend;
+    public boolean directMessageAllowGameSend;
+    public boolean directMessageNotifyOnLogin;
+    public boolean directMessageNotifyOnMessage;
+    public boolean directMessageWebUnreadBadge;
+    public boolean directMessageConfirmHide;
+    public int directMessageRetentionDays;
+    public int directMessageMaxMessagesPerThread;
+    public int directMessageMaxMessageLength;
+    public String directMessageStorage;
+    public String directMessageJsonlFile;
+    public String directMessageSqliteFile;
     public int maxMessageLength;
     public int maxUrlMessageLength;
     public String webUserToGameFormat;
@@ -296,6 +311,8 @@ public class ConfigValues {
 
     public static ConfigValues load(FileConfiguration c) {
         ConfigValues v = new ConfigValues();
+        // New generated configs default enabled:false, but old configs without this key remain enabled.
+        v.pluginEnabled = c.isSet("enabled") ? c.getBoolean("enabled", false) : true;
 
         v.httpHost = c.getString("http.host", "0.0.0.0");
         v.httpPort = c.getInt("http.port", 8899);
@@ -331,6 +348,29 @@ public class ConfigValues {
         v.historyPageSize = Math.max(0, c.getInt("chat.history-page-size", 80));
         v.searchEnabled = c.getBoolean("search.enabled", true);
         v.searchResultLimit = Math.max(1, c.getInt("search.result-limit", 50));
+
+        v.directMessageEnabled = c.getBoolean("direct-message.enabled", false);
+        v.directMessageAllowWebSend = c.getBoolean("direct-message.allow-web-send", true);
+        v.directMessageAllowGameSend = c.getBoolean("direct-message.allow-game-send", true);
+        v.directMessageNotifyOnLogin = c.getBoolean("direct-message.notify-on-login", true);
+        v.directMessageNotifyOnMessage = c.getBoolean("direct-message.notify-on-message", true);
+        v.directMessageWebUnreadBadge = c.getBoolean("direct-message.web-unread-badge", true);
+        v.directMessageConfirmHide = c.getBoolean("direct-message.confirm-hide", true);
+        v.directMessageRetentionDays = Math.max(0, c.getInt("direct-message.retention-days", 0));
+        v.directMessageMaxMessagesPerThread = Math.max(0, c.getInt("direct-message.max-messages-per-thread", 0));
+        v.directMessageMaxMessageLength = Math.max(0, c.getInt("direct-message.max-message-length", 500));
+        String configuredDirectMessageStorage = c.getString("direct-message.storage", "auto");
+        configuredDirectMessageStorage = configuredDirectMessageStorage == null ? "auto" : configuredDirectMessageStorage.trim().toLowerCase(Locale.ROOT);
+        if (configuredDirectMessageStorage.equals("auto") || configuredDirectMessageStorage.isBlank()) {
+            configuredDirectMessageStorage = "jsonl".equals(v.historyStorage) ? "jsonl" : "sqlite";
+        } else if (configuredDirectMessageStorage.equals("json") || configuredDirectMessageStorage.equals("jsonl") || configuredDirectMessageStorage.equals("file")) {
+            configuredDirectMessageStorage = "jsonl";
+        } else {
+            configuredDirectMessageStorage = "sqlite";
+        }
+        v.directMessageStorage = configuredDirectMessageStorage;
+        v.directMessageJsonlFile = c.getString("direct-message.jsonl-file", "direct-messages.jsonl");
+        v.directMessageSqliteFile = c.getString("direct-message.sqlite-file", "direct-messages.db");
         v.maxMessageLength = Math.max(0, c.getInt("chat.max-message-length", 120));
         v.maxUrlMessageLength = Math.max(0, c.getInt("chat.max-url-message-length", 2048));
         if (v.maxMessageLength > 0 && v.maxUrlMessageLength > 0 && v.maxUrlMessageLength < v.maxMessageLength) v.maxUrlMessageLength = v.maxMessageLength;

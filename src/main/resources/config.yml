@@ -1,4 +1,11 @@
-# BlueMapWebChat 4.2.0 configuration
+# BlueMapWebChat 4.3.0 configuration
+
+# Master switch for BlueMapWebChat.
+# New generated configs default to false so the plugin creates config.yml first
+# without starting web/chat services or cleanup tasks. /bmchat reload remains available.
+# Existing configs that do not have this key are treated as enabled for upgrade compatibility.
+enabled: false
+
 #
 # URL / HTTP / HTTPS quick guide
 # ───────────────────────
@@ -183,6 +190,49 @@ search:
   # increase response size, and add significant CPU, memory, and database load.
   # Recommended: 50-200 for normal use. Raise only when you need large admin searches.
   result-limit: 50
+
+
+direct-message:
+  # Thread-style 1:1 direct messages.
+  # Only players that have joined or linked at least once and have a stored UUID/name can be selected.
+  # Messages are stored by UUID, while the UI shows display name (real account name).
+  # This feature uses its own private message store and is disabled by default because it stores private messages.
+  enabled: false
+
+  # auto = follow chat.history-storage when it is jsonl, otherwise use sqlite.
+  # sqlite = recommended database storage.
+  # jsonl = append-only JSONL file storage, useful when chat history also uses JSONL.
+  storage: "auto"
+
+  # 0 = no time limit. A positive value is shown next to the DM window title and
+  # physically removes old DM messages after that many days.
+  retention-days: 0
+
+  # 0 = unlimited by count. When set, only the newest N messages are kept per 1:1 thread.
+  max-messages-per-thread: 0
+
+  # 0 = unlimited. Recommended: 300-1000.
+  max-message-length: 500
+
+  # Allow sending DMs from the web UI.
+  allow-web-send: true
+  # Allow sending DMs from /bmchat dm in game.
+  allow-game-send: true
+
+  # Notify players about unread DMs when they join.
+  notify-on-login: true
+  # Notify online players immediately when a new DM arrives.
+  notify-on-message: true
+  # Show unread DM count badge in the web UI.
+  web-unread-badge: true
+
+  # Ask before hiding a DM message from the web message box.
+  confirm-hide: true
+
+  # JSONL file for private 1:1 message threads when storage is jsonl. Relative paths are stored under the plugin data folder.
+  jsonl-file: "direct-messages.jsonl"
+  # SQLite file for private 1:1 message threads when storage is sqlite. Relative paths are stored under the plugin data folder.
+  sqlite-file: "direct-messages.db"
 
 ui:
   # Default UI language. Supported values: en-US, ko-KR, ja-JP, zh-CN.
@@ -469,6 +519,8 @@ upload:
   #   when http.cors-origin is a real origin; otherwise it becomes "/bmwc/api/uploads".
   # - Full URL: "https://map.example.com/bmwc/api/uploads" is used as-is.
   public-base-url: ""
+  # Default is 0 to avoid deleting uploaded files when config.yml is regenerated.
+  # Set this manually to your server policy, for example 30 or 90, if you want old upload cleanup.
   retention-days: 5
   allowed-extensions:
     - png
@@ -526,6 +578,8 @@ preview:
   external-media-cache-directory: "uploads/external-media-cache"
   # 0 = unlimited per external cached media file.
   external-media-cache-max-size-mb: 20
+  # Default is 0 to avoid deleting cached media when config.yml is regenerated.
+  # Set this manually if you want old external media cache cleanup.
   external-media-cache-retention-days: 5
   external-media-cache-timeout-seconds: 6
 

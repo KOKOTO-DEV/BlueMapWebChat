@@ -2,6 +2,10 @@
 
 `plugins/BlueMapWebChat/config.yml` の説明です。
 
+## 全体有効化スイッチ
+
+新規生成された config は最上位の `enabled: false` から始まります。この状態では BlueMapWebChat は config の生成/読み込みのみを行い、/bmchat reload は引き続き使用できますが、Web/チャットサービス、リスナー、Discord 連携、DM ストア、アドオン設置、アップロード/絵文字初期化、クリーンアップ処理を開始しません。既存 config にこのキーがない場合は、アップグレード互換性のため有効として扱います。保存方式、保持期間、アップロード、プレビュー、認証、公開設定を確認してから `enabled: true` に変更してください。
+
 ## 配置モード
 
 ### BlueMap アドオン
@@ -70,7 +74,13 @@ emoji:
 
 ## チャット履歴保存
 
-チャット履歴は `chat.history-storage` で `memory`、`jsonl`、`sqlite` のいずれかを選びます。`chat.history-size` と `chat.history-retention-days` は 3 つのモードで共通です。`0` は件数/期間の制限なしを意味します。`chat.history-file` は JSONL のみ、`chat.history-sqlite-file` は SQLite のみで使われます。
+チャット履歴は `chat.history-storage` で `memory`、`jsonl`、`sqlite` のいずれかを選びます。`chat.history-size` と `chat.history-retention-days` は 3 つのモードで共通です。`0` は件数/期間の制限なしを意味します。新規生成された config は最上位の `enabled: false` から始まるため、これらの値を確認して `enabled: true` にするまでクリーンアップ処理は実行されません。サーバー方針として古いチャットの自動削除が必要な場合は、`30` や `90` などの正の保持日数を設定してください。アップロードと外部メディアキャッシュの保持設定も同じ考え方です。`chat.history-file` は JSONL のみ、`chat.history-sqlite-file` は SQLite のみで使われます。
+
+## 1:1 ダイレクトメッセージスレッド
+
+`direct-message.enabled` を有効にすると、1:1 会話スレッド型のメッセージボックスを使用できます。送信先は UUID/名前が保存済みの、連携済みまたは参加履歴のあるプレイヤーに限定されます。スレッドは 2 つの UUID をソートしたペアで識別されるため、A→B と B→A は常に同じ会話に入ります。メッセージは `direct-message.storage` で指定した専用 DM ストアに保存されます。`auto` は公開チャットが `jsonl` 保存方式のとき DM も JSONL を使い、それ以外では SQLite を使います。SQLite は `direct-message.sqlite-file`、JSONL は `direct-message.jsonl-file` を使います。
+
+`direct-message.retention-days: 0` は保持期限なしです。1 以上の値は DM 画面のタイトル横に保持期間として表示され、その日数を過ぎた DM 本文は物理削除されます。`direct-message.max-messages-per-thread: 0` はスレッドごとの件数整理なしです。`direct-message.confirm-hide` は Web UI で自分の表示から DM を隠す前に確認するかを制御します。個人メッセージがサーバーに保存されるため既定では無効です。
 
 ## 0 が無制限/最大値なしを意味する項目
 
@@ -92,6 +102,9 @@ emoji:
 - `pinned.max-pins`
 - `pinned.show-to-logged-out`
 - `commands.max-length`
+- `direct-message.retention-days`
+- `direct-message.max-messages-per-thread`
+- `direct-message.max-message-length`
 
 ## ゲストチャット制限
 
@@ -283,6 +296,8 @@ ui:
 ### 絵文字容量表示
 
 `emoji.max-total-size-mb` はカスタム絵文字の合計容量を制限します。制限を超えると、管理者アップロード画面に警告が表示されます。`emoji.show-storage-usage` は現在の絵文字容量表示、`emoji.show-storage-limit` は合計容量制限の表示を制御します。
+
+
 
 ## UI タイムゾーン
 

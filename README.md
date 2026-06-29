@@ -2,8 +2,6 @@
 
 A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can run as a BlueMap web addon, as a standalone `/chat` page served by the plugin, or both at the same time.
 
-<img width="1057" height="682" alt="Image" src="https://github.com/user-attachments/assets/722761ea-94a4-4da9-be79-3cd04997c166" />
-
 ## Features
 
 - BlueMap embedded chat panel and standalone web chat page
@@ -15,6 +13,7 @@ A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can r
 - File and clipboard upload, image/video/audio/YouTube/Shorts previews, plus optional TikTok and X/Twitter embeds
 - DiscordSRV relay and Discord CDN media cache
 - Message replies with clickable referenced-message previews, optional game-side reply previews, pinned messages, virtual scrolling, draggable/resizable window, experimental PIP
+- Optional 1:1 direct-message threads for linked/known players, with unread badges and per-thread retention
 - Built-in UI languages: en-US, ko-KR, ja-JP, zh-CN
 
 ## Build
@@ -24,16 +23,18 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-4.0.0.jar
+target/BlueMapWebChat-4.3.0.jar
 ```
 
 ## Install
 
 1. Put the jar into `plugins/`.
 2. Start the server once to generate `plugins/BlueMapWebChat/config.yml`.
-3. For BlueMap embedded mode, keep `web-addon.auto-install` and `web-addon.auto-patch-webapp-conf` enabled.
-4. For standalone-only mode, set `standalone-web.enabled: true`, `web-addon.auto-install: false`, and `web-addon.auto-patch-webapp-conf: false`.
-5. Restart the server or run `/bmchat reload`. Run `/bluemap reload` if BlueMap does not refresh web assets automatically.
+3. New generated configs start with top-level `enabled: false`; only the config is created until you review settings and opt in; /bmchat reload remains available.
+4. Review storage, retention, upload, preview, authentication, and web exposure settings, then set `enabled: true`.
+5. For BlueMap embedded mode, keep `web-addon.auto-install` and `web-addon.auto-patch-webapp-conf` enabled.
+6. For standalone-only mode, set `standalone-web.enabled: true`, `web-addon.auto-install: false`, and `web-addon.auto-patch-webapp-conf: false`.
+7. Restart the server or run `/bmchat reload`. Run `/bluemap reload` if BlueMap does not refresh web assets automatically.
 
 ## Deployment modes
 
@@ -130,9 +131,16 @@ See `docs/CADDY_HTTPS_EN.md` for details.
 
 Chat history uses SQLite by default in new configs (`chat.history-storage: "sqlite"`). This keeps long-lived logs in `plugins/BlueMapWebChat/history.db` and makes paging, reply jumps, deletion, and retention cleanup easier to maintain than the legacy single JSONL file.
 
-Legacy modes remain available: use `chat.history-storage: "jsonl"` for the old `history.jsonl` file, or `"memory"` for session-only history. `chat.history-size` and `chat.history-retention-days` apply to memory, JSONL, and SQLite. If `chat.history-sqlite-migrate-jsonl` is true, an empty SQLite DB imports the existing JSONL history once.
+Legacy modes remain available: use `chat.history-storage: "jsonl"` for the old `history.jsonl` file, or `"memory"` for session-only history. `chat.history-size` and `chat.history-retention-days` apply to memory, JSONL, and SQLite. Newly generated configs start with top-level `enabled: false`, so cleanup cannot run until you review retention values and set `enabled: true`. If `chat.history-sqlite-migrate-jsonl` is true, an empty SQLite DB imports the existing JSONL history once.
 
 A `/history/search` API and in-chat search modal are available for message text and sender searches, with optional date/time range, sender, source, and system/event filters. The search button is placed in the floating chat-panel area so the message input row stays compact, and the search modal follows the configured chat theme/font settings with a scrollable result list. i18n-backed system/event messages are searched and displayed in the selected web UI language when possible. Search can be disabled with `search.enabled`, and the single `search.result-limit` setting controls both the web UI result count and the `/history/search` API limit. There is no separate internal maximum: setting it to 2000 returns up to 2000 results, while setting it to 10 returns up to 10. Very large values such as 10000 or 100000 are accepted, but they can slow searches, increase response size, and add significant CPU, memory, and database load. The default is 50, and 50-200 is recommended for normal use. Existing config files from older versions need these keys added manually or merged from the default config.
+
+
+## Direct message threads
+
+`direct-message.enabled` enables optional 1:1 conversation threads. Targets are limited to linked or previously known players with a stored UUID/name. A->B and B->A use the same thread, and messages are stored by UUID while the UI displays `display name (real account name)` when both are available.
+
+DMs use an independent private-message store. `direct-message.storage: auto` follows `chat.history-storage` when public chat uses `jsonl`; otherwise it uses SQLite. You can also set `direct-message.storage` to `sqlite` or `jsonl` explicitly, using `direct-message.sqlite-file` or `direct-message.jsonl-file`. `direct-message.retention-days: 0` means no time limit; otherwise the DM window title shows the configured retention period and old DM rows are physically removed after that many days. `direct-message.max-messages-per-thread: 0` disables count-based cleanup. `direct-message.confirm-hide` controls whether the web UI asks before hiding a DM from your own view. Because private messages are stored on the server, the feature is disabled by default and should be enabled only after setting a server policy.
 
 ## Custom emoji and game-side emoji plugins
 

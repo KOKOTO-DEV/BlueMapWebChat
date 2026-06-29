@@ -8,11 +8,11 @@ web:
     reconnecting: 再接続中...
     loggedIn: ログイン済み
   button:
-    emoji: "絵文字"
+    emoji: 絵文字
     admin: 管理
     login: ログイン
     upload: 添付
-    resizeEmojiPanel: 'ドラッグして絵文字選択欄のサイズを変更'
+    resizeEmojiPanel: ドラッグして絵文字選択欄のサイズを変更
     resize: サイズ変更
     send: 送信
     reset: リセット
@@ -28,7 +28,7 @@ web:
     revoke: 解除
     delete: 削除
     cancel: キャンセル
-    reply: "返信"
+    reply: 返信
     pin: 固定
     moderationActionsEnable: 固定 / 削除を有効化
     moderationActionsDisable: 固定 / 削除を無効化
@@ -37,18 +37,19 @@ web:
     moveDown: 下へ移動
     commands: コマンド
     search: 検索
+    directMessages: メッセージ
     pip: PIP
     run: 実行
     jumpLatest: 最新メッセージへ
-    createPack: 'フォルダー作成'
-    uploadEmoji: 'アップロード'
-    deselectAll: '選択解除'
-    selectAll: 'すべて選択'
-    deleteSelected: '選択を削除'
-    deletePack: 'フォルダー削除'
-    change: '変更'
-    rename: '変更'
-    renamePack: 'フォルダー名変更'
+    createPack: フォルダー作成
+    uploadEmoji: アップロード
+    deselectAll: 選択解除
+    selectAll: すべて選択
+    deleteSelected: 選択を削除
+    deletePack: フォルダー削除
+    change: 変更
+    rename: 変更
+    renamePack: フォルダー名変更
   placeholder:
     guestName: ゲスト名
     captchaAnswer: 答え
@@ -59,18 +60,18 @@ web:
     muteTarget: ゲスト名またはIP
     minutes: 分
     reason: 理由
-    emojiPack: '新しいパック/フォルダー名'
+    emojiPack: 新しいパック/フォルダー名
   reply:
-    composing: "{sender}へ返信"
-    jump: "返信元メッセージへ移動"
-    notFound: "参照先のメッセージが見つかりません。"
+    composing: '{sender}へ返信'
+    jump: 返信元メッセージへ移動
+    notFound: 参照先のメッセージが見つかりません。
   message:
     deleted: '[削除済み]'
   emoji:
-    empty: "設定された絵文字がありません。"
-    emptyPack: '絵文字なし'
+    empty: 設定された絵文字がありません。
+    emptyPack: 絵文字なし
   alert:
-    emojiTooMany: "絵文字は1メッセージにつき{max}個まで使用できます。"
+    emojiTooMany: 絵文字は1メッセージにつき{max}個まで使用できます。
     rateLimited: 送信が速すぎます。しばらく待ってください。
     sendFailed: '送信失敗: {error}'
     serverUnavailable: チャットサーバーに接続できません。
@@ -89,15 +90,18 @@ web:
     pinFailed: '固定に失敗しました: {error}'
     unpinFailed: '固定解除に失敗しました: {error}'
     movePinFailed: '順序変更に失敗しました: {error}'
-    emojiPackNameRequired: 'フォルダー名を入力してください。'
-    emojiFileRequired: '絵文字ファイルを選択してください。'
-    confirmDeleteEmoji: 'この絵文字を削除しますか？'
-    emojiSelectRequired: '削除する絵文字を選択してください。'
-    confirmDeleteSelectedEmoji: '選択した絵文字 {count} 個を削除しますか？'
-    confirmDeleteEmojiPack: 'フォルダー {pack} と中の絵文字をすべて削除しますか？'
-    emojiRenameNameRequired: '新しい名前を入力してください。'
-    confirmRenameEmoji: 'この絵文字の名前を {name} に変更しますか？古い名前を使った絵文字トークンは一致しなくなります。'
-    confirmRenameEmojiPack: 'フォルダー {pack} を {name} に変更しますか？このフォルダー内の絵文字トークンが変わります。'
+    emojiPackNameRequired: フォルダー名を入力してください。
+    emojiFileRequired: 絵文字ファイルを選択してください。
+    confirmDeleteEmoji: この絵文字を削除しますか？
+    emojiSelectRequired: 削除する絵文字を選択してください。
+    confirmDeleteSelectedEmoji: 選択した絵文字 {count} 個を削除しますか？
+    confirmDeleteEmojiPack: フォルダー {pack} と中の絵文字をすべて削除しますか？
+    emojiRenameNameRequired: 新しい名前を入力してください。
+    confirmRenameEmoji: この絵文字の名前を {name} に変更しますか？古い名前を使った絵文字トークンは一致しなくなります。
+    confirmRenameEmojiPack: フォルダー {pack} を {name} に変更しますか？このフォルダー内の絵文字トークンが変わります。
+    dmLoadFailed: "メッセージの読み込みに失敗しました: {error}"
+    dmSendFailed: "メッセージの送信に失敗しました: {error}"
+    dmHideFailed: "メッセージの非表示に失敗しました: {error}"
     renameFailed: '名前変更に失敗しました: {error}'
   admin:
     title: BlueMap チャット管理
@@ -117,22 +121,22 @@ web:
     currentMutes: 現在のミュート
     expires: 期限
     never: なし
-    emojis: '絵文字'
-    emojiTitle: 'カスタム絵文字'
-    emojiCurrent: '現在の絵文字'
-    emojiLimits: '1ファイル {file} KB / 合計 {total} MB'
-    emojiFileLimit: '1ファイル {file}'
-    emojiStorageUsage: '絵文字容量 {current} / {total}'
-    emojiStorageCurrent: '絵文字容量 {current}'
-    emojiStorageLimit: '絵文字の最大容量 {total}'
-    unlimited: '無制限'
-    emojiFolderSelect: '絵文字フォルダー'
+    emojis: 絵文字
+    emojiTitle: カスタム絵文字
+    emojiCurrent: 現在の絵文字
+    emojiLimits: 1ファイル {file} KB / 合計 {total} MB
+    emojiFileLimit: 1ファイル {file}
+    emojiStorageUsage: 絵文字容量 {current} / {total}
+    emojiStorageCurrent: 絵文字容量 {current}
+    emojiStorageLimit: 絵文字の最大容量 {total}
+    unlimited: 無制限
+    emojiFolderSelect: 絵文字フォルダー
     emojiPackCount: '{count} 個の絵文字'
-    emojiNoFileSelected: 'ファイルが選択されていません'
+    emojiNoFileSelected: ファイルが選択されていません
   prompt:
-    createEmojiPack: '新しいフォルダー名'
-    renameEmoji: '新しい絵文字名'
-    renameEmojiPack: '新しいフォルダー名'
+    createEmojiPack: 新しいフォルダー名
+    renameEmoji: 新しい絵文字名
+    renameEmojiPack: 新しいフォルダー名
   login:
     title: BlueMap チャットログイン
     tabLogin: ログイン
@@ -271,7 +275,7 @@ web:
     multipart_required: アップロードリクエストが不正です
     file_too_large: ファイルが大きすぎます
     total_size_exceeded: 絵文字の合計容量制限を超えました
-    total_size_exceededWithUsage: '絵文字の合計容量制限を超えました。現在 {current}、選択ファイル {file}、最大 {max}。'
+    total_size_exceededWithUsage: 絵文字の合計容量制限を超えました。現在 {current}、選択ファイル {file}、最大 {max}。
     file_missing: アップロードされたファイルがありません
     upload_permission_denied: ファイルをアップロードする権限がありません
     extension_not_allowed: 許可されていないファイル形式です
@@ -297,6 +301,33 @@ web:
     invalid_command: 無効なコマンドです
     command_failed: コマンド実行に失敗しました
     command_too_long: コマンドが長すぎます
+    dmLoadFailed: 'メッセージを読み込めませんでした: {error}'
+    dmHideFailed: 'メッセージを非表示にできませんでした: {error}'
+    dmSendFailed: 'メッセージを送信できませんでした: {error}'
+    dm_disabled: ダイレクトメッセージは無効です
+    web_send_disabled: Web からの DM 送信は無効です
+    player_not_found: プレイヤーが見つかりません
+    self_message: 自分自身には送信できません
+  dm:
+    title: メッセージ
+    noThreads: メッセージスレッドはありません。
+    selectThread: スレッドを選択してください
+    emptyThread: まだメッセージはありません。
+    searchPlayer: プレイヤー検索
+    newMessage: 新規メッセージ
+    selectPlayerFirst: 先にプレイヤーを選択してください。
+    showThreads: 会話一覧を表示
+    hideThreads: 会話一覧を隠す
+    showThreadsShort: 表示
+    hideThreadsShort: 折りたたむ
+    confirmHideMessage: このメッセージを自分の表示から隠しますか？
+    hideMessage: 自分だけこのメッセージを非表示
+    threadList: 会話一覧
+    showConversationList: 一覧を表示
+    showCurrentConversation: 会話のみ
+    retentionLimited: "(保持期間: {days}日)"
+    retentionUnlimited: "(保持期間: 期限なし)"
+    backToList: 会話一覧に戻る
   announcement:
     minecraft-join: 🟢 {player} がサーバーに参加しました。
     minecraft-quit: 🔴 {player} がサーバーから退出しました。
@@ -312,7 +343,7 @@ web:
     web-login: 🌐 {name} がWebチャットにログインしました。
     web-logout: 🌐 {name} がWebチャットからログアウトしました。
   sender:
-    unknown: "不明"
+    unknown: 不明
     server: サーバー
     discord: Discord
     originalId: '元のID: {name}'
@@ -329,6 +360,7 @@ web:
     onlyPlayers: このコマンドはプレイヤーのみ使用できます。
     noPermission: 権限がありません。
     passwordSet: Web チャットのパスワードを設定しました。
+    disabledByConfig: BlueMapWebChat は config.yml で無効化されています。
     configReloaded: BlueMapWebChat の設定を再読み込みしました。
     guestNoMutes: ゲスト/IP のミュートはありません。
     guestMutesTitle: 'BlueMapWebChat ミュート一覧:'
@@ -355,10 +387,41 @@ web:
     helpGuest: ゲスト/IP ミュートを管理
     helpSessions: Web セッション一覧を表示
     helpRevoke: Web セッションを取り消し
+    helpDm: ダイレクトメッセージを送信
+    helpDmRead: 1:1 メッセージスレッドを読む
+    dmDisabled: ダイレクトメッセージは無効です。
+    dmTitle: 'ダイレクトメッセージ: 未読 {count} 件'
+    dmTitlePage: 'ダイレクトメッセージ: 未読 {count} 件 ({page}/{pages}ページ)'
+    dmNoThreads: DM スレッドはありません。
+    dmGameSendDisabled: ゲーム内からの DM 送信は無効です。
+    dmDirectInputRequired: "DMはプレイヤーが直接入力したコマンドでのみ送信できます。"
+    dmPlayerNotFound: プレイヤーが見つかりません。少なくとも一度参加している必要があります。
+    dmEmpty: メッセージが空です。
+    dmFailed: 'DM 送信失敗: {error}'
+    dmSent: '{player} に送信しました: {message}'
+    dmSentEcho: '送信: {player} {message}'
+    dmIncoming: '{player} からの DM: {message}'
+    dmReadTitle: '{player} とのメッセージ:'
+    dmReadTitlePage: '{player} とのメッセージ ({page}/{pages} ページ):'
+    dmReadPageHint: '次のページ: /bmchat dm read {player} {page} {pageSize}'
+    dmReadNavHint: '新しいメッセージは /bmchat dm prev、古いメッセージは /bmchat dm next で移動します。'
+    dmListNavHint: '新しい会話一覧は /bmchat dm list prev、古い会話一覧は /bmchat dm list next で移動します。'
+    dmListFirstPage: 'すでに最新の会話一覧ページです。'
+    dmListLastPage: 'すでに最も古い会話一覧ページです。'
+    dmReadNoCursor: '先にスレッドを開いてください: /bmchat dm read <player>'
+    dmReadFirstPage: 'すでに最新ページです。'
+    dmReadLastPage: 'すでに最古ページです。'
+    dmNoMessages: このスレッドにメッセージはありません。
+    dmMe: 自分
+    dmHideHint: '自分の表示から隠す: /bmchat dm hide <messageId>'
+    dmInvalidMessageId: メッセージ ID が正しくありません。
+    dmHideFailed: "メッセージの非表示に失敗しました。"
+    dmHidden: 自分の表示からメッセージを隠しました。
     never: なし
     authInvalid: 無効な認証リクエストです。
     authCodeExpired: 認証コードが存在しないか期限切れです。
     authComplete: Web チャットアカウントの連携が完了しました。ブラウザに戻ってください。
+    dmUnreadNotice: 未読のダイレクトメッセージが {count} 件あります。Webチャットのメッセージボックスを開くか、/bmchat dm list を使用してください。
   pinned:
     count: 固定メッセージ {count}件
     compact: '{count}'
@@ -388,7 +451,15 @@ web:
     note: サーバーイベントや Web コマンド結果などのシステムメッセージは、i18n キーがある場合 Web UI で翻訳されます。config.yml のカスタム announcement 文はフォールバックとして使用されます。
   history:
     end: これ以上表示するメッセージはありません。
-    loading: "履歴を読み込み中。\n少しお待ちください。"
-    failed: "読み込み失敗。\nしばらくして再試行してください。"
-    timeout: "応答が遅れています。\nしばらくして再試行してください。"
-    offline: "接続が切れています。\nネットワークを確認してください。"
+    loading: '履歴を読み込み中。
+
+      少しお待ちください。'
+    failed: '読み込み失敗。
+
+      しばらくして再試行してください。'
+    timeout: '応答が遅れています。
+
+      しばらくして再試行してください。'
+    offline: '接続が切れています。
+
+      ネットワークを確認してください。'

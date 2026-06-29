@@ -1,5 +1,5 @@
 name: BlueMapWebChat
-version: 4.2.0
+version: 4.3.0
 main: dev.kokoto.bluemapwebchat.BlueMapWebChatPlugin
 api-version: '1.21'
 authors: [KOKOTO]
@@ -9,7 +9,7 @@ loadbefore: [ImageEmojis]
 commands:
   bmchat:
     description: BlueMapWebChat command
-    usage: /bmchat <auth|password|reload|admin>
+    usage: /bmchat <auth|password|dm|reload|admin>
     aliases: [bluemapchat, bmc]
 permissions:
   bluemapwebchat.auth:
@@ -21,3 +21,7 @@ permissions:
   bluemapwebchat.admin:
     description: Allows administrating BlueMapWebChat.
     default: op
+
+  bluemapwebchat.dm:
+    description: Allows sending and reading BlueMapWebChat direct messages.
+    default: true

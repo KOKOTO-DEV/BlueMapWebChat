@@ -2,6 +2,10 @@
 
 This document describes `plugins/BlueMapWebChat/config.yml`.
 
+## Master switch
+
+New generated configs start with top-level `enabled: false`. In this state, BlueMapWebChat only creates/loads configuration and keeps only `/bmchat reload` available; it does not start web/chat services, listeners, Discord integration, private-message storage, addon installation, upload/emoji initialization, or cleanup tasks. Existing configs without this key are treated as enabled for upgrade compatibility. Review storage, retention, upload, preview, authentication, and exposure settings, then set `enabled: true`.
+
 ## Deployment modes
 
 ### BlueMap addon
@@ -82,11 +86,18 @@ Supported values:
 - `jsonl`: legacy single-file persistence using `chat.history-file`.
 - `memory`: session-only in-memory history.
 
-`chat.history-size` and `chat.history-retention-days` are shared by `memory`, `jsonl`, and `sqlite`. `0` means unlimited for each setting. `chat.history-file` is used only by JSONL; `chat.history-sqlite-file` is used only by SQLite. When `chat.history-sqlite-migrate-jsonl` is true, an empty SQLite DB imports `chat.history-file` once. Keep normal file backups of `history.db` before manual editing, large cleanup, or migration.
+`chat.history-size` and `chat.history-retention-days` are shared by `memory`, `jsonl`, and `sqlite`. `0` means unlimited for each setting. New generated configs start with top-level `enabled: false`, so cleanup does not run until you review these values and set `enabled: true`. Use positive values such as `30` or `90` when your server policy requires automatic old-chat cleanup. Upload and external-media cache retention settings work the same way. `chat.history-file` is used only by JSONL; `chat.history-sqlite-file` is used only by SQLite. When `chat.history-sqlite-migrate-jsonl` is true, an empty SQLite DB imports `chat.history-file` once. Keep normal file backups of `history.db` before manual editing, large cleanup, or migration.
 
 ## Message search
 
 `/history/search` and the in-chat search modal are available for message text and sender searches when stored history is enabled. The search options section can filter by date/time range, sender, source, and system/event inclusion. The search button is in the floating chat-panel area so the input row stays compact, and search results use a scrollable list with the configured chat theme/font settings. Search results can jump to the matching message using the existing history-around navigation. i18n-backed system/event messages are searched and displayed in the requested web UI language when possible. Search can be disabled with `search.enabled`, and the single `search.result-limit` setting controls both the web UI result count and the `/history/search` API limit. There is no separate internal maximum: setting it to 2000 returns up to 2000 results, while setting it to 10 returns up to 10. Very large values such as 10000 or 100000 are accepted, but they can slow searches, increase response size, and add significant CPU, memory, and database load. The default is 50, and 50-200 is recommended for normal use. Existing config files from older versions need these keys added manually or merged from the default config.
+
+
+## Direct message threads
+
+`direct-message.enabled` enables optional 1:1 direct-message threads. Targets are limited to linked/known players with stored UUID/name data. Threads are keyed by the sorted pair of UUIDs, so A->B and B->A always use the same conversation. Messages are stored in the independent private-message store configured by `direct-message.storage`. `auto` follows `chat.history-storage` when public chat uses `jsonl`; otherwise it uses SQLite. Use `direct-message.sqlite-file` for SQLite or `direct-message.jsonl-file` for JSONL.
+
+`direct-message.retention-days: 0` means no time limit. Any positive value is shown next to the DM window title and physically deletes DM messages older than that many days. `direct-message.max-messages-per-thread: 0` disables count-based cleanup. `direct-message.confirm-hide` controls the web confirmation prompt before hiding a DM from your own view. Because private messages are stored on the server, the feature is disabled by default.
 
 ## UI time zone
 
@@ -112,6 +123,9 @@ Supported values:
 - `pinned.max-pins`
 - `pinned.show-to-logged-out`
 - `commands.max-length`
+- `direct-message.retention-days`
+- `direct-message.max-messages-per-thread`
+- `direct-message.max-message-length`
 
 ## Guest chat controls
 

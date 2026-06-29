@@ -1,5 +1,6 @@
 package dev.kokoto.bluemapwebchat;
 
+import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
@@ -7,21 +8,88 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatListener implements Listener {
     private final BlueMapWebChatPlugin plugin;
     private final Map<AsyncPlayerChatEvent, String> originalChatMessages = Collections.synchronizedMap(new WeakHashMap<>());
     private final Map<Event, String> originalPaperChatMessages = Collections.synchronizedMap(new WeakHashMap<>());
+    private final Map<UUID, CapturedDirectMessageCommand> originalDirectMessageCommands = new ConcurrentHashMap<>();
     private final boolean paperAsyncChatRegistered;
 
     public ChatListener(BlueMapWebChatPlugin plugin) {
         this.plugin = plugin;
         this.paperAsyncChatRegistered = registerPaperAsyncChatHandlers();
+    }
+
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    public void captureOriginalDirectMessageCommand(PlayerCommandPreprocessEvent event) {
+        if (event == null || event.getPlayer() == null) return;
+        String message = event.getMessage();
+        if (!looksLikeDirectMessageCommand(message)) return;
+        // Command preprocessors from emoji plugins may replace :pack/name: with a
+        // private-use font glyph before the command executor sees the args. Keep
+        // the raw player command so /bmchat dm stores the same token the user typed.
+        // DM command handling later requires this capture; commands dispatched through
+        // /execute, command blocks, console, or plugins do not pass this player-input check.
+        originalDirectMessageCommands.put(event.getPlayer().getUniqueId(),
+                new CapturedDirectMessageCommand(message, System.currentTimeMillis()));
+    }
+
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = false)
+    public void discardCancelledDirectMessageCommand(PlayerCommandPreprocessEvent event) {
+        if (event == null || event.getPlayer() == null || !event.isCancelled()) return;
+        originalDirectMessageCommands.remove(event.getPlayer().getUniqueId());
+    }
+
+    public String pollOriginalDirectMessageCommand(Player player) {
+        if (player == null) return null;
+        CapturedDirectMessageCommand captured = originalDirectMessageCommands.remove(player.getUniqueId());
+        if (captured == null || captured.message == null || captured.message.isBlank()) return null;
+        // A captured player command should be consumed immediately by the matching
+        // command executor. Drop stale entries so they cannot be reused by a later
+        // forced dispatch that only impersonates the Player sender.
+        if (System.currentTimeMillis() - captured.createdAtMs > 5_000L) return null;
+        return captured.message;
+    }
+
+    private boolean looksLikeDirectMessageCommand(String raw) {
+        String text = String.valueOf(raw == null ? "" : raw).trim();
+        if (!text.startsWith("/")) return false;
+        String[] parts = text.substring(1).split("\\s+", 3);
+        if (parts.length < 2) return false;
+        String root = parts[0].toLowerCase(java.util.Locale.ROOT);
+        String sub = parts[1].toLowerCase(java.util.Locale.ROOT);
+        return isBmChatRoot(root) && sub.equals("dm");
+    }
+
+    private boolean isBmChatRoot(String root) {
+        if (root == null) return false;
+        return root.equals("bmchat")
+                || root.equals("bluemapchat")
+                || root.equals("bmc")
+                || root.equals("bluemapwebchat:bmchat")
+                || root.equals("bluemapwebchat:bluemapchat")
+                || root.equals("bluemapwebchat:bmc");
+    }
+
+    private static class CapturedDirectMessageCommand {
+        final String message;
+        final long createdAtMs;
+
+        CapturedDirectMessageCommand(String message, long createdAtMs) {
+            this.message = message;
+            this.createdAtMs = createdAtMs;
+        }
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
@@ -52,6 +120,7 @@ public class ChatListener implements Listener {
         // in-game display name even before the player sends a chat message.
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> rememberDisplayName(player), 20L);
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> rememberDisplayName(player), 60L);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> notifyUnreadDirectMessages(player), 80L);
     }
 
     @SuppressWarnings("unchecked")
@@ -106,6 +175,20 @@ public class ChatListener implements Listener {
         WebChatServer server = plugin.webServer();
         if (server == null) return;
         server.publishFromGame(player, message == null ? "" : message);
+    }
+
+
+    private void notifyUnreadDirectMessages(Player player) {
+        if (player == null || !player.isOnline()) return;
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.directMessageEnabled || !config.directMessageNotifyOnLogin) return;
+        DirectMessageStore store = plugin.directMessages();
+        if (store == null || !store.available()) return;
+        int unread = store.unreadCount(player.getUniqueId().toString());
+        if (unread <= 0) return;
+        java.util.Map<String, String> vars = new java.util.HashMap<>();
+        vars.put("count", Integer.toString(unread));
+        player.sendMessage(ChatColor.LIGHT_PURPLE + plugin.langManager().text("command.dmUnreadNotice", "You have {count} unread direct message(s). Open the web chat message box or use /bmchat dm list.", vars));
     }
 
     private Player paperPlayer(Event event) {

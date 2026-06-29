@@ -1,5 +1,6 @@
 package dev.kokoto.bluemapwebchat;
 
+import org.bukkit.ChatColor;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -471,6 +472,99 @@ public class Storage {
         boolean removed = sessionsByTokenHash.remove(SecurityUtil.sha256Hex(token)) != null;
         if (removed) saveSessions();
         return removed;
+    }
+
+
+
+    public PlayerIdentity findKnownPlayerByUuid(String uuid) {
+        if (uuid == null || uuid.isBlank()) return null;
+        String normalized = uuid.trim().toLowerCase(Locale.ROOT);
+        Account account = accountsById.get("uuid:" + normalized);
+        String username = "";
+        String displayName = "";
+        if (account != null) {
+            username = account.safeUsername();
+            displayName = account.lastDisplayName == null ? "" : account.lastDisplayName;
+        }
+        if (username == null || username.isBlank()) username = knownUsernamesByUuid.getOrDefault(normalized, "");
+        if (displayName == null || displayName.isBlank()) displayName = knownDisplayNamesByUuid.getOrDefault(normalized, "");
+        if ((username == null || username.isBlank()) && (displayName == null || displayName.isBlank())) return null;
+        return new PlayerIdentity(normalized, username, displayName);
+    }
+
+    public PlayerIdentity findKnownPlayer(String query) {
+        if (query == null || query.isBlank()) return null;
+        String q = query.trim();
+        String qLower = q.toLowerCase(Locale.ROOT);
+        String qPlain = plainLookupText(q).toLowerCase(Locale.ROOT);
+        PlayerIdentity byUuid = findKnownPlayerByUuid(qLower);
+        if (byUuid != null) return byUuid;
+
+        PlayerIdentity displayMatch = null;
+        for (PlayerIdentity player : listKnownPlayers("", 0)) {
+            if (player.username != null && player.username.equalsIgnoreCase(q)) return player;
+            String display = player.displayName == null ? "" : player.displayName;
+            if (displayMatch == null && display.equalsIgnoreCase(q)) displayMatch = player;
+            if (displayMatch == null && !qPlain.isBlank() && plainLookupText(display).equalsIgnoreCase(qPlain)) displayMatch = player;
+        }
+        return displayMatch;
+    }
+
+    private String plainLookupText(String value) {
+        String out = String.valueOf(value == null ? "" : value);
+        out = out.replaceAll("(?i)[§&]x(?:[§&][0-9a-f]){6}", "");
+        out = out.replaceAll("(?i)&#[0-9a-f]{6}", "");
+        out = ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', out));
+        if (out == null) out = "";
+        return out.trim();
+    }
+
+    public List<PlayerIdentity> listKnownPlayers(String query, int limit) {
+        String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        String qPlain = plainLookupText(query).toLowerCase(Locale.ROOT);
+        int max = limit <= 0 ? Integer.MAX_VALUE : limit;
+        Map<String, PlayerIdentity> byUuid = new LinkedHashMap<>();
+
+        for (Account account : accountsById.values()) {
+            if (account == null || account.uuid == null || account.uuid.isBlank()) continue;
+            String uuid = account.uuid.trim().toLowerCase(Locale.ROOT);
+            String username = account.safeUsername();
+            String display = account.lastDisplayName == null ? "" : account.lastDisplayName;
+            String rememberedUser = knownUsernamesByUuid.getOrDefault(uuid, "");
+            String rememberedDisplay = knownDisplayNamesByUuid.getOrDefault(uuid, "");
+            if ((username == null || username.isBlank()) && !rememberedUser.isBlank()) username = rememberedUser;
+            if ((display == null || display.isBlank()) && !rememberedDisplay.isBlank()) display = rememberedDisplay;
+            byUuid.put(uuid, new PlayerIdentity(uuid, username, display));
+        }
+        for (String uuidRaw : knownDisplayNamesByUuid.keySet()) {
+            if (uuidRaw == null || uuidRaw.isBlank()) continue;
+            String uuid = uuidRaw.trim().toLowerCase(Locale.ROOT);
+            if (byUuid.containsKey(uuid)) continue;
+            byUuid.put(uuid, new PlayerIdentity(uuid, knownUsernamesByUuid.getOrDefault(uuid, ""), knownDisplayNamesByUuid.getOrDefault(uuid, "")));
+        }
+        for (String uuidRaw : knownUsernamesByUuid.keySet()) {
+            if (uuidRaw == null || uuidRaw.isBlank()) continue;
+            String uuid = uuidRaw.trim().toLowerCase(Locale.ROOT);
+            if (byUuid.containsKey(uuid)) continue;
+            byUuid.put(uuid, new PlayerIdentity(uuid, knownUsernamesByUuid.getOrDefault(uuid, ""), knownDisplayNamesByUuid.getOrDefault(uuid, "")));
+        }
+
+        List<PlayerIdentity> out = new ArrayList<>();
+        for (PlayerIdentity player : byUuid.values()) {
+            if (player.uuid == null || player.uuid.isBlank()) continue;
+            if (!q.isBlank()) {
+                String haystack = (player.username + " " + player.displayName + " " + player.uuid).toLowerCase(Locale.ROOT);
+                String plainHaystack = (plainLookupText(player.username) + " " + plainLookupText(player.displayName) + " " + player.uuid).toLowerCase(Locale.ROOT);
+                if (!haystack.contains(q) && (qPlain.isBlank() || !plainHaystack.contains(qPlain))) continue;
+            }
+            out.add(player);
+        }
+        out.sort(Comparator
+                .comparing((PlayerIdentity p) -> String.valueOf(p.displayName == null || p.displayName.isBlank() ? p.username : p.displayName).toLowerCase(Locale.ROOT))
+                .thenComparing(p -> String.valueOf(p.username).toLowerCase(Locale.ROOT))
+                .thenComparing(p -> String.valueOf(p.uuid)));
+        if (out.size() > max) return new ArrayList<>(out.subList(0, max));
+        return out;
     }
 
     public List<Account> listAccounts() {

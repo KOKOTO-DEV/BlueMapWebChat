@@ -2,6 +2,10 @@
 
 `plugins/BlueMapWebChat/config.yml` 기준 설명입니다.
 
+## 전체 활성화 스위치
+
+새로 생성된 config는 최상단 `enabled: false` 상태입니다. 이 상태에서는 BlueMapWebChat이 config를 생성/로드하기만 하고 `/bmchat reload`만 계속 사용할 수 있으며, 웹/채팅 서비스, 리스너, Discord 연동, DM 저장소, 애드온 설치, 업로드/이모지 초기화, 정리 작업을 시작하지 않습니다. 기존 config에 이 키가 없으면 업그레이드 호환성을 위해 활성 상태로 처리합니다. 저장 방식, 보관 기간, 업로드, 미리보기, 인증, 외부 공개 설정을 확인한 뒤 `enabled: true`로 변경하세요.
+
 ## 배포 모드
 
 ### BlueMap 애드온
@@ -74,7 +78,14 @@ emoji:
 
 ## 채팅 기록 저장
 
-채팅 기록 보관은 `chat.history-storage`로 `memory`, `jsonl`, `sqlite` 중 하나를 고르고, `chat.history-size`와 `chat.history-retention-days`를 세 모드가 공통으로 사용합니다. `0`은 각각 개수/기간 제한 없음입니다. `chat.history-file`은 JSONL에서만, `chat.history-sqlite-file`은 SQLite에서만 사용됩니다.
+채팅 기록 보관은 `chat.history-storage`로 `memory`, `jsonl`, `sqlite` 중 하나를 고르고, `chat.history-size`와 `chat.history-retention-days`를 세 모드가 공통으로 사용합니다. `0`은 각각 개수/기간 제한 없음입니다. 새로 생성된 config는 최상단 `enabled: false` 상태이므로, 이 값들을 검토하고 `enabled: true`로 바꾸기 전까지 정리 작업이 실행되지 않습니다. 서버 정책상 자동 정리가 필요하면 `30`, `90` 같은 양수 보관일을 설정하세요. 업로드와 외부 미디어 캐시 보관 설정도 같은 방식으로 동작합니다. `chat.history-file`은 JSONL에서만, `chat.history-sqlite-file`은 SQLite에서만 사용됩니다.
+
+
+## 1:1 메시지함 / DM 스레드
+
+`direct-message.enabled`를 켜면 1:1 대화 스레드형 메시지함을 사용할 수 있습니다. 대상은 UUID/이름이 저장된 연동 또는 접속 기록이 있는 플레이어로 제한됩니다. 스레드는 두 UUID를 정렬한 쌍으로 식별하므로 A→B와 B→A가 항상 같은 대화로 들어갑니다. 메시지는 `direct-message.storage`로 지정한 전용 DM 저장소에 저장됩니다. `auto`는 공개 채팅이 `jsonl` 저장방식일 때 DM도 JSONL을 사용하고, 그 외에는 SQLite를 사용합니다. SQLite는 `direct-message.sqlite-file`, JSONL은 `direct-message.jsonl-file`을 사용합니다.
+
+`direct-message.retention-days: 0`은 보관 기한 없음입니다. 1 이상의 값은 DM 메시지함 제목 옆에 보관 기간으로 표시되며, 해당 일수가 지난 DM 원문은 물리 삭제됩니다. `direct-message.max-messages-per-thread: 0`은 스레드별 개수 정리 없음입니다. `direct-message.confirm-hide`는 웹 UI에서 DM을 내 화면에서 숨길 때 확인창을 띄울지 정합니다. 개인 메시지가 서버에 저장되는 기능이므로 기본값은 비활성화입니다.
 
 ## UI 타임존
 
@@ -100,6 +111,9 @@ emoji:
 - `pinned.max-pins`
 - `pinned.show-to-logged-out`
 - `commands.max-length`
+- `direct-message.retention-days`
+- `direct-message.max-messages-per-thread`
+- `direct-message.max-message-length`
 
 ## 게스트 채팅 제한
 

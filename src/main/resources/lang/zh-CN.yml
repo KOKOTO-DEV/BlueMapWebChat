@@ -8,11 +8,11 @@ web:
     reconnecting: 重新连接中...
     loggedIn: 已登录
   button:
-    emoji: "表情"
+    emoji: 表情
     admin: 管理
     login: 登录
     upload: 附件
-    resizeEmojiPanel: '拖动调整表情选择器大小'
+    resizeEmojiPanel: 拖动调整表情选择器大小
     resize: 调整大小
     send: 发送
     reset: 重置
@@ -28,7 +28,7 @@ web:
     revoke: 撤销会话
     delete: 删除
     cancel: 取消
-    reply: "回复"
+    reply: 回复
     pin: 置顶
     moderationActionsEnable: 启用固定/删除
     moderationActionsDisable: 停用固定/删除
@@ -37,18 +37,19 @@ web:
     moveDown: 下移
     commands: 命令
     search: 搜索
+    directMessages: 消息
     pip: PIP
     run: 运行
     jumpLatest: 跳到最新消息
-    createPack: '创建文件夹'
-    uploadEmoji: '上传'
-    deselectAll: '取消全选'
-    selectAll: '全选'
-    deleteSelected: '删除所选'
-    deletePack: '删除文件夹'
-    change: '更改'
-    rename: '更改'
-    renamePack: '重命名文件夹'
+    createPack: 创建文件夹
+    uploadEmoji: 上传
+    deselectAll: 取消全选
+    selectAll: 全选
+    deleteSelected: 删除所选
+    deletePack: 删除文件夹
+    change: 更改
+    rename: 更改
+    renamePack: 重命名文件夹
   placeholder:
     guestName: 访客名称
     captchaAnswer: 答案
@@ -59,18 +60,18 @@ web:
     muteTarget: 访客名称或 IP
     minutes: 分钟
     reason: 原因
-    emojiPack: '新表情包/文件夹名称'
+    emojiPack: 新表情包/文件夹名称
   reply:
-    composing: "回复 {sender}"
-    jump: "跳转到被回复的消息"
-    notFound: "找不到引用的消息。"
+    composing: 回复 {sender}
+    jump: 跳转到被回复的消息
+    notFound: 找不到引用的消息。
   message:
     deleted: '[已删除]'
   emoji:
-    empty: "没有配置表情。"
-    emptyPack: '无表情'
+    empty: 没有配置表情。
+    emptyPack: 无表情
   alert:
-    emojiTooMany: "每条消息最多只能使用 {max} 个表情。"
+    emojiTooMany: 每条消息最多只能使用 {max} 个表情。
     rateLimited: 发送太快了，请稍后再试。
     sendFailed: '发送失败: {error}'
     serverUnavailable: 无法连接到聊天服务器。
@@ -89,15 +90,18 @@ web:
     pinFailed: 置顶失败：{error}
     unpinFailed: 取消置顶失败：{error}
     movePinFailed: '调整顺序失败: {error}'
-    emojiPackNameRequired: '请输入文件夹名称。'
-    emojiFileRequired: '请选择表情文件。'
-    confirmDeleteEmoji: '要删除这个表情吗？'
-    emojiSelectRequired: '请选择要删除的表情。'
-    confirmDeleteSelectedEmoji: '要删除选中的 {count} 个表情吗？'
-    confirmDeleteEmojiPack: '要删除文件夹 {pack} 及其中所有表情吗？'
-    emojiRenameNameRequired: '请输入新名称。'
-    confirmRenameEmoji: '要将此表情重命名为 {name} 吗？使用旧名称的表情标记将不再匹配。'
-    confirmRenameEmojiPack: '要将文件夹 {pack} 重命名为 {name} 吗？此文件夹中的表情标记将会改变。'
+    emojiPackNameRequired: 请输入文件夹名称。
+    emojiFileRequired: 请选择表情文件。
+    confirmDeleteEmoji: 要删除这个表情吗？
+    emojiSelectRequired: 请选择要删除的表情。
+    confirmDeleteSelectedEmoji: 要删除选中的 {count} 个表情吗？
+    confirmDeleteEmojiPack: 要删除文件夹 {pack} 及其中所有表情吗？
+    emojiRenameNameRequired: 请输入新名称。
+    confirmRenameEmoji: 要将此表情重命名为 {name} 吗？使用旧名称的表情标记将不再匹配。
+    confirmRenameEmojiPack: 要将文件夹 {pack} 重命名为 {name} 吗？此文件夹中的表情标记将会改变。
+    dmLoadFailed: "消息加载失败：{error}"
+    dmSendFailed: "消息发送失败：{error}"
+    dmHideFailed: "隐藏消息失败：{error}"
     renameFailed: '重命名失败: {error}'
   admin:
     title: BlueMap 聊天管理
@@ -117,22 +121,22 @@ web:
     currentMutes: 当前禁言
     expires: 到期
     never: 永不
-    emojis: '表情'
-    emojiTitle: '自定义表情'
-    emojiCurrent: '当前表情'
-    emojiLimits: '单文件 {file} KB / 总计 {total} MB'
-    emojiFileLimit: '单文件 {file}'
-    emojiStorageUsage: '表情容量 {current} / {total}'
-    emojiStorageCurrent: '表情容量 {current}'
-    emojiStorageLimit: '表情最大容量 {total}'
-    unlimited: '无限制'
-    emojiFolderSelect: '表情文件夹'
+    emojis: 表情
+    emojiTitle: 自定义表情
+    emojiCurrent: 当前表情
+    emojiLimits: 单文件 {file} KB / 总计 {total} MB
+    emojiFileLimit: 单文件 {file}
+    emojiStorageUsage: 表情容量 {current} / {total}
+    emojiStorageCurrent: 表情容量 {current}
+    emojiStorageLimit: 表情最大容量 {total}
+    unlimited: 无限制
+    emojiFolderSelect: 表情文件夹
     emojiPackCount: '{count} 个表情'
-    emojiNoFileSelected: '未选择文件'
+    emojiNoFileSelected: 未选择文件
   prompt:
-    createEmojiPack: '新文件夹名称'
-    renameEmoji: '新表情名称'
-    renameEmojiPack: '新文件夹名称'
+    createEmojiPack: 新文件夹名称
+    renameEmoji: 新表情名称
+    renameEmojiPack: 新文件夹名称
   login:
     title: BlueMap 聊天登录
     tabLogin: 登录
@@ -271,7 +275,7 @@ web:
     multipart_required: 上传请求无效
     file_too_large: 文件过大
     total_size_exceeded: 已超过表情总容量限制
-    total_size_exceededWithUsage: '已超过表情总容量限制。当前 {current}，所选文件 {file}，最大 {max}。'
+    total_size_exceededWithUsage: 已超过表情总容量限制。当前 {current}，所选文件 {file}，最大 {max}。
     file_missing: 没有上传文件
     upload_permission_denied: 你没有上传文件的权限
     extension_not_allowed: 不允许的文件类型
@@ -297,6 +301,33 @@ web:
     invalid_command: 命令无效
     command_failed: 命令运行失败
     command_too_long: 命令过长
+    dmLoadFailed: '无法加载消息: {error}'
+    dmHideFailed: '无法隐藏消息: {error}'
+    dmSendFailed: '无法发送消息: {error}'
+    dm_disabled: 私信已禁用
+    web_send_disabled: Web 私信发送已禁用
+    player_not_found: 找不到玩家
+    self_message: 不能给自己发送私信
+  dm:
+    title: 消息
+    noThreads: 没有会话线程。
+    selectThread: 选择一个会话
+    emptyThread: 还没有消息。
+    searchPlayer: 搜索玩家
+    newMessage: 新消息
+    selectPlayerFirst: 请先选择玩家。
+    showThreads: 显示会话列表
+    hideThreads: 隐藏会话列表
+    showThreadsShort: 展开
+    hideThreadsShort: 收起
+    confirmHideMessage: 要仅从自己的视图隐藏这条消息吗？
+    hideMessage: 仅为我隐藏这条消息
+    threadList: 会话列表
+    showConversationList: 显示列表
+    showCurrentConversation: 仅当前会话
+    retentionLimited: "（保留期限：{days} 天）"
+    retentionUnlimited: "（保留期限：无限期）"
+    backToList: 返回会话列表
   announcement:
     minecraft-join: 🟢 {player} 加入了服务器。
     minecraft-quit: 🔴 {player} 离开了服务器。
@@ -312,7 +343,7 @@ web:
     web-login: 🌐 {name} 登录了网页聊天。
     web-logout: 🌐 {name} 退出了网页聊天。
   sender:
-    unknown: "未知"
+    unknown: 未知
     server: 服务器
     discord: Discord
     originalId: '原始ID: {name}'
@@ -329,6 +360,7 @@ web:
     onlyPlayers: 此命令只能由玩家使用。
     noPermission: 你没有权限。
     passwordSet: Web 聊天密码已设置。
+    disabledByConfig: BlueMapWebChat 已在 config.yml 中禁用。
     configReloaded: BlueMapWebChat 配置已重新加载。
     guestNoMutes: 没有访客/IP 禁言。
     guestMutesTitle: 'BlueMapWebChat 禁言列表:'
@@ -355,10 +387,41 @@ web:
     helpGuest: 管理访客/IP 禁言
     helpSessions: 列出 Web 会话
     helpRevoke: 撤销 Web 会话
+    helpDm: 发送私信
+    helpDmRead: 读取 1 对 1 消息会话
+    dmDisabled: 私信已禁用。
+    dmTitle: '私信: {count} 条未读'
+    dmTitlePage: '私信: {count} 条未读（第 {page}/{pages} 页）'
+    dmListNavHint: '使用 /bmchat dm list prev 查看较新的会话，使用 /bmchat dm list next 查看较旧的会话。'
+    dmListFirstPage: '已经是最新的会话列表页。'
+    dmListLastPage: '已经是最旧的会话列表页。'
+    dmNoThreads: 没有私信会话。
+    dmGameSendDisabled: 游戏内私信发送已禁用。
+    dmDirectInputRequired: "DM 只能通过玩家直接输入的命令发送。"
+    dmPlayerNotFound: 找不到玩家。玩家必须至少加入过一次。
+    dmEmpty: 消息为空。
+    dmFailed: '私信发送失败: {error}'
+    dmSent: '已发送给 {player}: {message}'
+    dmSentEcho: '发送: {player} {message}'
+    dmIncoming: '来自 {player} 的私信: {message}'
+    dmReadTitle: '与 {player} 的消息:'
+    dmReadTitlePage: '与 {player} 的消息（第 {page}/{pages} 页）:'
+    dmReadPageHint: '下一页: /bmchat dm read {player} {page} {pageSize}'
+    dmReadNavHint: '使用 /bmchat dm prev 查看较新的消息，使用 /bmchat dm next 查看较旧的消息。'
+    dmReadNoCursor: '请先打开一个会话: /bmchat dm read <player>'
+    dmReadFirstPage: '已经是最新页。'
+    dmReadLastPage: '已经是最旧页。'
+    dmNoMessages: 此会话中没有消息。
+    dmMe: 我
+    dmHideHint: '仅从自己视图隐藏: /bmchat dm hide <messageId>'
+    dmInvalidMessageId: 消息 ID 无效。
+    dmHideFailed: "隐藏消息失败。"
+    dmHidden: 已从你的视图隐藏该消息。
     never: 永不
     authInvalid: 无效的认证请求。
     authCodeExpired: 认证代码不存在或已过期。
     authComplete: Web 聊天账号关联完成。请返回浏览器。
+    dmUnreadNotice: 你有 {count} 条未读私信。请打开网页聊天消息框，或使用 /bmchat dm list。
   pinned:
     count: 置顶消息：{count}
     compact: '{count}'
@@ -388,7 +451,15 @@ web:
     note: 服务器事件和 Web 命令结果等系统消息在存在 i18n 键时会在 Web UI 中翻译。config.yml 中的自定义 announcement 文本会作为回退文本保留。
   history:
     end: 没有更多可显示的消息。
-    loading: "正在加载历史。\n请稍候。"
-    failed: "加载失败。\n请稍后重试。"
-    timeout: "响应较慢。\n请稍后重试。"
-    offline: "连接已断开。\n请检查网络。"
+    loading: '正在加载历史。
+
+      请稍候。'
+    failed: '加载失败。
+
+      请稍后重试。'
+    timeout: '响应较慢。
+
+      请稍后重试。'
+    offline: '连接已断开。
+
+      请检查网络。'

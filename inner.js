@@ -80,6 +80,30 @@
     commandsRunFromChatInput: false,
     commandsRequireConfirm: true,
 
+    directMessageEnabled: false,
+    directMessageAllowWebSend: true,
+    directMessageMaxMessageLength: 500,
+    directMessageRetentionDays: 0,
+    directMessageWebUnreadBadge: true,
+    directMessageConfirmHide: true,
+    dmUnread: 0,
+    dmThreads: [],
+    dmModalOpen: false,
+    dmActiveThreadId: "",
+    dmDraftTarget: null,
+    dmSearchTimer: null,
+    dmSearchPanelOpen: false,
+    dmConversationFocus: localStorage.getItem("bmwc.dmConversationFocus") === "1",
+    dmEmojiPanelOpen: false,
+    dmEdgeToastVisible: false,
+    dmEdgeToastVisibleUntil: 0,
+    dmEdgeToastLastShownAt: 0,
+    dmEdgeToastTimer: null,
+    dmEdgePendingTopUntil: 0,
+    dmEdgePendingBottomUntil: 0,
+    dmEdgeBottomExtraScrollCount: 0,
+    activeComposeInputId: "bmwc-message",
+
     emojiEnabled: false,
     emojiShowButton: true,
     emojiRenderSizePx: 32,
@@ -237,7 +261,7 @@
     // Only actual chat senders may render Minecraft legacy colors.
     // Server/event/system lines keep legacy codes stripped even when
     // player-display.strip-colors is false.
-    return s === "game" || s === "web" || s === "guest" || s === "discord";
+    return s === "game" || s === "web" || s === "guest" || s === "discord" || s === "dm";
   }
 
   function normalizeMinecraftLegacySource(value) {
@@ -1037,7 +1061,7 @@
       if (!href || !player) return "";
       if (socialClickToLoadEnabled() && !state.mediaOpen.has(key)) {
         return `<div class="bmwc-social-card bmwc-tiktok-card" data-social-kind="tiktok" data-social-src="${esc(href)}" data-tiktok-id="${esc(id)}" data-preview-key="${esc(key)}" style="${socialVerticalLoadCardStyle()}">
-          <button type="button" class="bmwc-media-load">${esc(t("media.loadTikTok", "▶ TikTok"))}</button>
+          <button type="button" class="bmwc-media-load bmwc-button">${esc(t("media.loadTikTok", "▶ TikTok"))}</button>
         </div>`;
       }
       return `<div class="bmwc-social-embed bmwc-tiktok-embed" data-preview-key="${esc(key)}" style="${tiktokPlayerShellStyle()}">
@@ -1052,7 +1076,7 @@
       if (!href) return "";
       if (socialClickToLoadEnabled() && !state.mediaOpen.has(key)) {
         return `<div class="bmwc-social-card bmwc-x-card" data-social-kind="x" data-social-src="${esc(href)}" data-preview-key="${esc(key)}" style="${maxHeightCss}">
-          <button type="button" class="bmwc-media-load">${esc(t("media.loadXPost", "▶ X post"))}</button>
+          <button type="button" class="bmwc-media-load bmwc-button">${esc(t("media.loadXPost", "▶ X post"))}</button>
         </div>`;
       }
       const theme = xThemeValue();
@@ -1260,7 +1284,7 @@
         if (!src) return "";
         if (mediaClickToLoadEnabled() && !state.mediaOpen.has(key)) {
           return `<div class="bmwc-media-card bmwc-video-card" data-media-kind="video" data-media-src="${esc(src)}" data-media-open="${esc(openHref)}" data-preview-key="${esc(key)}" style="${maxHeightStyle}">
-            <button type="button" class="bmwc-media-load">${esc(t("media.loadVideo", "▶ Video"))}</button>
+            <button type="button" class="bmwc-media-load bmwc-button">${esc(t("media.loadVideo", "▶ Video"))}</button>
           </div>`;
         }
         return `<div class="bmwc-video-wrap" data-preview-key="${esc(key)}">
@@ -1274,7 +1298,7 @@
         if (!src) return "";
         if (mediaClickToLoadEnabled() && !state.mediaOpen.has(key)) {
           return `<div class="bmwc-media-card bmwc-audio-card" data-media-kind="audio" data-media-src="${esc(src)}" data-media-open="${esc(openHref)}" data-preview-key="${esc(key)}">
-            <button type="button" class="bmwc-media-load">${esc(t("media.loadAudio", "▶ Audio"))}</button>
+            <button type="button" class="bmwc-media-load bmwc-button">${esc(t("media.loadAudio", "▶ Audio"))}</button>
           </div>`;
         }
         return `<div class="bmwc-audio-wrap" data-preview-key="${esc(key)}">
@@ -1491,12 +1515,23 @@
     return null;
   }
 
+  function emojiRenderSizePx() {
+    return Math.max(16, Math.min(1024, Number(state.emojiRenderSizePx || (state.config && state.config.emojiRenderSizePx) || 32)));
+  }
+
+  function customEmojiTooltipText(item) {
+    if (!item) return "";
+    // Prefer the original display label exposed by the emoji catalog. This is
+    // what users expect to see when hovering ImageEmojis/custom emojis.
+    return String(item.label || item.name || item.id || "emoji");
+  }
+
   function customEmojiImgHtml(item) {
     if (!item || !item.url) return "";
-    const size = Math.max(16, Math.min(1024, Number(state.emojiRenderSizePx || (state.config && state.config.emojiRenderSizePx) || 32)));
+    const size = emojiRenderSizePx();
     const label = item.label || item.name || item.id || "emoji";
-    const title = item.path ? `${label}\n${item.path}` : label;
-    return `<img class="bmwc-custom-emoji" src="${esc(item.url)}" alt="${esc(":" + label + ":")}" title="${esc(title)}" loading="lazy" draggable="false" style="width:${size}px;height:${size}px;">`;
+    const title = customEmojiTooltipText(item);
+    return `<img class="bmwc-custom-emoji" src="${esc(item.url)}" alt="${esc(":" + label + ":")}" title="${esc(title)}" aria-label="${esc(title)}" data-emoji-title="${esc(title)}" loading="lazy" draggable="false" style="width:${size}px;height:${size}px;">`;
   }
 
   function emojiPickerSizePx() {
@@ -1769,7 +1804,9 @@
     if (!panel || !scroll || scroll.dataset.bmwcWheelStepInstalled === "1") return;
     scroll.dataset.bmwcWheelStepInstalled = "1";
     scroll.addEventListener("wheel", event => {
-      if (!state.emojiPanelOpen || panel.classList.contains("bmwc-hidden")) return;
+      const isDmPanel = panel && panel.id === "bmwc-dm-emoji-panel";
+      const open = isDmPanel ? state.dmEmojiPanelOpen : state.emojiPanelOpen;
+      if (!open || panel.classList.contains("bmwc-hidden")) return;
       if (event.ctrlKey || event.metaKey || event.shiftKey) return;
       const deltaY = Number(event.deltaY || 0);
       if (Math.abs(deltaY) < 1) return;
@@ -1784,9 +1821,61 @@
   function applyEmojiPickerSize() {
     const root = document.getElementById("bmwc-root");
     if (!root) return;
+    root.style.setProperty("--bmwc-emoji-render-size", emojiRenderSizePx() + "px");
     root.style.setProperty("--bmwc-emoji-picker-size", emojiPickerSizePx() + "px");
     root.style.setProperty("--bmwc-emoji-panel-height", emojiPanelHeightPx() + "px");
     root.style.setProperty("--bmwc-emoji-panel-min-height", emojiPanelMinHeightPx() + "px");
+    syncDirectMessageModalSettings();
+  }
+
+  function syncDirectMessageModalSettings() {
+    const wrap = document.querySelector(".bmwc-dm-modal-backdrop");
+    if (!wrap) return;
+    try { applyDetachedModalTheme(wrap); } catch (_) {}
+    wrap.style.setProperty("--bmwc-emoji-render-size", emojiRenderSizePx() + "px");
+    wrap.style.setProperty("--bmwc-emoji-picker-size", emojiPickerSizePx() + "px");
+    wrap.style.setProperty("--bmwc-emoji-panel-height", emojiPanelHeightPx() + "px");
+    const panel = document.getElementById("bmwc-dm-emoji-panel");
+    const minHeight = emojiPanelMinHeightPx(panel);
+    wrap.style.setProperty("--bmwc-emoji-panel-min-height", minHeight + "px");
+  }
+
+  function setElementVisible(el, visible) {
+    if (!el) return;
+    el.classList.toggle("bmwc-hidden", !visible);
+    el.hidden = !visible;
+    el.style.display = visible ? "" : "none";
+  }
+
+  function updateDirectMessageComposeControls() {
+    if (!state.dmModalOpen) return;
+    syncDirectMessageModalSettings();
+    const emojiVisible = canUseCustomEmoji();
+    const emojiBtn = document.getElementById("bmwc-dm-emoji");
+    setElementVisible(emojiBtn, emojiVisible);
+    if (emojiBtn) emojiBtn.title = t("button.emoji", "Emoji");
+    if (!emojiVisible) {
+      closeDirectMessageEmojiPanel();
+    } else if (state.dmEmojiPanelOpen) {
+      renderDirectMessageEmojiPanel();
+    }
+    updateDirectMessageEmojiResizeHandleVisibility();
+
+    const uploadVisible = canUpload();
+    const uploadBtn = document.getElementById("bmwc-dm-upload");
+    const fileInput = document.getElementById("bmwc-dm-file");
+    setElementVisible(uploadBtn, uploadVisible);
+    if (uploadBtn) uploadBtn.title = t("button.upload", "Attach");
+    if (fileInput) {
+      fileInput.disabled = !uploadVisible || !!state.uploadActive;
+      fileInput.accept = uploadAcceptList();
+    }
+
+    const input = document.getElementById("bmwc-dm-input");
+    if (input) {
+      if (state.directMessageMaxMessageLength > 0) input.maxLength = state.directMessageMaxMessageLength;
+      else input.removeAttribute("maxlength");
+    }
   }
 
   function renderCustomEmojiTokens(text) {
@@ -2233,8 +2322,12 @@
     sender.setAttribute("aria-label", sender.title);
   }
 
+  function senderIdentitySelector() {
+    return ".bmwc-sender[data-real-sender], .bmwc-dm-identity[data-real-sender], [data-bmwc-identity-toggle][data-real-sender]";
+  }
+
   function applySenderIdentityMode() {
-    document.querySelectorAll(".bmwc-sender[data-real-sender]").forEach(updateSenderIdentityElement);
+    document.querySelectorAll(senderIdentitySelector()).forEach(updateSenderIdentityElement);
   }
 
   function toggleSenderIdentityMode() {
@@ -2243,25 +2336,58 @@
     applySenderIdentityMode();
   }
 
+  let senderIdentityDelegationInstalled = false;
+
+  function handleSenderIdentityToggleEvent(event) {
+    const rawTarget = event && event.target;
+    const target = rawTarget && rawTarget.closest ? rawTarget.closest(senderIdentitySelector()) : null;
+    if (!target || !target.dataset || !target.dataset.realSender) return;
+    if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
+    toggleSenderIdentityMode();
+  }
+
+  function installSenderIdentityDelegation() {
+    if (senderIdentityDelegationInstalled) return;
+    senderIdentityDelegationInstalled = true;
+    document.addEventListener("click", handleSenderIdentityToggleEvent, true);
+    document.addEventListener("keydown", handleSenderIdentityToggleEvent, true);
+  }
+
   function installSenderIdentityToggle(root) {
+    installSenderIdentityDelegation();
     if (!root) return;
-    root.querySelectorAll(".bmwc-sender[data-real-sender]").forEach(sender => {
+    const targets = root.matches && root.matches(senderIdentitySelector())
+      ? [root]
+      : Array.from(root.querySelectorAll(senderIdentitySelector()));
+    targets.forEach(sender => {
       if (sender.dataset.identityToggleInstalled !== "1") {
         sender.dataset.identityToggleInstalled = "1";
         sender.addEventListener("click", event => {
           event.preventDefault();
           event.stopPropagation();
+          if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
           toggleSenderIdentityMode();
         });
         sender.addEventListener("keydown", event => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
           event.stopPropagation();
+          if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
           toggleSenderIdentityMode();
         });
       }
       updateSenderIdentityElement(sender);
     });
+  }
+
+  function installDirectMessageIdentityToggleGuard(root) {
+    if (!root || root.dataset.dmIdentityToggleGuard === "1") return;
+    root.dataset.dmIdentityToggleGuard = "1";
+    root.addEventListener("click", handleSenderIdentityToggleEvent, true);
+    root.addEventListener("keydown", handleSenderIdentityToggleEvent, true);
   }
 
   function displaySource(msg) {
@@ -2377,7 +2503,8 @@
         : null;
       if (!target) return null;
       const root = document.getElementById("bmwc-root");
-      return !root || root.contains(target) ? target : null;
+      const dmModal = document.querySelector(".bmwc-dm-modal-backdrop");
+      return (!root || root.contains(target) || (dmModal && dmModal.contains(target))) ? target : null;
     };
 
     document.addEventListener("click", event => {
@@ -2841,6 +2968,7 @@
 
     const root = document.createElement("div");
     root.id = "bmwc-root";
+    root.style.setProperty("--bmwc-emoji-render-size", emojiRenderSizePx() + "px");
     root.style.setProperty("--bmwc-emoji-picker-size", emojiPickerSizePx() + "px");
     root.style.setProperty("--bmwc-emoji-panel-min-height", emojiPanelMinHeightPx() + "px");
     if (state.isPip) {
@@ -2856,6 +2984,7 @@
             <span class="bmwc-status" id="bmwc-status">${t("status.connecting", "connecting...")}</span>
           </div>
           <div class="bmwc-actions">
+            ${state.directMessageEnabled ? `<button class="bmwc-button bmwc-dm-button bmwc-hidden" id="bmwc-dm" title="${t("button.directMessages", "Messages")}">✉<span class="bmwc-dm-badge bmwc-hidden" id="bmwc-dm-badge">0</span></button>` : ""}
             <button class="bmwc-button bmwc-hidden" id="bmwc-admin">${t("button.admin", "Admin")}</button>
             <button class="bmwc-button" id="bmwc-login">${t("button.login", "Login")}</button>
             ${state.config && state.config.uiPictureInPictureEnabled === true && !state.isPip ? `<button class="bmwc-button bmwc-pip" id="bmwc-pip" title="${t("button.pip", "PIP")}">▣</button>` : ""}
@@ -2948,6 +3077,8 @@
       event.stopPropagation();
       if (!state.minimized) openSearchModal();
     });
+    const dmBtn = document.getElementById("bmwc-dm");
+    if (dmBtn) dmBtn.addEventListener("click", () => openDirectMessageModal());
     const commandBtn = document.getElementById("bmwc-command");
     if (commandBtn) commandBtn.addEventListener("click", () => openCommandModal());
     const emojiBtn = document.getElementById("bmwc-emoji");
@@ -2970,6 +3101,7 @@
     });
     renderReplyCompose();
     const messageInput = document.getElementById("bmwc-message");
+    messageInput.addEventListener("focus", () => setActiveComposeInput(messageInput));
     messageInput.addEventListener("keydown", e => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -3147,6 +3279,7 @@
     const status = document.getElementById("bmwc-status");
     const guestRow = document.getElementById("bmwc-guest-row");
     const adminBtn = document.getElementById("bmwc-admin");
+    const dmBtn = document.getElementById("bmwc-dm");
     const uploadBtn = document.getElementById("bmwc-upload");
     const emojiBtn = document.getElementById("bmwc-emoji");
     const commandBtn = document.getElementById("bmwc-command");
@@ -3158,8 +3291,11 @@
     const canManageMutes = moderationEnabled && state.token && (state.role === "ADMIN" || (state.role === "MODERATOR" && (!state.config || state.config.allowModeratorGuestMute !== false)));
     const canUseAdminPanel = state.token && adminPanelAllowed && (state.role === "ADMIN" || canManageMutes);
     if (adminBtn) adminBtn.classList.toggle("bmwc-hidden", !canUseAdminPanel);
+    if (dmBtn) dmBtn.classList.toggle("bmwc-hidden", !(state.token && state.directMessageEnabled));
+    updateDirectMessageButton();
     if (uploadBtn) uploadBtn.classList.toggle("bmwc-hidden", !canUpload());
     updateEmojiButton();
+    updateDirectMessageComposeControls();
     updateCommandButton();
     updatePipButton();
 
@@ -6235,11 +6371,18 @@
         else msg.removeAttribute("maxlength");
       }
       state.commandMaxLength = normalizeCommandMaxLength(data.commandsMaxLength, 0);
+      state.directMessageEnabled = data.directMessageEnabled === true;
+      state.directMessageAllowWebSend = data.directMessageAllowWebSend !== false;
+      state.directMessageMaxMessageLength = Math.max(0, Math.floor(Number(data.directMessageMaxMessageLength) || 0));
+      state.directMessageRetentionDays = Math.max(0, Math.floor(Number(data.directMessageRetentionDays) || 0));
+      state.directMessageWebUnreadBadge = data.directMessageWebUnreadBadge !== false;
+      state.directMessageConfirmHide = data.directMessageConfirmHide !== false;
       state.emojiEnabled = data.emojiEnabled !== false;
       state.emojiShowButton = data.emojiShowButton !== false;
       state.emojiRenderSizePx = Math.max(16, Math.min(1024, Number(data.emojiRenderSizePx) || 32));
       state.emojiPickerSizePx = Math.max(24, Math.min(1024, Number(data.emojiPickerSizePx) || 44));
       applyEmojiPickerSize();
+      updateDirectMessageComposeControls();
       state.emojiMessageTokenLimit = Math.max(0, Math.floor(Number(data.emojiMessageTokenLimit) || 0));
       state.emojiTokenFormat = normalizeEmojiTokenFormat(data.emojiTokenFormat);
       const fileInput = document.getElementById("bmwc-file");
@@ -6922,7 +7065,8 @@
     state.streamReconnectAfterOpen = !!options.refreshAfterOpen || state.streamReconnectAfterOpen;
     state.streamReconnectReason = options.reason || state.streamReconnectReason || "stream-connect";
 
-    const es = new EventSource(apiBase + "/stream");
+    const streamUrl = apiBase + "/stream" + (state.token ? ("?token=" + encodeURIComponent(state.token)) : "");
+    const es = new EventSource(streamUrl);
     state.eventSource = es;
 
     const handleConnected = () => {
@@ -6960,6 +7104,17 @@
     });
     es.addEventListener("delete", e => {
       try { markMessageDeleted(JSON.parse(e.data).id); } catch (_) {}
+    });
+    es.addEventListener("dm", e => {
+      try {
+        const data = JSON.parse(e.data || "{}");
+        if (!state.directMessageEnabled || !state.token) return;
+        loadDirectMessageThreads(true).then(() => {
+          if (state.dmModalOpen && state.dmActiveThreadId && (!data.threadId || data.threadId === state.dmActiveThreadId)) {
+            loadDirectMessageMessages(state.dmActiveThreadId);
+          }
+        });
+      } catch (_) {}
     });
     es.addEventListener("pins", e => {
       try {
@@ -7042,11 +7197,25 @@
     return !!(tokenMatch && customEmojiByToken(tokenMatch[1]));
   }
 
+  function setActiveComposeInput(inputOrId) {
+    const id = typeof inputOrId === "string" ? inputOrId : (inputOrId && inputOrId.id);
+    if (id) state.activeComposeInputId = id;
+  }
+
+  function activeComposeInput() {
+    const preferred = document.getElementById(state.activeComposeInputId || "");
+    if (preferred && !preferred.disabled && document.body.contains(preferred)) return preferred;
+    const active = document.activeElement;
+    if (active && active.id && (active.id === "bmwc-dm-input" || active.id === "bmwc-message")) return active;
+    return document.getElementById("bmwc-message") || document.getElementById("bmwc-dm-input");
+  }
+
   function insertCustomEmoji(id) {
     id = String(id || "");
     if (!customEmojiById(id)) return;
-    const input = document.getElementById("bmwc-message");
+    const input = activeComposeInput();
     if (!input) return;
+    setActiveComposeInput(input);
     const limit = Number(state.emojiMessageTokenLimit || 0);
     if (limit > 0 && emojiTokenCount(input.value) >= limit) {
       alert(fmt("alert.emojiTooMany", "Only {max} emoji(s) can be used in one message.", {max: limit}));
@@ -7076,48 +7245,11 @@
     input.focus();
   }
 
-  function renderEmojiPanel() {
-    const panel = document.getElementById("bmwc-emoji-panel");
-    if (!panel) return;
-    if (!state.emojiPanelOpen || !canUseCustomEmoji()) {
-      panel.classList.add("bmwc-hidden");
-      updateEmojiResizeHandleVisibility();
-      return;
-    }
-    const packs = Array.isArray(state.emojiPacks) ? state.emojiPacks : [];
-    const items = Array.isArray(state.emojiItems) ? state.emojiItems : [];
-    if (!items.length) {
-      panel.innerHTML = `<div class="bmwc-emoji-scroll"><div class="bmwc-emoji-empty">${esc(t("emoji.empty", "No emojis configured."))}</div></div>`;
-      panel.classList.remove("bmwc-hidden");
-      setEmojiPanelHeight(emojiPanelHeightPx(), false);
-      installEmojiPanelWheelStep(panel);
-      updateEmojiResizeHandleVisibility();
-      return;
-    }
-    const packTabs = packs.length > 1
-      ? `<div class="bmwc-emoji-tabs">${packs.map((pack, idx) => `<button type="button" class="bmwc-emoji-tab${idx === 0 ? " bmwc-active" : ""}" data-emoji-pack="${esc(pack.id)}">${esc(pack.label || pack.id)} <span>${esc(pack.count || "")}</span></button>`).join("")}</div>`
-      : "";
-    const firstPack = packs[0] && packs[0].id ? packs[0].id : "";
-    const shown = firstPack ? items.filter(item => item.pack === firstPack) : items;
-    panel.innerHTML = packTabs + `<div class="bmwc-emoji-scroll"><div class="bmwc-emoji-grid">${shown.map(emojiButtonHtml).join("")}</div></div>`;
-    panel.classList.remove("bmwc-hidden");
-    setEmojiPanelHeight(emojiPanelHeightPx(), false);
-    installEmojiPanelWheelStep(panel);
-    updateEmojiResizeHandleVisibility();
 
-    panel.querySelectorAll("[data-emoji-pack]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const pack = btn.dataset.emojiPack || "";
-        panel.querySelectorAll(".bmwc-emoji-tab").forEach(tab => tab.classList.toggle("bmwc-active", tab === btn));
-        const grid = panel.querySelector(".bmwc-emoji-grid");
-        if (grid) grid.innerHTML = items.filter(item => item.pack === pack).map(emojiButtonHtml).join("");
-        const scroll = emojiScrollElement(panel);
-        if (scroll) scroll.scrollTop = 0;
-        setEmojiPanelHeight(emojiPanelHeightPx(), false);
-        installEmojiItemHandlers(panel);
-      });
-    });
-    installEmojiItemHandlers(panel);
+  function hideEmojiAutocomplete() {
+    const panel = document.getElementById("bmwc-emoji-autocomplete");
+    if (panel) panel.remove();
+    state.emojiAutocomplete = null;
   }
 
   function emojiButtonHtml(item) {
@@ -7133,6 +7265,63 @@
     });
   }
 
+  function renderEmojiPanel() {
+    const panel = document.getElementById("bmwc-emoji-panel");
+    if (!panel) return;
+    if (!state.emojiPanelOpen || !canUseCustomEmoji()) {
+      hideEmojiPanel();
+      return;
+    }
+
+    const packs = Array.isArray(state.emojiPacks) ? state.emojiPacks : [];
+    const items = Array.isArray(state.emojiItems) ? state.emojiItems : [];
+    if (!items.length) {
+      panel.innerHTML = `<div class="bmwc-emoji-scroll"><div class="bmwc-emoji-empty">${esc(t("emoji.empty", "No emojis configured."))}</div></div>`;
+      panel.classList.remove("bmwc-hidden");
+      setEmojiPanelHeight(emojiPanelHeightPx(), false);
+      installEmojiPanelWheelStep(panel);
+      updateEmojiResizeHandleVisibility();
+      return;
+    }
+
+    let selectedPack = String(state.emojiSelectedPack || localStorage.getItem("bmwc.emojiPack") || "");
+    if (!selectedPack || (packs.length && !packs.some(pack => String(pack.id || "") === selectedPack))) {
+      selectedPack = packs[0] && packs[0].id ? String(packs[0].id) : "";
+    }
+    state.emojiSelectedPack = selectedPack;
+    try { localStorage.setItem("bmwc.emojiPack", selectedPack); } catch (_) {}
+
+    const packTabs = packs.length > 1
+      ? `<div class="bmwc-emoji-tabs">${packs.map(pack => {
+          const id = String(pack.id || "");
+          return `<button type="button" class="bmwc-emoji-tab${id === selectedPack ? " bmwc-active" : ""}" data-emoji-pack="${esc(id)}">${esc(pack.label || id)} <span>${esc(pack.count || "")}</span></button>`;
+        }).join("")}</div>`
+      : "";
+    const shown = selectedPack ? items.filter(item => String(item.pack || "") === selectedPack) : items;
+    panel.innerHTML = packTabs + `<div class="bmwc-emoji-scroll"><div class="bmwc-emoji-grid">${shown.map(emojiButtonHtml).join("")}</div></div>`;
+    panel.classList.remove("bmwc-hidden");
+    setEmojiPanelHeight(emojiPanelHeightPx(), false);
+    installEmojiPanelWheelStep(panel);
+
+    panel.querySelectorAll("[data-emoji-pack]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const pack = btn.dataset.emojiPack || "";
+        state.emojiSelectedPack = pack;
+        try { localStorage.setItem("bmwc.emojiPack", pack); } catch (_) {}
+        panel.querySelectorAll(".bmwc-emoji-tab").forEach(tab => tab.classList.toggle("bmwc-active", tab === btn));
+        const grid = panel.querySelector(".bmwc-emoji-grid");
+        if (grid) grid.innerHTML = items.filter(item => String(item.pack || "") === pack).map(emojiButtonHtml).join("");
+        const scroll = emojiScrollElement(panel);
+        if (scroll) scroll.scrollTop = 0;
+        setEmojiPanelHeight(emojiPanelHeightPx(), false);
+        installEmojiItemHandlers(panel);
+        updateEmojiResizeHandleVisibility();
+      });
+    });
+    installEmojiItemHandlers(panel);
+    updateEmojiResizeHandleVisibility();
+  }
+
   async function loadEmojis(options = {}) {
     if (!state.config || state.config.emojiEnabled === false) {
       state.emojiEnabled = false;
@@ -7141,6 +7330,7 @@
       state.emojiById = new Map();
       state.emojiByAlias = new Map();
       updateEmojiButton();
+      updateDirectMessageComposeControls();
       return;
     }
     state.emojiLoading = true;
@@ -7156,6 +7346,7 @@
       state.emojiRenderSizePx = Math.max(16, Math.min(1024, Number(res.renderSizePx || state.emojiRenderSizePx || 32)));
       state.emojiPickerSizePx = Math.max(24, Math.min(1024, Number(res.pickerSizePx || state.emojiPickerSizePx || 44)));
       applyEmojiPickerSize();
+      updateDirectMessageComposeControls();
       state.emojiMessageTokenLimit = Math.max(0, Math.floor(Number(res.messageTokenLimit || state.emojiMessageTokenLimit || 0)));
       state.emojiTokenFormat = normalizeEmojiTokenFormat(res.tokenFormat || state.emojiTokenFormat);
       if (state.messages && state.messages.length) scheduleVirtualRender({preserveScroll: true, deferDuringScroll: false});
@@ -7168,6 +7359,7 @@
     } finally {
       state.emojiLoading = false;
       updateEmojiButton();
+      updateDirectMessageComposeControls();
       renderEmojiPanel();
     }
   }
@@ -7199,8 +7391,9 @@
   }
 
   function appendToMessage(text, options = {}) {
-    const input = document.getElementById("bmwc-message");
+    const input = activeComposeInput();
     if (!input) return;
+    setActiveComposeInput(input);
     const inserted = options.mediaLinks ? normalizeInsertedMediaLinks(text) : String(text || "");
     if (!inserted) return;
 
@@ -7261,8 +7454,12 @@
   function setUploadControlsBusy(busy) {
     const uploadBtn = document.getElementById("bmwc-upload");
     const fileInput = document.getElementById("bmwc-file");
+    const dmUploadBtn = document.getElementById("bmwc-dm-upload");
+    const dmFileInput = document.getElementById("bmwc-dm-file");
     if (uploadBtn) uploadBtn.disabled = !!busy;
     if (fileInput) fileInput.disabled = !!busy;
+    if (dmUploadBtn) dmUploadBtn.disabled = !!busy;
+    if (dmFileInput) dmFileInput.disabled = !!busy;
   }
 
   function updateUploadProgress(label, percent, active = true) {
@@ -7598,16 +7795,17 @@
     }
 
     if (uploaded.length) {
-      forceLatestChatView("upload");
+      const dmTargetActive = state.activeComposeInputId === "bmwc-dm-input" && !!document.getElementById("bmwc-dm-input");
+      if (!dmTargetActive) forceLatestChatView("upload");
       const text = normalizeInsertedMediaLinks(uploaded.join(" "));
       const mode = String((state.config && state.config.uploadClipboardSendMode) || "insert").toLowerCase();
-      if (source === "clipboard" && mode === "send") {
+      if (!dmTargetActive && source === "clipboard" && mode === "send") {
         const ok = await sendMessageText(text, null, {forceLatest: true});
         if (!ok) appendToMessage(text, {mediaLinks: true});
       } else {
         appendToMessage(text, {mediaLinks: true});
       }
-      forceLatestChatView("upload-complete");
+      if (!dmTargetActive) forceLatestChatView("upload-complete");
       hideUploadProgressSoon(t("upload.complete", "Upload complete."));
     } else if (state.uploadCancelRequested) {
       hideUploadProgressSoon(t("upload.canceled", "Upload canceled."));
@@ -9303,15 +9501,17 @@
     }).join("");
   }
 
-  function applySearchModalTheme(backdrop) {
+  function applyDetachedModalTheme(backdrop) {
     const root = document.getElementById("bmwc-root");
     if (!root || !backdrop) return;
     const cs = getComputedStyle(root);
     const vars = [
-      "--bmwc-font-size", "--bmwc-message-font-size", "--bmwc-input-font-size", "--bmwc-button-font-size",
-      "--bmwc-text-color", "--bmwc-muted-color", "--bmwc-border-color", "--bmwc-button-text",
+      "--bmwc-font-size", "--bmwc-message-font-size", "--bmwc-input-font-size", "--bmwc-button-font-size", "--bmwc-badge-font-size",
+      "--bmwc-text-color", "--bmwc-ui-color", "--bmwc-ui-text-color", "--bmwc-muted-color", "--bmwc-border-color", "--bmwc-button-text",
       "--bmwc-button-bg", "--bmwc-button-hover-bg", "--bmwc-input-bg", "--bmwc-link-color",
-      "--bmwc-modal-bg-rgb", "--bmwc-panel-opacity", "--bmwc-shadow-color"
+      "--bmwc-modal-bg-rgb", "--bmwc-panel-bg-rgb", "--bmwc-panel-opacity", "--bmwc-shadow-color",
+      "--bmwc-surface-bg", "--bmwc-surface-hover-bg", "--bmwc-text-shadow", "--bmwc-ui-text-shadow",
+      "--bmwc-emoji-render-size", "--bmwc-emoji-picker-size", "--bmwc-emoji-panel-height", "--bmwc-emoji-panel-min-height"
     ];
     vars.forEach(name => {
       const value = cs.getPropertyValue(name);
@@ -9321,6 +9521,10 @@
     ["bmwc-theme-light", "bmwc-theme-dark", "bmwc-theme-system", "bmwc-theme-high-contrast"].forEach(cls => {
       backdrop.classList.toggle(cls, root.classList.contains(cls));
     });
+  }
+
+  function applySearchModalTheme(backdrop) {
+    applyDetachedModalTheme(backdrop);
   }
 
   function currentSearchLanguage() {
@@ -9336,7 +9540,7 @@
     const c = state.config || {};
     const raw = Number(c.searchResultLimit);
     const limit = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 50;
-    return Math.max(1, Math.min(500, limit));
+    return Math.max(1, limit);
   }
 
   function searchDateMillis(input) {
@@ -9646,6 +9850,1094 @@
     }, 1000);
   }
 
+
+
+  function directMessageRetentionNoticeText() {
+    const days = Math.max(0, Math.floor(Number(state.directMessageRetentionDays) || 0));
+    if (days <= 0) return t("dm.retentionUnlimited", "DM retention: no time limit");
+    return fmt("dm.retentionLimited", "DM retention: {days} days", {days: String(days)});
+  }
+
+  function updateDirectMessageButton() {
+    const btn = document.getElementById("bmwc-dm");
+    const badge = document.getElementById("bmwc-dm-badge");
+    if (btn) btn.classList.toggle("bmwc-hidden", !(state.token && state.directMessageEnabled));
+    if (!badge) return;
+    const unread = Math.max(0, Number(state.dmUnread || 0));
+    badge.textContent = unread > 99 ? "99+" : String(unread);
+    badge.classList.toggle("bmwc-hidden", !(state.directMessageWebUnreadBadge && unread > 0));
+  }
+
+  async function loadDirectMessageThreads(silent = false) {
+    if (!state.directMessageEnabled || !state.token) {
+      state.dmUnread = 0;
+      state.dmThreads = [];
+      updateDirectMessageButton();
+      return null;
+    }
+    try {
+      const res = await api("/dm/threads?token=" + encodeURIComponent(state.token));
+      if (!res || res.enabled === false) {
+        state.dmUnread = 0;
+        state.dmThreads = [];
+      } else {
+        state.dmUnread = Number(res.unread || 0);
+        state.dmThreads = Array.isArray(res.threads) ? res.threads : [];
+      }
+      updateDirectMessageButton();
+      if (state.dmModalOpen) renderDirectMessageThreads();
+      return res;
+    } catch (e) {
+      if (!silent) alertResponse("alert.dmLoadFailed", "Failed to load messages: {error}", e.response || {error: e.message || "error"});
+      return null;
+    }
+  }
+
+  function directMessageLabel(item) {
+    if (!item) return "";
+    const identity = directMessageIdentityParts(item);
+    return identity.display || item.otherLabel || item.label || item.displayName || item.username || item.uuid || item.otherUuid || "";
+  }
+
+  function directMessageLabelHtml(value) {
+    return minecraftLegacyTextHtml(String(value || ""), true);
+  }
+
+  function directMessageIdentityParts(item) {
+    item = item || {};
+    const display = String(item.otherDisplayName || item.displayName || item.senderDisplayName || "").trim();
+    const real = String(item.otherUsername || item.username || item.senderUsername || "").trim();
+    const uuid = String(item.otherUuid || item.uuid || item.senderUuid || "").trim();
+    let shown = display || real || String(item.otherLabel || item.label || "").trim() || uuid;
+    let original = real;
+    if (original && plainMinecraftName(original).trim().toLowerCase() === plainMinecraftName(shown).trim().toLowerCase()) {
+      original = "";
+    }
+    return {display: shown, real: original, uuid};
+  }
+
+  function directMessageIdentityHtml(item, className = "") {
+    const identity = directMessageIdentityParts(item);
+    const extra = className ? " " + className : "";
+    if (identity.real) {
+      const title = state.senderIdentityMode === "real" ? senderDisplayTitle(identity.display) : senderOriginalTitle(identity.real);
+      return `<span class="bmwc-dm-identity bmwc-sender-has-real${extra}" title="${esc(title)}" data-bmwc-identity-toggle="1" data-display-sender="${esc(identity.display)}" data-real-sender="${esc(identity.real)}" data-source="dm" data-showing-real="${state.senderIdentityMode === "real" ? "1" : "0"}" role="button" tabindex="0">${senderNameHtml(identity.display, identity.real, "dm")}</span>`;
+    }
+    return `<span class="bmwc-dm-identity${extra}" title="${esc(directMessagePlainLabel(identity.display))}">${directMessageLabelHtml(identity.display)}</span>`;
+  }
+
+  function directMessageBodyHtml(value) {
+    // Direct messages use the same text renderer as normal chat text: URLs,
+    // Minecraft legacy color codes, and BM Web Chat emoji tokens are rendered
+    // on the web side, while the stored/sent message remains the raw text token.
+    return renderCustomEmojiTokens(String(value || ""));
+  }
+
+  function directMessagePreviewHtml(value, messageId = "") {
+    // Keep DM media previews aligned with public chat preview settings.
+    // This respects image-preview/upload-preview options instead of leaving
+    // uploaded images as plain links only.
+    return safeImagePreviews(String(value || ""), "dm:" + String(messageId || ""));
+  }
+
+  function hydrateDirectMessageRenderedContent(root) {
+    if (!root) return;
+    root.querySelectorAll(".bmwc-youtube-card").forEach(card => {
+      if (card.dataset.bmwcDmYoutubeInstalled === "1") return;
+      card.dataset.bmwcDmYoutubeInstalled = "1";
+      card.addEventListener("click", () => {
+        const embed = card.dataset.youtubeEmbed || "";
+        if (!/^https:\/\/(www\.)?youtube(-nocookie)?\.com\/embed\//i.test(embed)) return;
+        const key = card.dataset.youtubeKey || "";
+        if (key) {
+          state.youtubeOpen.add(key);
+          if (!state.config || state.config.youtubeRememberExpanded !== false) state.youtubeExpanded.add(key);
+        }
+        const isShorts = card.dataset.youtubeShorts === "1";
+        const wrap = document.createElement("div");
+        wrap.className = isShorts ? "bmwc-youtube-wrap bmwc-youtube-shorts-wrap" : "bmwc-youtube-wrap";
+        if (key) wrap.setAttribute("data-youtube-key", key);
+        wrap.style.cssText = youtubeShellStyle(isShorts, "");
+        const safeEmbed = safeYouTubeEmbedUrl(embed);
+        if (!safeEmbed) return;
+        const iframe = document.createElement("iframe");
+        iframe.className = "bmwc-youtube-frame";
+        iframe.style.cssText = "position:absolute;inset:0;width:100%;height:100%;border:0;";
+        iframe.src = safeEmbed;
+        iframe.title = t("media.youtubeTitle", "YouTube video");
+        iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+        iframe.referrerPolicy = "strict-origin-when-cross-origin";
+        iframe.allowFullscreen = true;
+        wrap.appendChild(iframe);
+        card.replaceWith(wrap);
+      }, {once: true});
+    });
+    root.querySelectorAll(".bmwc-social-card").forEach(card => {
+      if (card.dataset.bmwcDmSocialInstalled === "1") return;
+      card.dataset.bmwcDmSocialInstalled = "1";
+      const load = card.querySelector(".bmwc-media-load");
+      if (!load) return;
+      load.addEventListener("click", () => {
+        const kind = card.dataset.socialKind || "";
+        const src = card.dataset.socialSrc || "";
+        const key = card.dataset.previewKey || previewKey(kind, src);
+        if (key) state.mediaOpen.add(key);
+        const html = socialEmbedHtml({type: kind, href: src, tiktokId: kind === "tiktok" ? (card.dataset.tiktokId || "") : "", previewKey: key}, "");
+        const wrap = document.createElement("div");
+        wrap.innerHTML = html;
+        const next = wrap.firstElementChild;
+        if (!next) return;
+        card.replaceWith(next);
+        if (kind === "x") loadXWidgets(next);
+      }, {once: true});
+    });
+    hydrateSocialEmbeds(root);
+    root.querySelectorAll(".bmwc-media-card").forEach(card => {
+      if (card.dataset.bmwcDmMediaCardInstalled === "1") return;
+      card.dataset.bmwcDmMediaCardInstalled = "1";
+      const load = card.querySelector(".bmwc-media-load");
+      if (!load) return;
+      load.addEventListener("click", () => {
+        const kind = card.dataset.mediaKind || "";
+        const src = card.dataset.mediaSrc || "";
+        const key = card.dataset.previewKey || previewKey(kind, src);
+        const safeSrc = safePreviewUrl(src);
+        if (!safeSrc) return;
+        if (key) state.mediaOpen.add(key);
+        const wrap = document.createElement("div");
+        wrap.className = kind === "audio" ? "bmwc-audio-wrap" : "bmwc-video-wrap";
+        if (key) wrap.setAttribute("data-preview-key", key);
+        const media = createMediaElement(kind, safeSrc, key);
+        if (media) wrap.appendChild(media);
+        if (media) {
+          media.addEventListener("error", () => {
+            window.__bmwcPreviewFailed && window.__bmwcPreviewFailed(key);
+            setMediaError(wrap, kind);
+          }, {once: true});
+          media.addEventListener("loadedmetadata", () => window.__bmwcPreviewLoaded && window.__bmwcPreviewLoaded(media), {once: true});
+        }
+        card.replaceWith(wrap);
+        if (media && kind === "video" && typeof media.play === "function") {
+          const playPromise = media.play();
+          if (playPromise && typeof playPromise.catch === "function") playPromise.catch(() => {});
+        }
+      }, {once: true});
+    });
+    hydratePreviewMedia(root);
+    root.querySelectorAll("a.bmwc-link, a.bmwc-image-link").forEach(link => {
+      if (link.dataset.bmwcDmLinkInstalled === "1") return;
+      link.dataset.bmwcDmLinkInstalled = "1";
+      link.addEventListener("click", event => {
+        const href = link.getAttribute("href") || "";
+        if (/^https?:\/\//i.test(href) && openChatExternalLink(href)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      });
+    });
+  }
+
+  function directMessagePlainLabel(value) {
+    return plainLegacyText(value).trim();
+  }
+
+  function hasDirectMessageConversationOpen() {
+    return !!state.dmActiveThreadId || !!(state.dmDraftTarget && state.dmDraftTarget.uuid);
+  }
+
+  function updateDirectMessageViewMode() {
+    const modal = document.querySelector(".bmwc-dm-modal");
+    const open = hasDirectMessageConversationOpen();
+    if (modal) modal.classList.toggle("bmwc-dm-thread-mode", open);
+    const title = document.getElementById("bmwc-dm-title");
+    if (title) {
+      title.classList.toggle("bmwc-dm-title-back", open);
+      const label = open ? t("dm.backToList", "Back to conversation list") : t("dm.selectThread", "Select a thread");
+      title.title = open ? label : "";
+      title.setAttribute("aria-label", open ? label : t("dm.selectThread", "Select a thread"));
+      title.setAttribute("role", open ? "button" : "heading");
+      title.tabIndex = open ? 0 : -1;
+    }
+  }
+
+  function returnDirectMessageToList() {
+    if (!hasDirectMessageConversationOpen()) return;
+    closeDirectMessageEmojiPanel();
+    closeDirectMessagePlayerSearch();
+    state.dmActiveThreadId = "";
+    state.dmDraftTarget = null;
+    renderDirectMessageThreads();
+    renderDirectMessageMessages([]);
+    renderDirectMessageHeader("");
+    updateDirectMessageViewMode();
+  }
+
+  function renderDirectMessageThreads() {
+    const list = document.getElementById("bmwc-dm-thread-list");
+    if (!list) return;
+    const threads = Array.isArray(state.dmThreads) ? state.dmThreads : [];
+    if (!threads.length) {
+      list.innerHTML = `<div class="bmwc-dm-empty">${esc(t("dm.noThreads", "No message threads."))}</div>`;
+      updateDirectMessageViewMode();
+      return;
+    }
+    list.innerHTML = threads.map(thread => {
+      const active = thread.id === state.dmActiveThreadId ? " bmwc-active" : "";
+      const unread = Number(thread.unread || 0);
+      const badge = unread > 0 ? `<span class="bmwc-dm-thread-badge">${esc(unread > 99 ? "99+" : String(unread))}</span>` : "";
+      return `<button type="button" class="bmwc-dm-thread${active}" data-dm-thread="${esc(thread.id)}">
+        ${directMessageIdentityHtml(thread, "bmwc-dm-thread-name")}${badge}
+        <span class="bmwc-dm-thread-preview" title="${esc(plainLegacyText(thread.lastMessage || ""))}">${directMessageBodyHtml(thread.lastMessage || "")}</span>
+      </button>`;
+    }).join("");
+    list.querySelectorAll("[data-dm-thread]").forEach(btn => {
+      btn.addEventListener("click", event => {
+        if (event && event.target && event.target.closest && event.target.closest(senderIdentitySelector())) return;
+        state.dmDraftTarget = null;
+        state.dmActiveThreadId = btn.dataset.dmThread || "";
+        renderDirectMessageThreads();
+        updateDirectMessageViewMode();
+        loadDirectMessageMessages(state.dmActiveThreadId);
+      });
+    });
+    installSenderIdentityToggle(list);
+    updateDirectMessageViewMode();
+  }
+
+  function renderDirectMessageHeader(label) {
+    const title = document.getElementById("bmwc-dm-title");
+    if (!title) return;
+    const thread = state.dmActiveThreadId ? (state.dmThreads || []).find(t => t.id === state.dmActiveThreadId) : null;
+    const target = thread || state.dmDraftTarget || null;
+    const value = label || (target ? directMessageLabel(target) : t("dm.selectThread", "Select a thread"));
+    title.innerHTML = target ? directMessageIdentityHtml(target, "bmwc-dm-title-name") : directMessageLabelHtml(value);
+    title.dataset.dmPlainTitle = directMessagePlainLabel(value);
+    installSenderIdentityToggle(title);
+    updateDirectMessageViewMode();
+  }
+
+  function renderDirectMessageMessages(messages) {
+    const box = document.getElementById("bmwc-dm-messages");
+    if (!box) return;
+    hideDirectMessageEdgeToast(true);
+    const arr = Array.isArray(messages) ? messages : [];
+    if (!state.dmActiveThreadId && !state.dmDraftTarget) {
+      box.innerHTML = `<div class="bmwc-dm-empty">${esc(t("dm.selectThread", "Select a thread"))}</div>`;
+      renderDirectMessageHeader("");
+      return;
+    }
+    if (!arr.length) {
+      box.innerHTML = `<div class="bmwc-dm-empty">${esc(t("dm.emptyThread", "No messages yet."))}</div>`;
+    } else {
+      box.innerHTML = arr.map(msg => {
+        const sender = msg.senderDisplayName || msg.senderUsername || msg.senderUuid || "";
+        const mine = state.username && msg.senderUsername && String(msg.senderUsername).toLowerCase() === String(state.username).toLowerCase();
+        const rawMessageId = msg.id || "";
+        const messageId = esc(rawMessageId);
+        const body = String(msg.body || "");
+        const senderIdentity = {senderDisplayName: sender, senderUsername: msg.senderUsername || "", senderUuid: msg.senderUuid || ""};
+        return `<div class="bmwc-msg bmwc-dm-message${mine ? " bmwc-mine" : ""}" data-dm-message-id="${messageId}">
+          <div class="bmwc-meta bmwc-dm-message-meta">${directMessageIdentityHtml(senderIdentity, "bmwc-sender")}<span class="bmwc-time" data-time="${esc(msg.time || "")}" title="${esc(timeToggleTitle(msg.time))}" role="button" tabindex="0">${esc(formatMessageTime(msg.time))}</span></div>
+          <button type="button" class="bmwc-dm-message-hide" data-dm-hide-message="${messageId}" title="${esc(t("dm.hideMessage", "Hide this message"))}" aria-label="${esc(t("dm.hideMessage", "Hide this message"))}">×</button>
+          <div class="bmwc-text bmwc-dm-message-body">${directMessageBodyHtml(body)}</div>
+          ${directMessagePreviewHtml(body, rawMessageId)}
+        </div>`;
+      }).join("");
+      hydrateDirectMessageRenderedContent(box);
+      installSenderIdentityToggle(box);
+      installTimeToggle(box);
+      box.querySelectorAll("[data-dm-hide-message]").forEach(btn => {
+        btn.addEventListener("click", event => {
+          event.preventDefault();
+          event.stopPropagation();
+          hideDirectMessageForMe(btn.dataset.dmHideMessage || "");
+        });
+      });
+    }
+    box.scrollTop = box.scrollHeight;
+  }
+
+  async function loadDirectMessageMessages(threadId) {
+    if (!state.token || !threadId) return;
+    try {
+      const res = await api("/dm/messages?token=" + encodeURIComponent(state.token) + "&threadId=" + encodeURIComponent(threadId));
+      const thread = (state.dmThreads || []).find(t => t.id === threadId);
+      renderDirectMessageHeader(thread ? directMessageLabel(thread) : "");
+      renderDirectMessageMessages(res.messages || []);
+      state.dmUnread = Number(res.unread || 0);
+      updateDirectMessageButton();
+      await loadDirectMessageThreads(true);
+    } catch (e) {
+      alertResponse("alert.dmLoadFailed", "Failed to load messages: {error}", e.response || {error: e.message || "error"});
+    }
+  }
+
+  async function hideDirectMessageForMe(messageId) {
+    messageId = String(messageId || "").trim();
+    if (!messageId || !state.token) return;
+    if (state.directMessageConfirmHide && !confirm(t("dm.confirmHideMessage", "Hide this message from your view?"))) return;
+    try {
+      const res = await api("/dm/hide-message", {method: "POST", body: JSON.stringify({token: state.token, messageId})});
+      state.dmUnread = Number(res.unread || 0);
+      updateDirectMessageButton();
+      if (state.dmActiveThreadId) await loadDirectMessageMessages(state.dmActiveThreadId);
+      await loadDirectMessageThreads(true);
+      renderDirectMessageThreads();
+    } catch (e) {
+      alertResponse("alert.dmHideFailed", "Failed to hide message: {error}", e.response || {error: e.message || "error"});
+    }
+  }
+
+  function syncDirectMessagePlayerSearchPanelSize() {
+    const panel = document.getElementById("bmwc-dm-search-panel");
+    const modal = panel && panel.closest ? panel.closest(".bmwc-dm-modal") : null;
+    if (!panel || !modal) return;
+
+    // This panel had an older compact-width rule with !important.  Apply the
+    // full modal width only while the player search is open, using inline
+    // priority so it reliably overrides the legacy 360px cap without adding a
+    // broad global CSS rule that can interfere with the chat frame resize hit
+    // zones.
+    const sideGap = (Number(modal.getBoundingClientRect().width || 0) <= 360) ? 6 : 10;
+    panel.style.setProperty("left", sideGap + "px", "important");
+    panel.style.setProperty("right", sideGap + "px", "important");
+    panel.style.setProperty("width", "auto", "important");
+    panel.style.setProperty("max-width", "none", "important");
+    panel.style.setProperty("box-sizing", "border-box", "important");
+  }
+
+  function resetDirectMessagePlayerSearchPanelSize() {
+    const panel = document.getElementById("bmwc-dm-search-panel");
+    if (!panel) return;
+    ["left", "right", "width", "max-width", "box-sizing"].forEach(name => panel.style.removeProperty(name));
+  }
+
+  function closeDirectMessagePlayerSearch() {
+    state.dmSearchPanelOpen = false;
+    const panel = document.getElementById("bmwc-dm-search-panel");
+    if (panel) panel.classList.add("bmwc-hidden");
+    resetDirectMessagePlayerSearchPanelSize();
+  }
+
+  function openDirectMessagePlayerSearch() {
+    state.dmSearchPanelOpen = true;
+    const panel = document.getElementById("bmwc-dm-search-panel");
+    const input = document.getElementById("bmwc-dm-search");
+    if (panel) {
+      panel.classList.remove("bmwc-hidden");
+      syncDirectMessagePlayerSearchPanelSize();
+    }
+    if (input) {
+      input.value = "";
+      setTimeout(() => input.focus(), 0);
+    }
+    renderDirectMessagePlayers([]);
+  }
+
+  function closeDirectMessageEmojiPanel() {
+    state.dmEmojiPanelOpen = false;
+    const panel = document.getElementById("bmwc-dm-emoji-panel");
+    if (panel) {
+      panel.classList.add("bmwc-hidden");
+      panel.hidden = true;
+      panel.style.display = "none";
+      panel.style.height = "0px";
+      panel.style.minHeight = "0px";
+      panel.style.maxHeight = "0px";
+    }
+    updateDirectMessageEmojiResizeHandleVisibility();
+  }
+
+  function toggleDirectMessageEmojiPanel() {
+    if (!canUseCustomEmoji()) return;
+    setActiveComposeInput("bmwc-dm-input");
+    state.dmEmojiPanelOpen = !state.dmEmojiPanelOpen;
+    renderDirectMessageEmojiPanel();
+  }
+
+  function setDirectMessageEmojiPanelHeight(panel, px = null, persist = false, options = {}) {
+    if (!panel) return 0;
+    const minHeight = emojiPanelMinHeightPx(panel);
+    const maxHeight = emojiPanelMaxHeightPx();
+    let height = Math.round(Number(px == null ? emojiPanelHeightPx() : px) || emojiPanelHeightPx());
+    height = Math.max(minHeight, Math.min(maxHeight, height));
+    if (!options || options.snap !== false) {
+      height = snapEmojiPanelHeightPx(height, panel);
+    }
+    state.emojiPanelHeightPx = height;
+    if (persist) {
+      try { localStorage.setItem("bmwc.emojiPanelHeightPx", String(height)); } catch (_) {}
+    }
+    const root = document.getElementById("bmwc-root");
+    if (root) {
+      root.style.setProperty("--bmwc-emoji-panel-height", height + "px");
+      root.style.setProperty("--bmwc-emoji-panel-min-height", minHeight + "px");
+    }
+    const wrap = document.querySelector(".bmwc-dm-modal-backdrop");
+    if (wrap) {
+      wrap.style.setProperty("--bmwc-emoji-panel-height", height + "px");
+      wrap.style.setProperty("--bmwc-emoji-panel-min-height", minHeight + "px");
+    }
+    panel.hidden = false;
+    panel.style.display = "flex";
+    panel.style.height = height + "px";
+    panel.style.maxHeight = height + "px";
+    panel.style.minHeight = minHeight + "px";
+    if (!options || options.snapScroll !== false) snapEmojiPanelScrollTop(panel);
+    updateDirectMessageEmojiResizeHandleVisibility();
+    return height;
+  }
+
+
+  function updateDirectMessageEmojiResizeHandleVisibility() {
+    const handle = document.getElementById("bmwc-dm-emoji-resize");
+    if (!handle) return;
+    const visible = !!(state.dmModalOpen && state.dmEmojiPanelOpen && canUseCustomEmoji());
+    handle.classList.toggle("bmwc-hidden", !visible);
+    handle.hidden = !visible;
+  }
+
+  function installDirectMessageEmojiPanelResize(wrap) {
+    const handle = document.getElementById("bmwc-dm-emoji-resize");
+    const panel = document.getElementById("bmwc-dm-emoji-panel");
+    if (!wrap || !handle || !panel || handle.dataset.bmwcInstalled === "1") return;
+    handle.dataset.bmwcInstalled = "1";
+    const pointY = event => {
+      const src = event.touches && event.touches.length ? event.touches[0] :
+                  event.changedTouches && event.changedTouches.length ? event.changedTouches[0] :
+                  event;
+      return Number(src.clientY) || 0;
+    };
+    const begin = event => {
+      if (!state.dmEmojiPanelOpen || !canUseCustomEmoji()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      markNonScrollUiAction();
+      state.emojiPanelResizeStart = {
+        dm: true,
+        y: pointY(event),
+        height: Number(panel.getBoundingClientRect().height || emojiPanelHeightPx()),
+        currentHeight: Number(panel.getBoundingClientRect().height || emojiPanelHeightPx())
+      };
+      document.body.classList.add("bmwc-emoji-resizing");
+      try { handle.setPointerCapture && event.pointerId != null && handle.setPointerCapture(event.pointerId); } catch (_) {}
+    };
+    const move = event => {
+      const start = state.emojiPanelResizeStart;
+      if (!start || !start.dm) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const delta = start.y - pointY(event);
+      start.currentHeight = setDirectMessageEmojiPanelHeight(panel, start.height + delta, false, {snap: false, snapScroll: false});
+    };
+    const end = event => {
+      const start = state.emojiPanelResizeStart;
+      if (!start || !start.dm) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setDirectMessageEmojiPanelHeight(panel, start.currentHeight || emojiPanelHeightPx(), true, {snap: false, snapScroll: true});
+      state.emojiPanelResizeStart = null;
+      document.body.classList.remove("bmwc-emoji-resizing");
+    };
+    handle.addEventListener("pointerdown", begin, {passive: false});
+    document.addEventListener("pointermove", move, {passive: false});
+    document.addEventListener("pointerup", end, {passive: false});
+    document.addEventListener("pointercancel", end, {passive: false});
+    handle.addEventListener("touchstart", begin, {passive: false});
+    document.addEventListener("touchmove", move, {passive: false});
+    document.addEventListener("touchend", end, {passive: false});
+    document.addEventListener("touchcancel", end, {passive: false});
+    updateDirectMessageEmojiResizeHandleVisibility();
+  }
+
+  function directMessageEdgeToastThresholdPx(box) {
+    return Math.max(2, Math.min(8, Math.floor(Number(box && box.clientHeight || 0) * 0.01)));
+  }
+
+  function directMessageEdgeAtTop(box) {
+    return !!box && Number(box.scrollTop || 0) <= directMessageEdgeToastThresholdPx(box);
+  }
+
+  function directMessageEdgeAtBottom(box) {
+    return !!box && bottomGapPx(box) <= directMessageEdgeToastThresholdPx(box);
+  }
+
+  function directMessageEdgeToastEligible(box, position = "top") {
+    if (!state.dmModalOpen || !hasDirectMessageConversationOpen()) return false;
+    if (!box || !box.querySelector || !box.querySelector(".bmwc-dm-message")) return false;
+    return position === "bottom" ? directMessageEdgeAtBottom(box) : directMessageEdgeAtTop(box);
+  }
+
+  function hideDirectMessageEdgeToast(clearPending = false) {
+    if (state.dmEdgeToastTimer) {
+      clearTimeout(state.dmEdgeToastTimer);
+      state.dmEdgeToastTimer = null;
+    }
+    state.dmEdgeToastVisible = false;
+    state.dmEdgeToastVisibleUntil = 0;
+    if (clearPending) {
+      state.dmEdgePendingTopUntil = 0;
+      state.dmEdgePendingBottomUntil = 0;
+      state.dmEdgeBottomExtraScrollCount = 0;
+    }
+    const toast = document.getElementById("bmwc-dm-edge-toast");
+    if (toast) toast.classList.add("bmwc-hidden");
+  }
+
+  function showDirectMessageEdgeToast(position = "top") {
+    const box = document.getElementById("bmwc-dm-messages");
+    const pos = position === "bottom" ? "bottom" : "top";
+    if (!directMessageEdgeToastEligible(box, pos)) return;
+
+    const conv = document.querySelector(".bmwc-dm-conversation");
+    if (!conv) return;
+    let toast = document.getElementById("bmwc-dm-edge-toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "bmwc-dm-edge-toast";
+      toast.className = "bmwc-dm-edge-toast bmwc-hidden";
+      conv.appendChild(toast);
+    }
+
+    const now = Date.now();
+    if (state.dmEdgeToastVisible && now < Number(state.dmEdgeToastVisibleUntil || 0)) return;
+    if (now - Number(state.dmEdgeToastLastShownAt || 0) < 250) return;
+
+    toast.textContent = t("history.end", "No more messages to display.");
+    toast.classList.toggle("bmwc-dm-edge-bottom", pos === "bottom");
+    toast.classList.toggle("bmwc-dm-edge-top", pos !== "bottom");
+    toast.classList.remove("bmwc-hidden");
+
+    state.dmEdgeToastVisible = true;
+    state.dmEdgeToastVisibleUntil = now + 2500;
+    state.dmEdgeToastLastShownAt = now;
+    if (pos === "bottom") {
+      state.dmEdgePendingBottomUntil = 0;
+      state.dmEdgeBottomExtraScrollCount = 0;
+    } else {
+      state.dmEdgePendingTopUntil = 0;
+    }
+    clearTimeout(state.dmEdgeToastTimer);
+    state.dmEdgeToastTimer = setTimeout(() => {
+      if (Date.now() >= Number(state.dmEdgeToastVisibleUntil || 0)) hideDirectMessageEdgeToast(false);
+    }, 2550);
+  }
+
+  function maybeShowDirectMessageEdgeToastFromUserScroll(box, reason = "") {
+    if (!box) box = document.getElementById("bmwc-dm-messages");
+    if (!box) return;
+    const now = Date.now();
+    const atTop = directMessageEdgeAtTop(box);
+    const atBottom = directMessageEdgeAtBottom(box);
+    if (!atBottom) state.dmEdgeBottomExtraScrollCount = 0;
+    if (!atTop && !atBottom) {
+      hideDirectMessageEdgeToast(false);
+      return;
+    }
+
+    const topIntent = Number(state.dmEdgePendingTopUntil || 0) > now;
+    const bottomIntent = Number(state.dmEdgePendingBottomUntil || 0) > now;
+    if (atTop && topIntent) {
+      showDirectMessageEdgeToast("top");
+      return;
+    }
+    // Match the normal chat bottom-edge behavior: do not show the toast just
+    // because the conversation is already at the latest message.  Require
+    // repeated extra downward scroll input at the bottom.
+    if (atBottom && bottomIntent && Number(state.dmEdgeBottomExtraScrollCount || 0) >= 10) {
+      showDirectMessageEdgeToast("bottom");
+    }
+  }
+
+  function markDirectMessageTopEdgeIntent(box, reason = "") {
+    if (!box || !directMessageEdgeAtTop(box)) return;
+    state.dmEdgePendingTopUntil = Date.now() + 6000;
+    setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, reason || "dm-top"), 0);
+    setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, reason || "dm-top"), 80);
+    setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, reason || "dm-top"), 220);
+  }
+
+  function markDirectMessageBottomEdgeIntent(box, reason = "") {
+    if (!box) return;
+    if (!directMessageEdgeAtBottom(box)) {
+      state.dmEdgeBottomExtraScrollCount = 0;
+      return;
+    }
+    if (/^(wheel|key|touch|scrollbar|scroll)-bottom/.test(String(reason || ""))) {
+      state.dmEdgeBottomExtraScrollCount = Math.max(0, Number(state.dmEdgeBottomExtraScrollCount || 0)) + 1;
+    }
+    state.dmEdgePendingBottomUntil = Date.now() + 6000;
+    setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, reason || "dm-bottom"), 0);
+    setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, reason || "dm-bottom"), 80);
+    setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, reason || "dm-bottom"), 220);
+  }
+
+  function installDirectMessageEdgeToasts(wrap) {
+    const box = document.getElementById("bmwc-dm-messages");
+    if (!wrap || !box || box.dataset.bmwcDmEdgeInstalled === "1") return;
+    box.dataset.bmwcDmEdgeInstalled = "1";
+
+    const interactiveTarget = target => {
+      try {
+        return !!(target && target.closest && target.closest(
+          "button, input, textarea, select, a, .bmwc-media-card, .bmwc-youtube-card, .bmwc-social-card, .bmwc-social-embed"
+        ));
+      } catch (_) {
+        return false;
+      }
+    };
+
+    box.addEventListener("wheel", event => {
+      if (interactiveTarget(event.target)) return;
+      const deltaY = Number(event.deltaY || 0);
+      if (deltaY < 0) markDirectMessageTopEdgeIntent(box, "wheel-top");
+      else if (deltaY > 0) markDirectMessageBottomEdgeIntent(box, "wheel-bottom");
+      setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, "wheel"), 0);
+    }, {passive: true});
+
+    box.addEventListener("keydown", event => {
+      if (!["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) return;
+      if (["ArrowUp", "PageUp", "Home"].includes(event.key)) markDirectMessageTopEdgeIntent(box, "key-top");
+      if (["ArrowDown", "PageDown", "End", " "].includes(event.key)) markDirectMessageBottomEdgeIntent(box, "key-bottom");
+      setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, "key"), 0);
+    }, {passive: true});
+
+    let touchStartY = null;
+    box.addEventListener("touchstart", event => {
+      if (interactiveTarget(event.target)) return;
+      touchStartY = event.touches && event.touches[0] ? event.touches[0].clientY : null;
+    }, {passive: true});
+    box.addEventListener("touchmove", event => {
+      if (interactiveTarget(event.target)) return;
+      const y = event.touches && event.touches[0] ? event.touches[0].clientY : null;
+      if (touchStartY != null && y != null && y - touchStartY > 18) markDirectMessageTopEdgeIntent(box, "touch-top");
+      else if (touchStartY != null && y != null && touchStartY - y > 18) markDirectMessageBottomEdgeIntent(box, "touch-bottom");
+      setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, "touch"), 0);
+    }, {passive: true});
+    box.addEventListener("touchend", () => { touchStartY = null; }, {passive: true});
+    box.addEventListener("touchcancel", () => { touchStartY = null; }, {passive: true});
+
+    box.addEventListener("pointerdown", event => {
+      if (interactiveTarget(event.target)) return;
+      const rect = box.getBoundingClientRect();
+      const nearVerticalScrollbar = event.clientX >= rect.right - 18;
+      const nearHorizontalScrollbar = event.clientY >= rect.bottom - 18;
+      if (nearVerticalScrollbar || nearHorizontalScrollbar) {
+        state.dmScrollbarDragActive = true;
+        state.dmScrollbarDragLastX = event.clientX;
+        state.dmScrollbarDragLastY = event.clientY;
+      }
+    }, {passive: true});
+    window.addEventListener("pointermove", event => {
+      if (!state.dmScrollbarDragActive) return;
+      const lastY = Number.isFinite(Number(state.dmScrollbarDragLastY)) ? Number(state.dmScrollbarDragLastY) : event.clientY;
+      const dy = event.clientY - lastY;
+      state.dmScrollbarDragLastX = event.clientX;
+      state.dmScrollbarDragLastY = event.clientY;
+      if (dy < -2) markDirectMessageTopEdgeIntent(box, "scrollbar-top");
+      else if (dy > 2) markDirectMessageBottomEdgeIntent(box, "scrollbar-bottom");
+    }, {capture: true, passive: true});
+    window.addEventListener("pointerup", () => {
+      if (!state.dmScrollbarDragActive) return;
+      state.dmScrollbarDragActive = false;
+      state.dmScrollbarDragLastX = null;
+      state.dmScrollbarDragLastY = null;
+      setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, "scrollbar"), 0);
+    }, {capture: true, passive: true});
+    window.addEventListener("pointercancel", () => {
+      if (!state.dmScrollbarDragActive) return;
+      state.dmScrollbarDragActive = false;
+      state.dmScrollbarDragLastX = null;
+      state.dmScrollbarDragLastY = null;
+      hideDirectMessageEdgeToast(false);
+    }, {capture: true, passive: true});
+    window.addEventListener("blur", () => {
+      if (!state.dmScrollbarDragActive) return;
+      state.dmScrollbarDragActive = false;
+      state.dmScrollbarDragLastX = null;
+      state.dmScrollbarDragLastY = null;
+      hideDirectMessageEdgeToast(false);
+    });
+
+    box.addEventListener("scroll", () => {
+      if (!state.dmModalOpen || !hasDirectMessageConversationOpen()) return;
+      if (!directMessageEdgeAtTop(box) && !directMessageEdgeAtBottom(box)) hideDirectMessageEdgeToast(false);
+      maybeShowDirectMessageEdgeToastFromUserScroll(box, "scroll");
+    }, {passive: true});
+  }
+
+  function installDirectMessageWindowDrag(wrap) {
+    if (!wrap || wrap.dataset.bmwcDmWindowDragInstalled === "1") return;
+    wrap.dataset.bmwcDmWindowDragInstalled = "1";
+    const header = wrap.querySelector(".bmwc-dm-head");
+    if (!header) return;
+    let active = false;
+    let lastX = 0;
+    let lastY = 0;
+    const pointFromEvent = event => {
+      const src = event.touches && event.touches.length ? event.touches[0] :
+                  event.changedTouches && event.changedTouches.length ? event.changedTouches[0] :
+                  event;
+      return {
+        clientX: Number(src.clientX) || 0,
+        clientY: Number(src.clientY) || 0,
+        screenX: Number(src.screenX) || Number(src.clientX) || 0,
+        screenY: Number(src.screenY) || Number(src.clientY) || 0
+      };
+    };
+    const begin = event => {
+      const target = event.target;
+      if (target && target.closest && target.closest("button, input, select, textarea, a")) return;
+      if (state.isPip) return;
+      const p = pointFromEvent(event);
+      active = true;
+      lastX = p.clientX;
+      lastY = p.clientY;
+      postFrame("dragStart", {screenX: p.screenX, screenY: p.screenY});
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const move = event => {
+      if (!active) return;
+      const p = pointFromEvent(event);
+      const dx = p.clientX - lastX;
+      const dy = p.clientY - lastY;
+      lastX = p.clientX;
+      lastY = p.clientY;
+      postFrame("dragMove", {dx, dy, screenX: p.screenX, screenY: p.screenY});
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const end = event => {
+      if (!active) return;
+      active = false;
+      postFrame("dragEnd", {});
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    header.addEventListener("pointerdown", begin, {capture: true});
+    document.addEventListener("pointermove", move, {capture: true});
+    document.addEventListener("pointerup", end, {capture: true});
+    document.addEventListener("pointercancel", end, {capture: true});
+    header.addEventListener("touchstart", begin, {capture: true, passive: false});
+    document.addEventListener("touchmove", move, {capture: true, passive: false});
+    document.addEventListener("touchend", end, {capture: true, passive: false});
+    document.addEventListener("touchcancel", end, {capture: true, passive: false});
+  }
+
+  function renderDirectMessageEmojiPanel() {
+    const panel = document.getElementById("bmwc-dm-emoji-panel");
+    if (!panel) return;
+    if (!state.dmEmojiPanelOpen || !canUseCustomEmoji()) {
+      closeDirectMessageEmojiPanel();
+      return;
+    }
+    const packs = Array.isArray(state.emojiPacks) ? state.emojiPacks : [];
+    const items = Array.isArray(state.emojiItems) ? state.emojiItems : [];
+    if (!items.length) {
+      panel.innerHTML = `<div class="bmwc-emoji-scroll"><div class="bmwc-emoji-empty">${esc(t("emoji.empty", "No emojis configured."))}</div></div>`;
+      panel.classList.remove("bmwc-hidden");
+      setDirectMessageEmojiPanelHeight(panel);
+      installEmojiPanelWheelStep(panel);
+      return;
+    }
+    let selectedPack = String(state.dmEmojiSelectedPack || "");
+    if (!selectedPack || (packs.length && !packs.some(pack => String(pack.id || "") === selectedPack))) {
+      selectedPack = packs[0] && packs[0].id ? String(packs[0].id) : "";
+    }
+    state.dmEmojiSelectedPack = selectedPack;
+    const packTabs = packs.length > 1
+      ? `<div class="bmwc-emoji-tabs">${packs.map(pack => {
+          const id = String(pack.id || "");
+          return `<button type="button" class="bmwc-emoji-tab${id === selectedPack ? " bmwc-active" : ""}" data-emoji-pack="${esc(id)}">${esc(pack.label || id)} <span>${esc(pack.count || "")}</span></button>`;
+        }).join("")}</div>`
+      : "";
+    const shown = selectedPack ? items.filter(item => String(item.pack || "") === selectedPack) : items;
+    panel.innerHTML = packTabs + `<div class="bmwc-emoji-scroll"><div class="bmwc-emoji-grid">${shown.map(emojiButtonHtml).join("")}</div></div>`;
+    panel.classList.remove("bmwc-hidden");
+    setDirectMessageEmojiPanelHeight(panel);
+    installEmojiPanelWheelStep(panel);
+
+    panel.querySelectorAll("[data-emoji-pack]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const pack = btn.dataset.emojiPack || "";
+        state.dmEmojiSelectedPack = pack;
+        panel.querySelectorAll(".bmwc-emoji-tab").forEach(tab => tab.classList.toggle("bmwc-active", tab === btn));
+        const grid = panel.querySelector(".bmwc-emoji-grid");
+        if (grid) grid.innerHTML = items.filter(item => String(item.pack || "") === pack).map(emojiButtonHtml).join("");
+        const scroll = emojiScrollElement(panel);
+        if (scroll) scroll.scrollTop = 0;
+        setDirectMessageEmojiPanelHeight(panel);
+        installEmojiItemHandlers(panel);
+      });
+    });
+    installEmojiItemHandlers(panel);
+  }
+
+  function renderDirectMessagePlayers(players) {
+    const box = document.getElementById("bmwc-dm-player-results");
+    if (!box) return;
+    const arr = Array.isArray(players) ? players : [];
+    if (!arr.length) {
+      box.innerHTML = "";
+      return;
+    }
+    box.innerHTML = arr.map(player => {
+      const label = player.label || player.displayName || player.username || player.uuid;
+      return `<button type="button" class="bmwc-dm-player" data-dm-player="${esc(player.uuid)}" data-dm-player-label="${esc(label)}" title="${esc(directMessagePlainLabel(label))}">${directMessageLabelHtml(label)}</button>`;
+    }).join("");
+    box.querySelectorAll("[data-dm-player]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        state.dmDraftTarget = {uuid: btn.dataset.dmPlayer || "", label: btn.dataset.dmPlayerLabel || ""};
+        state.dmActiveThreadId = "";
+        renderDirectMessageHeader(state.dmDraftTarget.label);
+        renderDirectMessageMessages([]);
+        updateDirectMessageViewMode();
+        box.innerHTML = "";
+        closeDirectMessagePlayerSearch();
+        const input = document.getElementById("bmwc-dm-input");
+        if (input) {
+          setActiveComposeInput(input);
+          input.focus();
+        }
+      });
+    });
+  }
+
+  async function searchDirectMessagePlayers(query) {
+    if (!state.token || !state.directMessageEnabled) return;
+    if (!String(query || "").trim()) {
+      renderDirectMessagePlayers([]);
+      return;
+    }
+    try {
+      const res = await api("/dm/players?token=" + encodeURIComponent(state.token) + "&q=" + encodeURIComponent(query) + "&limit=20");
+      renderDirectMessagePlayers(res.players || []);
+    } catch (_) {}
+  }
+
+  function installDirectMessageDragAndDropUpload(wrap) {
+    if (!wrap || wrap.dataset.dmDropInstalled === "1") return;
+    wrap.dataset.dmDropInstalled = "1";
+    const modal = wrap.querySelector(".bmwc-dm-modal") || wrap;
+    const setOver = visible => {
+      try { modal.classList.toggle("bmwc-dm-drag-over", !!visible); } catch (_) {}
+    };
+    const allowed = () => !state.uploadActive && canUpload();
+    ["dragenter", "dragover"].forEach(type => {
+      wrap.addEventListener(type, event => {
+        if (!isFileDragEvent(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = allowed() ? "copy" : "none";
+        setOver(true);
+      }, {capture: true});
+    });
+    wrap.addEventListener("dragleave", event => {
+      if (!isFileDragEvent(event)) return;
+      const next = event.relatedTarget;
+      if (next && wrap.contains(next)) return;
+      setOver(false);
+    }, {capture: true});
+    wrap.addEventListener("drop", async event => {
+      if (!isFileDragEvent(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOver(false);
+      const files = dropEventFiles(event);
+      if (!files.length) return;
+      setActiveComposeInput("bmwc-dm-input");
+      if (state.uploadActive) {
+        alert(t("upload.dropBusy", "Upload is already in progress."));
+        return;
+      }
+      if (!canUpload()) {
+        alert(t("upload.dropDenied", "File upload is not allowed."));
+        return;
+      }
+      await uploadFiles(files, "drop");
+    }, {capture: true});
+    document.addEventListener("dragend", () => setOver(false), {capture: true});
+  }
+
+  async function sendDirectMessageFromModal() {
+    if (!state.token || !state.directMessageEnabled || !state.directMessageAllowWebSend) return;
+    const input = document.getElementById("bmwc-dm-input");
+    if (!input) return;
+    let message = String(input.value || "").trim();
+    if (!message) return;
+    if (state.directMessageMaxMessageLength > 0 && message.length > state.directMessageMaxMessageLength) {
+      message = message.slice(0, state.directMessageMaxMessageLength);
+    }
+    const body = {token: state.token, message};
+    if (state.dmActiveThreadId) {
+      const thread = (state.dmThreads || []).find(t => t.id === state.dmActiveThreadId);
+      if (thread) body.targetUuid = thread.otherUuid;
+    } else if (state.dmDraftTarget && state.dmDraftTarget.uuid) {
+      body.targetUuid = state.dmDraftTarget.uuid;
+    }
+    if (!body.targetUuid) {
+      alert(t("dm.selectPlayerFirst", "Select a player first."));
+      return;
+    }
+    input.disabled = true;
+    try {
+      const res = await api("/dm/send", {method: "POST", body: JSON.stringify(body)});
+      input.value = "";
+      if (res && res.thread && res.thread.id) {
+        state.dmActiveThreadId = res.thread.id;
+        state.dmDraftTarget = null;
+      }
+      await loadDirectMessageThreads(true);
+      if (state.dmActiveThreadId) await loadDirectMessageMessages(state.dmActiveThreadId);
+    } catch (e) {
+      alertResponse("alert.dmSendFailed", "Failed to send message: {error}", e.response || {error: e.message || "error"});
+    } finally {
+      input.disabled = false;
+      input.focus();
+    }
+  }
+
+  async function openDirectMessageModal() {
+    if (!state.token) {
+      openLoginModal();
+      return;
+    }
+    if (!state.directMessageEnabled) return;
+    if (state.dmModalOpen) return;
+    state.dmModalOpen = true;
+    state.dmActiveThreadId = "";
+    state.dmDraftTarget = null;
+    const wrap = document.createElement("div");
+    wrap.className = "bmwc-modal-backdrop bmwc-dm-modal-backdrop";
+    applyDetachedModalTheme(wrap);
+    // The DM modal is attached to document.body instead of inside #bmwc-root.
+    // Copy live emoji size variables explicitly so DM rendering/picker follows
+    // the same emoji.render-size-px and emoji.picker-size-px settings as public chat.
+    wrap.style.setProperty("--bmwc-emoji-render-size", emojiRenderSizePx() + "px");
+    wrap.style.setProperty("--bmwc-emoji-picker-size", emojiPickerSizePx() + "px");
+    wrap.style.setProperty("--bmwc-emoji-panel-height", emojiPanelHeightPx() + "px");
+    wrap.style.setProperty("--bmwc-emoji-panel-min-height", emojiPanelMinHeightPx() + "px");
+    wrap.innerHTML = `
+      <div class="bmwc-modal bmwc-dm-modal">
+        <div class="bmwc-dm-head">
+          <h3 class="bmwc-dm-main-title"><span>${t("dm.title", "Messages")}</span><span class="bmwc-dm-retention" id="bmwc-dm-retention" title="${esc(directMessageRetentionNoticeText())}">${esc(directMessageRetentionNoticeText())}</span></h3>
+          <div class="bmwc-dm-head-actions">
+            <button class="bmwc-button" id="bmwc-dm-close">${t("button.close", "Close")}</button>
+          </div>
+        </div>
+        <div class="bmwc-dm-layout">
+          <aside class="bmwc-dm-sidebar" id="bmwc-dm-sidebar">
+            <button type="button" class="bmwc-button bmwc-dm-new" id="bmwc-dm-new">${t("dm.newMessage", "New message")}</button>
+            <div class="bmwc-dm-thread-list" id="bmwc-dm-thread-list"></div>
+          </aside>
+          <section class="bmwc-dm-conversation">
+            <div class="bmwc-dm-title" id="bmwc-dm-title">${t("dm.selectThread", "Select a thread")}</div>
+            <div class="bmwc-dm-messages" id="bmwc-dm-messages"></div>
+            <div class="bmwc-emoji-resize-handle bmwc-dm-emoji-resize bmwc-hidden" id="bmwc-dm-emoji-resize" title="${t("button.resizeEmojiPanel", "Drag to resize emoji picker")}" aria-label="${t("button.resizeEmojiPanel", "Drag to resize emoji picker")}"></div>
+            <div class="bmwc-emoji-panel bmwc-dm-emoji-panel bmwc-hidden" id="bmwc-dm-emoji-panel" aria-live="polite"></div>
+            <div class="bmwc-dm-compose bmwc-row">
+              <input class="bmwc-input" id="bmwc-dm-input" placeholder="${t("placeholder.message", "message")}" ${state.directMessageMaxMessageLength > 0 ? `maxlength="${state.directMessageMaxMessageLength}"` : ""}>
+              <button class="bmwc-button bmwc-dm-emoji-button bmwc-hidden" id="bmwc-dm-emoji" title="${t("button.emoji", "Emoji")}">☺</button>
+              <button class="bmwc-button bmwc-dm-upload bmwc-hidden" id="bmwc-dm-upload" title="${t("button.upload", "Attach")}">&#128206;</button>
+              <button class="bmwc-button bmwc-dm-send" id="bmwc-dm-send">${t("button.send", "Send")}</button>
+              <input type="file" id="bmwc-dm-file" class="bmwc-file-input" multiple hidden style="display:none !important;">
+            </div>
+          </section>
+        </div>
+        <div class="bmwc-dm-search-panel bmwc-hidden" id="bmwc-dm-search-panel">
+          <div class="bmwc-dm-search-head">
+            <strong>${t("dm.searchPlayer", "Search player")}</strong>
+            <button class="bmwc-button" id="bmwc-dm-search-close" type="button">${t("button.close", "Close")}</button>
+          </div>
+          <input class="bmwc-input" id="bmwc-dm-search" placeholder="${t("dm.searchPlayer", "Search player")}">
+          <div class="bmwc-dm-player-results" id="bmwc-dm-player-results"></div>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap);
+    installDirectMessageIdentityToggleGuard(wrap);
+    const close = () => { hideEmojiAutocomplete(); closeDirectMessageEmojiPanel(); closeDirectMessagePlayerSearch(); hideDirectMessageEdgeToast(true); wrap.remove(); state.dmModalOpen = false; if (state.activeComposeInputId === "bmwc-dm-input") state.activeComposeInputId = "bmwc-message"; };
+    wrap.querySelector("#bmwc-dm-close").onclick = close;
+    wrap.addEventListener("click", e => { if (e.target === wrap) close(); });
+    wrap.addEventListener("click", e => {
+      if (!state.dmSearchPanelOpen) return;
+      const panel = wrap.querySelector("#bmwc-dm-search-panel");
+      const newButton = wrap.querySelector("#bmwc-dm-new");
+      const target = e.target;
+      if (panel && panel.contains(target)) return;
+      if (newButton && newButton.contains(target)) return;
+      closeDirectMessagePlayerSearch();
+    });
+    const title = wrap.querySelector("#bmwc-dm-title");
+    if (title) {
+      title.addEventListener("click", e => {
+        if (e && e.target && e.target.closest && e.target.closest(senderIdentitySelector())) return;
+        returnDirectMessageToList();
+      });
+      title.addEventListener("keydown", e => {
+        if (e.target && e.target.closest && e.target.closest(senderIdentitySelector())) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          returnDirectMessageToList();
+        }
+      });
+    }
+    updateDirectMessageViewMode();
+    const newBtn = wrap.querySelector("#bmwc-dm-new");
+    if (newBtn) newBtn.addEventListener("click", openDirectMessagePlayerSearch);
+    window.addEventListener("resize", () => {
+      if (state.dmModalOpen && state.dmSearchPanelOpen) syncDirectMessagePlayerSearchPanelSize();
+    }, {passive: true});
+    const searchClose = wrap.querySelector("#bmwc-dm-search-close");
+    if (searchClose) searchClose.addEventListener("click", closeDirectMessagePlayerSearch);
+    const search = wrap.querySelector("#bmwc-dm-search");
+    if (search) search.addEventListener("input", () => {
+      clearTimeout(state.dmSearchTimer);
+      state.dmSearchTimer = setTimeout(() => searchDirectMessagePlayers(search.value), 180);
+    });
+    wrap.querySelector("#bmwc-dm-send").onclick = sendDirectMessageFromModal;
+    const dmEmoji = wrap.querySelector("#bmwc-dm-emoji");
+    if (dmEmoji) {
+      dmEmoji.addEventListener("click", () => toggleDirectMessageEmojiPanel());
+    }
+    const dmUpload = wrap.querySelector("#bmwc-dm-upload");
+    const dmFile = wrap.querySelector("#bmwc-dm-file");
+    if (dmUpload) {
+      dmUpload.addEventListener("click", () => {
+        setActiveComposeInput("bmwc-dm-input");
+        if (dmFile) dmFile.click();
+      });
+    }
+    if (dmFile) {
+      dmFile.accept = uploadAcceptList();
+      dmFile.addEventListener("change", async e => {
+        setActiveComposeInput("bmwc-dm-input");
+        await uploadSelectedFiles(e);
+      });
+    }
+    const dmInput = wrap.querySelector("#bmwc-dm-input");
+    dmInput.addEventListener("focus", () => setActiveComposeInput(dmInput));
+    dmInput.addEventListener("paste", async e => {
+      setActiveComposeInput(dmInput);
+      await handlePasteUpload(e);
+    });
+    dmInput.addEventListener("keydown", e => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      closeDirectMessageEmojiPanel();
+      sendDirectMessageFromModal();
+    });
+    installDirectMessageWindowDrag(wrap);
+    installDirectMessageDragAndDropUpload(wrap);
+    installDirectMessageEmojiPanelResize(wrap);
+    installDirectMessageEdgeToasts(wrap);
+    updateDirectMessageComposeControls();
+    await loadDirectMessageThreads(true);
+    renderDirectMessageThreads();
+    renderDirectMessageMessages([]);
+    updateDirectMessageViewMode();
+  }
+
   function openSetPasswordModal() {
     const wrap = document.createElement("div");
     wrap.className = "bmwc-modal-backdrop";
@@ -9703,8 +10995,12 @@
       localStorage.removeItem("bmwc.role");
       updateLoginState();
       await loadPins();
+      state.dmUnread = 0;
+      state.dmThreads = [];
+      updateDirectMessageButton();
       await loadCommands();
       await refreshCaptcha();
+      connectStream({refreshAfterOpen: true, reason: "logout"});
       wrap.remove();
     };
   }
@@ -9721,6 +11017,8 @@
     refreshCaptcha();
     loadPins();
     loadCommands();
+    loadDirectMessageThreads(true);
+    connectStream({refreshAfterOpen: true, reason: "login"});
   }
 
   async function verifyStoredToken() {
@@ -9741,6 +11039,8 @@
     updateGuestVisibility();
     await loadPins();
     await loadCommands();
+    await loadDirectMessageThreads(true);
+    if (state.token) connectStream({refreshAfterOpen: true, reason: "token-verify"});
   }
 
   async function start() {
@@ -9759,6 +11059,7 @@
     await verifyStoredToken();
     await loadPins();
     await loadCommands();
+    await loadDirectMessageThreads(true);
     await loadHistory();
     connectStream();
   }

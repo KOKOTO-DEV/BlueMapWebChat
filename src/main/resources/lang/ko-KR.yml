@@ -8,11 +8,11 @@ web:
     reconnecting: 재연결 중...
     loggedIn: 로그인됨
   button:
-    emoji: "이모티콘"
+    emoji: 이모티콘
     admin: 관리
     login: 로그인
     upload: 첨부
-    resizeEmojiPanel: '드래그해서 이모티콘 선택창 크기 조절'
+    resizeEmojiPanel: 드래그해서 이모티콘 선택창 크기 조절
     resize: 크기 조절
     send: 전송
     reset: 초기화
@@ -28,7 +28,7 @@ web:
     revoke: 세션 해제
     delete: 삭제
     cancel: 취소
-    reply: "답글"
+    reply: 답글
     pin: 고정
     moderationActionsEnable: 고정 / 삭제 활성화
     moderationActionsDisable: 고정 / 삭제 비활성화
@@ -37,18 +37,19 @@ web:
     moveDown: 아래로 이동
     commands: 명령어
     search: 검색
+    directMessages: 메시지함
     pip: PIP
     run: 실행
     jumpLatest: 최신 메시지로 이동
-    createPack: '폴더 생성'
-    uploadEmoji: '업로드'
-    deselectAll: '전체 선택 해제'
-    selectAll: '전체 선택'
-    deleteSelected: '선택 삭제'
-    deletePack: '폴더 삭제'
-    change: '변경'
-    rename: '변경'
-    renamePack: '폴더 이름 변경'
+    createPack: 폴더 생성
+    uploadEmoji: 업로드
+    deselectAll: 전체 선택 해제
+    selectAll: 전체 선택
+    deleteSelected: 선택 삭제
+    deletePack: 폴더 삭제
+    change: 변경
+    rename: 변경
+    renamePack: 폴더 이름 변경
   placeholder:
     guestName: 게스트 이름
     captchaAnswer: 답
@@ -59,18 +60,18 @@ web:
     muteTarget: 게스트 이름 또는 IP
     minutes: 분
     reason: 사유
-    emojiPack: '새 팩/폴더 이름'
+    emojiPack: 새 팩/폴더 이름
   reply:
-    composing: "{sender}에게 답글"
-    jump: "답글 대상 메시지로 이동"
-    notFound: "참조한 메시지를 찾을 수 없습니다."
+    composing: '{sender}에게 답글'
+    jump: 답글 대상 메시지로 이동
+    notFound: 참조한 메시지를 찾을 수 없습니다.
   message:
     deleted: '[삭제됨]'
   emoji:
-    empty: "설정된 이모티콘이 없습니다."
-    emptyPack: '이모지 없음'
+    empty: 설정된 이모티콘이 없습니다.
+    emptyPack: 이모지 없음
   alert:
-    emojiTooMany: "이모티콘은 한 메시지에 {max}개까지만 사용할 수 있습니다."
+    emojiTooMany: 이모티콘은 한 메시지에 {max}개까지만 사용할 수 있습니다.
     rateLimited: 전송이 너무 빠릅니다. 잠시 후 다시 보내주세요.
     sendFailed: '전송 실패: {error}'
     serverUnavailable: 채팅 서버에 연결할 수 없습니다.
@@ -89,15 +90,18 @@ web:
     pinFailed: '고정 실패: {error}'
     unpinFailed: '고정 해제 실패: {error}'
     movePinFailed: '순서 변경 실패: {error}'
-    emojiPackNameRequired: '폴더 이름을 입력하세요.'
-    emojiFileRequired: '이모지 파일을 선택하세요.'
-    confirmDeleteEmoji: '이 이모지를 삭제할까요?'
-    emojiSelectRequired: '삭제할 이모지를 선택하세요.'
-    confirmDeleteSelectedEmoji: '선택한 이모지 {count}개를 삭제할까요?'
+    emojiPackNameRequired: 폴더 이름을 입력하세요.
+    emojiFileRequired: 이모지 파일을 선택하세요.
+    confirmDeleteEmoji: 이 이모지를 삭제할까요?
+    emojiSelectRequired: 삭제할 이모지를 선택하세요.
+    confirmDeleteSelectedEmoji: 선택한 이모지 {count}개를 삭제할까요?
     confirmDeleteEmojiPack: '{pack} 폴더와 안의 이모지를 모두 삭제할까요?'
-    emojiRenameNameRequired: '새 이름을 입력하세요.'
-    confirmRenameEmoji: '이 이모지 이름을 {name}(으)로 바꿀까요? 기존 이름을 사용한 이모지 토큰은 더 이상 일치하지 않습니다.'
+    emojiRenameNameRequired: 새 이름을 입력하세요.
+    confirmRenameEmoji: 이 이모지 이름을 {name}(으)로 바꿀까요? 기존 이름을 사용한 이모지 토큰은 더 이상 일치하지 않습니다.
     confirmRenameEmojiPack: '{pack} 폴더 이름을 {name}(으)로 바꿀까요? 이 폴더 안의 이모지 토큰이 변경됩니다.'
+    dmLoadFailed: "메시지를 불러오지 못했습니다: {error}"
+    dmSendFailed: "메시지를 보내지 못했습니다: {error}"
+    dmHideFailed: "메시지를 숨기지 못했습니다: {error}"
     renameFailed: '이름 변경 실패: {error}'
   admin:
     title: BlueMap 채팅 관리
@@ -117,22 +121,22 @@ web:
     currentMutes: 현재 차단 목록
     expires: 만료
     never: 없음
-    emojis: '이모지'
-    emojiTitle: '커스텀 이모지'
-    emojiCurrent: '현재 이모지'
-    emojiLimits: '파일당 {file} KB / 전체 {total} MB'
-    emojiFileLimit: '파일당 {file}'
-    emojiStorageUsage: '이모지 용량 {current} / {total}'
-    emojiStorageCurrent: '이모지 용량 {current}'
-    emojiStorageLimit: '이모지 최대 용량 {total}'
-    unlimited: '무제한'
-    emojiFolderSelect: '이모지 폴더'
-    emojiPackCount: '이모지 {count}개'
-    emojiNoFileSelected: '선택된 파일 없음'
+    emojis: 이모지
+    emojiTitle: 커스텀 이모지
+    emojiCurrent: 현재 이모지
+    emojiLimits: 파일당 {file} KB / 전체 {total} MB
+    emojiFileLimit: 파일당 {file}
+    emojiStorageUsage: 이모지 용량 {current} / {total}
+    emojiStorageCurrent: 이모지 용량 {current}
+    emojiStorageLimit: 이모지 최대 용량 {total}
+    unlimited: 무제한
+    emojiFolderSelect: 이모지 폴더
+    emojiPackCount: 이모지 {count}개
+    emojiNoFileSelected: 선택된 파일 없음
   prompt:
-    createEmojiPack: '새 폴더 이름'
-    renameEmoji: '새 이모지 이름'
-    renameEmojiPack: '새 폴더 이름'
+    createEmojiPack: 새 폴더 이름
+    renameEmoji: 새 이모지 이름
+    renameEmojiPack: 새 폴더 이름
   login:
     title: BlueMap 채팅 로그인
     tabLogin: 로그인
@@ -271,7 +275,7 @@ web:
     multipart_required: 업로드 요청 형식이 올바르지 않습니다
     file_too_large: 파일이 너무 큽니다
     total_size_exceeded: 이모지 전체 용량 제한을 초과했습니다
-    total_size_exceededWithUsage: '이모지 전체 용량 제한을 초과했습니다. 현재 {current}, 선택 파일 {file}, 최대 {max}.'
+    total_size_exceededWithUsage: 이모지 전체 용량 제한을 초과했습니다. 현재 {current}, 선택 파일 {file}, 최대 {max}.
     file_missing: 업로드된 파일이 없습니다
     upload_permission_denied: 파일 업로드 권한이 없습니다
     extension_not_allowed: 허용되지 않은 파일 형식입니다
@@ -297,6 +301,33 @@ web:
     invalid_command: 올바르지 않은 명령어입니다
     command_failed: 명령어 실행에 실패했습니다
     command_too_long: 명령어가 너무 깁니다
+    dmLoadFailed: '메시지함을 불러오지 못했습니다: {error}'
+    dmSendFailed: '메시지를 보내지 못했습니다: {error}'
+    dmHideFailed: '메시지를 숨기지 못했습니다: {error}'
+    dm_disabled: 메시지함이 비활성화되어 있습니다
+    web_send_disabled: 웹 메시지 전송이 비활성화되어 있습니다
+    player_not_found: 플레이어를 찾을 수 없습니다
+    self_message: 자기 자신에게는 보낼 수 없습니다
+  dm:
+    title: 메시지함
+    noThreads: 대화 스레드가 없습니다.
+    selectThread: 대화를 선택하세요
+    emptyThread: 아직 메시지가 없습니다.
+    searchPlayer: 플레이어 검색
+    newMessage: 새 대화
+    selectPlayerFirst: 먼저 플레이어를 선택하세요.
+    showThreads: 대화 목록 펼치기
+    hideThreads: 대화 목록 접기
+    showThreadsShort: 펼치기
+    hideThreadsShort: 접기
+    confirmHideMessage: 이 메시지를 내 화면에서 숨길까요?
+    hideMessage: 내게서 이 메시지 숨기기
+    threadList: 대화 목록
+    showConversationList: 목록 보기
+    showCurrentConversation: 대화만 보기
+    retentionLimited: "(보관 기간: {days}일)"
+    retentionUnlimited: "(보관 기간: 기한 없음)"
+    backToList: 대화 목록으로 돌아가기
   announcement:
     minecraft-join: 🟢 {player}님이 서버에 접속했습니다.
     minecraft-quit: 🔴 {player}님이 서버에서 나갔습니다.
@@ -312,7 +343,7 @@ web:
     web-login: 🌐 {name}님이 웹 채팅에 로그인했습니다.
     web-logout: 🌐 {name}님이 웹 채팅에서 로그아웃했습니다.
   sender:
-    unknown: "알 수 없음"
+    unknown: 알 수 없음
     server: 서버
     discord: Discord
     originalId: '원래 ID: {name}'
@@ -329,6 +360,7 @@ web:
     onlyPlayers: 이 명령어는 플레이어만 사용할 수 있습니다.
     noPermission: 권한이 없습니다.
     passwordSet: 웹 채팅 비밀번호가 설정되었습니다.
+    disabledByConfig: BlueMapWebChat이 config.yml에서 비활성화되어 있습니다.
     configReloaded: BlueMapWebChat 설정을 다시 불러왔습니다.
     guestNoMutes: 게스트/IP 뮤트가 없습니다.
     guestMutesTitle: 'BlueMapWebChat 뮤트 목록:'
@@ -355,10 +387,41 @@ web:
     helpGuest: 게스트/IP 뮤트 관리
     helpSessions: 웹 세션 목록 보기
     helpRevoke: 웹 세션 취소
+    helpDm: 1:1 메시지 보내기
+    helpDmRead: 1:1 대화 스레드 읽기
+    dmDisabled: 메시지함이 비활성화되어 있습니다.
+    dmTitle: '메시지함: 읽지 않은 메시지 {count}개'
+    dmTitlePage: '메시지함: 읽지 않은 메시지 {count}개 ({page}/{pages}페이지)'
+    dmListNavHint: '새 대화 목록은 /bmchat dm list prev, 오래된 대화 목록은 /bmchat dm list next 로 이동하세요.'
+    dmListFirstPage: '이미 최신 대화 목록 페이지입니다.'
+    dmListLastPage: '이미 가장 오래된 대화 목록 페이지입니다.'
+    dmNoThreads: 대화 스레드가 없습니다.
+    dmGameSendDisabled: 게임 내 메시지 전송이 비활성화되어 있습니다.
+    dmDirectInputRequired: "DM은 플레이어가 직접 입력한 명령으로만 보낼 수 있습니다."
+    dmPlayerNotFound: 플레이어를 찾을 수 없습니다. 한 번 이상 접속한 플레이어여야 합니다.
+    dmEmpty: 메시지가 비어 있습니다.
+    dmFailed: '메시지 전송 실패: {error}'
+    dmSent: '{player}에게 보냈습니다: {message}'
+    dmSentEcho: '보냄: {player} {message}'
+    dmIncoming: '{player}님의 메시지: {message}'
+    dmReadTitle: '{player}님과의 메시지:'
+    dmReadTitlePage: '{player}님과의 메시지 ({page}/{pages}페이지):'
+    dmReadPageHint: '다음 페이지: /bmchat dm read {player} {page} {pageSize}'
+    dmReadNavHint: '새 메시지는 /bmchat dm prev, 이전 메시지는 /bmchat dm next 로 이동하세요.'
+    dmReadNoCursor: '먼저 스레드를 여세요: /bmchat dm read <player>'
+    dmReadFirstPage: '이미 최신 페이지입니다.'
+    dmReadLastPage: '이미 가장 오래된 페이지입니다.'
+    dmNoMessages: 이 대화에 메시지가 없습니다.
+    dmMe: 나
+    dmHideHint: '내 화면에서 숨기기: /bmchat dm hide <messageId>'
+    dmInvalidMessageId: 잘못된 메시지 ID입니다.
+    dmHideFailed: "메시지를 숨기지 못했습니다."
+    dmHidden: 내 화면에서 메시지를 숨겼습니다.
     never: 없음
     authInvalid: 잘못된 인증 요청입니다.
     authCodeExpired: 인증 코드가 없거나 만료되었습니다.
     authComplete: 웹 채팅 계정 연동이 완료되었습니다. 브라우저로 돌아가세요.
+    dmUnreadNotice: 읽지 않은 개인 메시지가 {count}개 있습니다. 웹 채팅 메시지함을 열거나 /bmchat dm list 명령어를 사용하세요.
   pinned:
     count: 고정 메시지 {count}개
     compact: '{count}'
@@ -388,7 +451,15 @@ web:
     note: 서버 이벤트와 웹 명령어 결과 같은 시스템 메시지는 i18n 키가 있으면 웹 UI에서 번역됩니다. config.yml의 사용자 지정 announcement 문구는 fallback 문구로 유지됩니다.
   history:
     end: 더 이상 표시할 메시지가 없습니다.
-    loading: "이전 메시지 로딩 중.\n잠시만 기다려 주세요."
-    failed: "불러오기 실패.\n잠시 뒤 다시 시도해 주세요."
-    timeout: "응답 지연 중.\n잠시 뒤 다시 시도해 주세요."
-    offline: "연결 끊김.\n네트워크를 확인해 주세요."
+    loading: '이전 메시지 로딩 중.
+
+      잠시만 기다려 주세요.'
+    failed: '불러오기 실패.
+
+      잠시 뒤 다시 시도해 주세요.'
+    timeout: '응답 지연 중.
+
+      잠시 뒤 다시 시도해 주세요.'
+    offline: '연결 끊김.
+
+      네트워크를 확인해 주세요.'

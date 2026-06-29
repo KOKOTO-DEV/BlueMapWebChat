@@ -1,5 +1,94 @@
 # Changelog
 
+## 4.3.0
+
+### Startup safety
+
+- Added a top-level master switch for newly generated configs. New `config.yml` files start disabled so BlueMapWebChat only creates configuration files until the administrator reviews settings and opts in.
+- Existing configs without the `enabled` key are treated as enabled for upgrade compatibility.
+
+```yml
+# Master switch for BlueMapWebChat.
+# New generated configs default to false so the plugin creates config.yml first
+# without starting web/chat services or cleanup tasks. /bmchat reload remains available.
+# Existing configs that do not have this key are treated as enabled for upgrade compatibility.
+enabled: false
+```
+
+When `enabled: false`, the plugin does not start the HTTP server, web addon installer, chat listeners, Discord bridge, upload/emoji directory initialization, direct-message store, or cleanup tasks. Set `enabled: true` after reviewing retention/storage/exposure settings.
+
+### Thread-style direct messages
+
+- Changed the in-game DM sent confirmation to use the new `command.dmSentEcho` key so existing language files still show the sent body (`to: {player} {message}` / `보냄: {player} {message}`).
+- Added optional 1:1 direct message threads for linked/known Minecraft players.
+- Direct message targets are limited to players with a stored UUID/name, usually from joining the server at least once or linking a web account.
+- Messages are stored by UUID and displayed as `display name (real account name)` where both values are available.
+- A->B and B->A messages always use the same thread by using a deterministic pair of UUIDs.
+- Added a web message-box button with unread badge, player search, thread list, conversation view, and reply-style message sending inside each 1:1 thread.
+- Added `/bmchat dm <player> <message>` and `/bmchat dm list` for game-side direct message sending and unread/thread summary checks.
+- Added per-user unread tracking, web SSE direct-message refresh events, join-time unread notices, and online recipient notices.
+- Direct-message storage uses an independent private-message store from public chat history, so public chat retention and private-message retention can be managed independently.
+- Added `direct-message.storage`, `direct-message.jsonl-file`, and `direct-message.sqlite-file`. With `storage: "auto"`, DM storage follows `chat.history-storage: "jsonl"`; otherwise it uses SQLite.
+- Added `direct-message.confirm-hide` to control whether the web message box asks for confirmation before hiding a DM message.
+- Shows `direct-message.retention-days` next to the DM message-box title. `0` is displayed as no time limit.
+- Added shared `:emoji` + Tab autocomplete for both public chat and direct-message input fields.
+- Direct-message sender/time meta now uses the same display-name/time toggle behavior as public chat and removes the extra dot separator.
+
+New direct message configuration:
+
+```yml
+direct-message:
+  # Thread-style 1:1 direct messages.
+  # Only players that have joined or linked at least once and have a stored UUID/name can be selected.
+  # Messages are stored by UUID, while the UI shows display name (real account name).
+  # This feature uses its own private message store and is disabled by default because it stores private messages.
+  enabled: false
+
+  # auto = follow chat.history-storage when it is jsonl, otherwise use sqlite.
+  # sqlite = recommended database storage.
+  # jsonl = append-only JSONL file storage, useful when chat history also uses JSONL.
+  storage: "auto"
+
+  # 0 = no time limit. A positive value is shown next to the DM window title and
+  # physically removes old DM messages after that many days.
+  retention-days: 0
+
+  # 0 = unlimited by count. When set, only the newest N messages are kept per 1:1 thread.
+  max-messages-per-thread: 0
+
+  # 0 = unlimited. Recommended: 300-1000.
+  max-message-length: 500
+
+  # Allow sending DMs from the web UI.
+  allow-web-send: true
+  # Allow sending DMs from /bmchat dm in game.
+  allow-game-send: true
+
+  # Notify players about unread DMs when they join.
+  notify-on-login: true
+  # Notify online players immediately when a new DM arrives.
+  notify-on-message: true
+  # Show unread DM count badge in the web UI.
+  web-unread-badge: true
+
+  # Ask before hiding a DM message from the web message box.
+  confirm-hide: true
+
+  # JSONL file for private 1:1 message threads when storage is jsonl. Relative paths are stored under the plugin data folder.
+  jsonl-file: "direct-messages.jsonl"
+  # SQLite file for private 1:1 message threads when storage is sqlite. Relative paths are stored under the plugin data folder.
+  sqlite-file: "direct-messages.db"
+```
+
+Upgrade note:
+
+- Existing `config.yml` files are not rewritten automatically. To use direct messages after upgrading, merge the `direct-message` block above into your existing config.
+- Because 4.2.0 and 4.3.0 include large configuration changes, if manual merging is difficult, stop the server, back up and delete `plugins/BlueMapWebChat/config.yml`, start the server once to regenerate it, and then reapply your custom settings manually.
+- New generated configs now start with top-level `enabled: false`. This prevents web/chat services and cleanup tasks from running until the administrator reviews the generated config and sets `enabled: true`.
+- If `direct-message.storage: "auto"` and `chat.history-storage: "jsonl"`, DMs are stored in `direct-messages.jsonl`. Otherwise `auto` uses SQLite.
+- If direct messages are enabled with SQLite storage, include `direct-messages.db`, `direct-messages.db-wal`, and `direct-messages.db-shm` in backup plans.
+- If direct messages are enabled with JSONL storage, include `direct-messages.jsonl` in backup plans.
+
 ## 4.2.0
 
 ### SQLite history storage
@@ -7,6 +96,7 @@
 - Added SQLite chat history storage and made `chat.history-storage: "sqlite"` the recommended/default backend for new configurations.
 - Kept `jsonl` and `memory` history-storage modes for compatibility.
 - Unified history retention settings so `chat.history-size` and `chat.history-retention-days` are used by `memory`, `jsonl`, and `sqlite`.
+- `chat.history-retention-days` controls age-based cleanup for all history backends. Review this value before setting top-level `enabled: true` on a newly generated config.
 - Removed the old `chat.history-persist` and `chat.history-persist-retention-days` settings. Persistence is now selected only by `chat.history-storage`.
 - Added `chat.history-sqlite-file` to control the SQLite DB file path. The default is `history.db` in the plugin data folder.
 - Added `chat.history-sqlite-migrate-jsonl`; when enabled, an empty SQLite DB imports the existing legacy `chat.history-file` JSONL log once.
@@ -27,6 +117,7 @@ chat:
   # Shared by memory/jsonl/sqlite. 0 = unlimited by count.
   history-size: 0
   # Shared by memory/jsonl/sqlite. 0 = unlimited by age.
+  # Review this value before setting top-level enabled: true on newly generated configs.
   history-retention-days: 5
   # JSONL history file. Relative paths are stored under the plugin data folder.
   history-file: "history.jsonl"
