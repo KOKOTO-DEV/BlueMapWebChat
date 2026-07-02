@@ -1,4 +1,4 @@
-# BlueMapWebChat 4.5.0 configuration
+# BlueMapWebChat 4.5.1 configuration
 
 # Master switch for BlueMapWebChat.
 # New generated configs default to false so the plugin creates config.yml first
@@ -399,6 +399,7 @@ browser-notifications:
   notify-dm: true
   notify-group-chat: true
   notify-mentions: true
+  notify-replies: true
   notify-system: true
   notify-keywords: true
   notify-own-messages: true
@@ -430,6 +431,7 @@ web-push:
   notify-dm: true
   notify-group-chat: true
   notify-mentions: true
+  notify-replies: true
   notify-system: true
   notify-keywords: true
   notify-own-messages: true

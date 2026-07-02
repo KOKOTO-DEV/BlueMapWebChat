@@ -8554,3 +8554,86 @@ body.bmwc-standalone-mode {
   width: 100% !important;
   min-width: 0 !important;
 }
+
+
+.bmwc-notification-button {
+  position: relative;
+}
+
+.bmwc-notification-inbox-modal {
+  width: min(430px, calc(100vw - 28px));
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bmwc-notification-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding-right: 4px;
+  max-height: min(420px, 58vh);
+}
+
+.bmwc-notification-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.07);
+  color: inherit;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.bmwc-notification-row:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+.bmwc-notification-row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.bmwc-notification-row-body {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.82;
+  font-size: 12px;
+}
+
+.bmwc-notification-row-time {
+  opacity: 0.68;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.bmwc-notification-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* v4.5.1: emoji folder move controls. */
+.bmwc-admin-emoji-move-select {
+  min-width: 130px;
+  max-width: 220px;
+  flex: 0 1 180px;
+}
+
+.bmwc-admin-emoji-item-actions {
+  flex-wrap: wrap;
+}

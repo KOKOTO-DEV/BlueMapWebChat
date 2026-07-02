@@ -295,7 +295,7 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
         WebChatServer server = plugin.webServer();
         if (server != null) {
             server.publishDirectMessageUpdate(senderUuid, target.uuid, result.thread == null ? "" : result.thread.id);
-            server.dispatchWebPushDirectMessage(senderUuid, plugin.displayPlayerName(player), target.uuid, target.label(), message);
+            server.dispatchWebPushDirectMessage(senderUuid, plugin.displayPlayerName(player), target.uuid, target.label(), result.thread == null ? "" : result.thread.id, result.message == null ? 0L : result.message.id, message);
         }
         notifyOnlineRecipient(player, target, message);
         sender.sendMessage(sentEchoLineForGame(player, target.label(), message));

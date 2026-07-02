@@ -2,8 +2,6 @@
 
 A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can run as a BlueMap web addon, as a standalone `/chat` page served by the plugin, or both at the same time.
 
-<img width="1057" height="682" alt="Image" src="https://github.com/user-attachments/assets/722761ea-94a4-4da9-be79-3cd04997c166" />
-
 ## Features
 
 - BlueMap embedded chat panel and standalone web chat page
@@ -25,7 +23,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-4.5.0.jar
+target/BlueMapWebChat-4.5.1.jar
 ```
 
 ## Install
@@ -37,110 +35,6 @@ target/BlueMapWebChat-4.5.0.jar
 5. For BlueMap embedded mode, keep `web-addon.auto-install` and `web-addon.auto-patch-webapp-conf` enabled.
 6. For standalone-only mode, set `standalone-web.enabled: true`, `web-addon.auto-install: false`, and `web-addon.auto-patch-webapp-conf: false`.
 7. Restart the server or run `/bmchat reload`. Run `/bluemap reload` if BlueMap does not refresh web assets automatically.
-
-## 4.5.0 upgrade note and config regeneration
-
-The 4.5.0 line changed a lot of configuration around DM/group chat, metadata administration, browser notifications, Web Push, PWA names, audit logs, and Discord emoji-link handling. For an existing 4.3.x server, the cleanest upgrade path is often to regenerate `config.yml` instead of manually merging every new key.
-
-Regenerating `config.yml` does **not** delete existing data such as `history.db`, direct-message/group-message databases, uploads, emojis, audit logs, copied language files, or `web-push-vapid.properties`. New generated configs start with `enabled: false`, so the plugin only creates/loads configuration and does not start web/chat services, cleanup tasks, private-message storage, or group-chat storage until you review settings and set `enabled: true`.
-
-Suggested flow:
-
-```bash
-# Stop the Minecraft server first.
-cd plugins/BlueMapWebChat
-cp config.yml config.yml.4.3-backup
-# Optional full data backup:
-# cp -a . ../BlueMapWebChat-backup-4.3
-rm config.yml
-# Start the server once to generate a fresh config.yml with enabled: false.
-# Copy your custom values back, then set enabled: true.
-```
-
-Important 4.5.0 config blocks to review or merge:
-
-```yaml
-enabled: false
-
-private-chat-super-admins: []
-
-audit:
-  enabled: true
-  directory: "audit"
-
-standalone-web:
-  enabled: false
-  path: "/chat"
-  app-name: "Web Chat"
-  app-short-name: "Web Chat"
-  api-base-url: ""
-
-direct-message:
-  enabled: false
-  storage: "auto"
-  retention-days: 0
-  max-messages-per-thread: 0
-  max-message-length: 500
-  allow-web-send: true
-  allow-game-send: true
-  notify-on-login: true
-  notify-on-message: true
-  web-unread-badge: true
-  confirm-hide: true
-  jsonl-file: "direct-messages.jsonl"
-  sqlite-file: "direct-messages.db"
-
-group-chat:
-  enabled: false
-  allow-web-send: true
-  allow-public-rooms: true
-  allow-room-passwords: true
-  confirm-leave: true
-  confirm-hide: true
-  retention-days: 30
-  max-messages-per-room: 1000
-  max-message-length: 500
-  max-rooms-per-user: 20
-  max-members-per-room: 50
-  max-room-name-length: 32
-  invite-expire-hours: 72
-  sqlite-file: "group-messages.db"
-
-browser-notifications:
-  enabled: true
-  only-when-hidden: true
-  notify-normal-chat: true
-  notify-dm: true
-  notify-group-chat: true
-  notify-mentions: true
-  notify-system: true
-  notify-keywords: true
-  notify-own-messages: true
-  show-message-preview: true
-
-web-push:
-  enabled: true
-  vapid-public-key: ""
-  vapid-private-key: ""
-  subject: "mailto:admin@example.com"
-  notification-title: ""
-  subscriptions-file: "web-push-subscriptions.jsonl"
-  ttl-seconds: 300
-  notify-normal-chat: true
-  notify-dm: true
-  notify-group-chat: true
-  notify-mentions: true
-  notify-system: true
-  notify-keywords: true
-  notify-own-messages: true
-  show-message-preview: true
-
-discordsrv:
-  append-web-emoji-links: true
-  append-game-emoji-links: true
-```
-
-`web-push.notification-title: ""` means “use `standalone-web.app-name`”. If you want a fixed notification title, set it explicitly. `standalone-web.app-short-name` is the short PWA/Home Screen name used where the UI has limited space.
 
 ## Deployment modes
 
@@ -347,3 +241,6 @@ Administrative actions are also appended to date-based text audit files under `p
 
 
 Note: `standalone-web.app-name` / `standalone-web.app-short-name` can change the mobile Home Screen web app name, and `web-push.notification-title` can change the default push title. If `web-push.notification-title` is empty, `standalone-web.app-name` is used. On iOS/iPadOS, use the standalone page added to the Home Screen rather than a normal browser tab.
+
+
+Existing configs that still contain old generated display names such as `BlueMapWebChat` or `BM WebChat` are treated as legacy placeholders so they no longer appear as push titles by default.

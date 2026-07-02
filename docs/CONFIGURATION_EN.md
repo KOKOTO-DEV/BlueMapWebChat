@@ -375,3 +375,6 @@ GIF/JPG/JPEG/WEBP emoji originals automatically get same-folder PNG sidecars for
 
 
 `standalone-web.app-name` and `standalone-web.app-short-name` control the standalone page/PWA name. Reinstall the Home Screen web app after changing them on mobile devices. `web-push.notification-title` controls the default title used for test/system/background push notifications; if it is empty, the plugin uses `standalone-web.app-name`.
+
+
+Existing configs that still contain old generated display names such as `BlueMapWebChat` or `BM WebChat` are treated as legacy defaults and use the new fallback.

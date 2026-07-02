@@ -265,6 +265,7 @@
     browserNotificationsNotifyDm: true,
     browserNotificationsNotifyGroupChat: true,
     browserNotificationsNotifyMentions: true,
+    browserNotificationsNotifyReplies: true,
     browserNotificationsNotifySystem: true,
     browserNotificationsNotifyKeywords: true,
     browserNotificationsNotifyOwnMessages: true,
@@ -277,12 +278,14 @@
     webPushNotifyDm: true,
     webPushNotifyGroupChat: true,
     webPushNotifyMentions: true,
+    webPushNotifyReplies: true,
     webPushNotifySystem: true,
     webPushNotifyKeywords: true,
     webPushNotifyOwnMessages: true,
     webPushShowMessagePreview: true,
     webPushRegistering: false,
-    webPushLastError: ""
+    webPushLastError: "",
+    notificationInboxUnread: 0
   };
 
   function normalizeCommandMaxLength(value, fallback = 0) {
@@ -3199,6 +3202,7 @@
           <div class="bmwc-actions">
             ${state.directMessageEnabled ? `<button class="bmwc-button bmwc-dm-button bmwc-hidden" id="bmwc-dm" title="${t("button.directMessages", "Messages")}">✉<span class="bmwc-dm-badge bmwc-hidden" id="bmwc-dm-badge">0</span></button>` : ""}
             ${state.groupChatEnabled ? `<button class="bmwc-button bmwc-group-button bmwc-hidden" id="bmwc-group" title="${t("group.title", "Group chats")}">👥<span class="bmwc-dm-badge bmwc-hidden" id="bmwc-group-badge">0</span></button>` : ""}
+            <button class="bmwc-button bmwc-notification-button" id="bmwc-notifications" title="${t("notifications.inbox", "Notification inbox")}">🔔<span class="bmwc-dm-badge bmwc-hidden" id="bmwc-notification-badge">0</span></button>
             <button class="bmwc-button" id="bmwc-login">${t("button.login", "Login")}</button>
             ${state.config && state.config.uiPictureInPictureEnabled === true && !state.isPip ? `<button class="bmwc-button bmwc-pip" id="bmwc-pip" title="${t("button.pip", "PIP")}">▣</button>` : ""}
             <button class="bmwc-button" id="bmwc-min">_</button>
@@ -3301,6 +3305,9 @@
     if (dmBtn) dmBtn.addEventListener("click", () => openDirectMessageModal());
     const groupBtn = document.getElementById("bmwc-group");
     if (groupBtn) groupBtn.addEventListener("click", () => openGroupChatModal());
+    const notificationBtn = document.getElementById("bmwc-notifications");
+    if (notificationBtn) notificationBtn.addEventListener("click", () => openNotificationInboxModal());
+    updateNotificationInboxButton();
     const commandBtn = document.getElementById("bmwc-command");
     if (commandBtn) commandBtn.addEventListener("click", () => openCommandModal());
     const emojiBtn = document.getElementById("bmwc-emoji");
@@ -6678,6 +6685,7 @@
       state.browserNotificationsNotifyDm = data.browserNotificationsNotifyDm !== false;
       state.browserNotificationsNotifyGroupChat = data.browserNotificationsNotifyGroupChat !== false;
       state.browserNotificationsNotifyMentions = data.browserNotificationsNotifyMentions !== false;
+      state.browserNotificationsNotifyReplies = data.browserNotificationsNotifyReplies !== false;
       state.browserNotificationsNotifySystem = data.browserNotificationsNotifySystem !== false;
       state.browserNotificationsNotifyKeywords = data.browserNotificationsNotifyKeywords !== false;
       state.browserNotificationsNotifyOwnMessages = data.browserNotificationsNotifyOwnMessages !== false;
@@ -6692,6 +6700,7 @@
       state.webPushNotifyDm = data.webPushNotifyDm !== false;
       state.webPushNotifyGroupChat = data.webPushNotifyGroupChat !== false;
       state.webPushNotifyMentions = data.webPushNotifyMentions !== false;
+      state.webPushNotifyReplies = data.webPushNotifyReplies !== false;
       state.webPushNotifySystem = data.webPushNotifySystem !== false;
       state.webPushNotifyKeywords = data.webPushNotifyKeywords !== false;
       state.webPushNotifyOwnMessages = data.webPushNotifyOwnMessages !== false;
@@ -9060,6 +9069,9 @@
     const selectedPackInfo = packs.find(pack => String(pack.id || "default") === selectedPack) || {id: selectedPack, label: selectedPack, count: 0};
     const shown = items.filter(item => String(item.pack || "default") === selectedPack);
     const packOptions = packs.map(pack => `<option value="${esc(pack.id)}"${String(pack.id) === selectedPack ? " selected" : ""}>${esc(pack.label || pack.id)} (${esc(pack.count || 0)})</option>`).join("") || `<option value="default">Default</option>`;
+    const moveTargetPacks = packs.filter(pack => String(pack.id || "default") !== selectedPack);
+    const defaultMoveTarget = moveTargetPacks[0] ? String(moveTargetPacks[0].id || "default") : "";
+    const movePackOptions = moveTargetPacks.map(pack => `<option value="${esc(pack.id)}"${String(pack.id) === defaultMoveTarget ? " selected" : ""}>${esc(pack.label || pack.id)} (${esc(pack.count || 0)})</option>`).join("");
     const packTabs = packs.map(pack => `<button type="button" class="bmwc-button bmwc-admin-emoji-tab${String(pack.id) === selectedPack ? " bmwc-active" : ""}" data-admin-emoji-pack="${esc(pack.id)}">${esc(pack.label || pack.id)} <span>${esc(pack.count || 0)}</span></button>`).join("");
     const showStorageUsage = data.showStorageUsage !== false;
     const showStorageLimit = data.showStorageLimit !== false;
@@ -9099,6 +9111,8 @@
         </div>
         <div class="bmwc-admin-emoji-pack-buttons">
           <button class="bmwc-button" id="bmwc-emoji-select-all" type="button" ${shown.length ? "" : "disabled"}>${t("button.selectAll", "Select all")}</button>
+          <select class="bmwc-input bmwc-admin-emoji-move-select" id="bmwc-emoji-move-pack" aria-label="${esc(t("admin.emojiMoveTarget", "Move to folder"))}" ${movePackOptions ? "" : "disabled"}>${movePackOptions || `<option value="">${esc(t("admin.emojiNoOtherFolder", "No other folder"))}</option>`}</select>
+          <button class="bmwc-button" id="bmwc-emoji-move-selected" type="button" ${shown.length && movePackOptions ? "" : "disabled"}>${t("button.moveSelected", "Move selected")}</button>
           <button class="bmwc-button" id="bmwc-emoji-delete-selected" type="button" ${shown.length ? "" : "disabled"}>${t("button.deleteSelected", "Delete selected")}</button>
           ${selectedPack !== "default" ? `<button class="bmwc-button" id="bmwc-emoji-rename-pack" type="button">${t("button.renamePack", "Rename folder")}</button><button class="bmwc-button" id="bmwc-emoji-delete-pack" type="button">${t("button.deletePack", "Delete folder")}</button>` : ""}
         </div>
@@ -9111,6 +9125,7 @@
             <div class="bmwc-admin-emoji-item-label" title="${esc(item.label || item.name || item.id)}"><strong title="${esc(item.label || item.name || item.id)}">${esc(item.label || item.name || item.id)}</strong></div>
             <div class="bmwc-admin-emoji-item-actions">
               <button class="bmwc-mini-action" data-emoji-rename-one="${esc(item.id)}" data-emoji-current-name="${esc(item.label || item.name || item.id)}" type="button">${t("button.change", "Change")}</button>
+              <button class="bmwc-mini-action" data-emoji-move-one="${esc(item.id)}" data-emoji-current-pack="${esc(item.pack || "default")}" type="button" ${movePackOptions ? "" : "disabled"}>${t("button.move", "Move")}</button>
               <button class="bmwc-mini-action" data-emoji-delete-one="${esc(item.id)}" type="button">${t("button.delete", "delete")}</button>
             </div>
           </label>
@@ -9216,6 +9231,30 @@
       await renderAdminEmojis(content);
     };
 
+    const selectedMoveTarget = () => {
+      const select = content.querySelector("#bmwc-emoji-move-pack");
+      return select ? String(select.value || "").trim() : "";
+    };
+
+    const moveOne = async (id, targetPack, currentPack) => {
+      if (!id) return false;
+      const pack = String(targetPack || "").trim();
+      if (!pack) {
+        alert(t("alert.emojiMoveTargetRequired", "Choose a destination folder."));
+        return false;
+      }
+      if (currentPack && String(currentPack) === pack) {
+        alert(t("alert.emojiMoveTargetSame", "Choose a different folder."));
+        return false;
+      }
+      const res = await adminApi("/admin/emojis/move", {method: "POST", body: JSON.stringify({type: "item", id, pack})});
+      if (!res.ok) {
+        alertResponse("alert.moveFailed", "Move failed: {error}", res);
+        return false;
+      }
+      return true;
+    };
+
     content.querySelectorAll("[data-emoji-delete-one]").forEach(btn => {
       btn.onclick = event => {
         event.preventDefault();
@@ -9229,6 +9268,25 @@
         event.preventDefault();
         event.stopPropagation();
         renameOne(btn.dataset.emojiRenameOne || "", btn.dataset.emojiCurrentName || "");
+      };
+    });
+
+    content.querySelectorAll("[data-emoji-move-one]").forEach(btn => {
+      btn.onclick = async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const targetPack = selectedMoveTarget();
+        const label = packs.find(pack => String(pack.id || "default") === targetPack);
+        const targetLabel = label ? (label.label || label.id) : targetPack;
+        if (!targetPack) return alert(t("alert.emojiMoveTargetRequired", "Choose a destination folder."));
+        if (!confirmPlain(fmt("alert.confirmMoveEmoji", "Move this emoji to {pack}?", {pack: targetLabel}))) return;
+        const ok = await moveOne(btn.dataset.emojiMoveOne || "", targetPack, btn.dataset.emojiCurrentPack || "");
+        if (!ok) return;
+        state.adminEmojiSelectedPack = targetPack;
+        localStorage.setItem("bmwc.adminEmojiPack", state.adminEmojiSelectedPack);
+        await loadEmojis({force: true});
+        updateEmojiButton();
+        await renderAdminEmojis(content);
       };
     });
 
@@ -9255,6 +9313,33 @@
         const allChecked = checks.length > 0 && checks.every(check => check.checked);
         checks.forEach(check => { check.checked = !allChecked; });
         updateSelectAllButton();
+      };
+    }
+
+    const moveSelected = content.querySelector("#bmwc-emoji-move-selected");
+    if (moveSelected) {
+      moveSelected.onclick = async () => {
+        const ids = Array.from(content.querySelectorAll(".bmwc-admin-emoji-check:checked")).map(el => el.dataset.emojiDeleteId).filter(Boolean);
+        if (!ids.length) return alert(t("alert.emojiMoveSelectRequired", "Select emojis to move."));
+        const targetPack = selectedMoveTarget();
+        if (!targetPack) return alert(t("alert.emojiMoveTargetRequired", "Choose a destination folder."));
+        const label = packs.find(pack => String(pack.id || "default") === targetPack);
+        const targetLabel = label ? (label.label || label.id) : targetPack;
+        if (!confirmPlain(fmt("alert.confirmMoveSelectedEmoji", "Move {count} selected emojis to {pack}?", {count: ids.length, pack: targetLabel}))) return;
+        moveSelected.disabled = true;
+        try {
+          for (const id of ids) {
+            const ok = await moveOne(id, targetPack, selectedPack);
+            if (!ok) return;
+          }
+          state.adminEmojiSelectedPack = targetPack;
+          localStorage.setItem("bmwc.adminEmojiPack", state.adminEmojiSelectedPack);
+          await loadEmojis({force: true});
+          updateEmojiButton();
+          await renderAdminEmojis(content);
+        } finally {
+          moveSelected.disabled = false;
+        }
       };
     }
 
@@ -9565,6 +9650,217 @@
 
 
 
+
+  const NOTIFICATION_INBOX_KEY = "bmwc.notificationInbox";
+  const NOTIFICATION_INBOX_READ_AT_KEY = "bmwc.notificationInboxReadAt";
+
+  function readNotificationInbox() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(NOTIFICATION_INBOX_KEY) || "[]");
+      return Array.isArray(parsed) ? parsed.filter(Boolean).slice(0, 100) : [];
+    } catch (_) { return []; }
+  }
+
+  function writeNotificationInbox(items) {
+    try { localStorage.setItem(NOTIFICATION_INBOX_KEY, JSON.stringify((items || []).slice(0, 100))); } catch (_) {}
+  }
+
+  function notificationInboxReadAt() {
+    const n = Number(localStorage.getItem(NOTIFICATION_INBOX_READ_AT_KEY) || "0");
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function addNotificationInboxItem(item) {
+    item = item || {};
+    const now = Date.now();
+    const entry = {
+      id: String(item.id || ("n" + now + "-" + Math.random().toString(36).slice(2, 8))),
+      time: Number(item.time || now),
+      type: String(item.type || "notification"),
+      title: plainNotificationText(item.title || configuredNotificationTitle(), 120),
+      body: plainNotificationText(item.body || "", 240),
+      messageId: String(item.messageId || ""),
+      dmThreadId: String(item.dmThreadId || ""),
+      dmMessageId: String(item.dmMessageId || ""),
+      groupRoomId: String(item.groupRoomId || ""),
+      groupMessageId: String(item.groupMessageId || ""),
+      url: String(item.url || ""),
+      tag: String(item.tag || "")
+    };
+    const items = readNotificationInbox().filter(x => !(entry.tag && x && x.tag === entry.tag && Math.abs(Number(x.time || 0) - entry.time) < 1500));
+    items.unshift(entry);
+    writeNotificationInbox(items);
+    updateNotificationInboxButton();
+  }
+
+  function updateNotificationInboxButton() {
+    const badge = document.getElementById("bmwc-notification-badge");
+    if (!badge) return;
+    const readAt = notificationInboxReadAt();
+    const unread = readNotificationInbox().filter(item => Number(item.time || 0) > readAt).length;
+    state.notificationInboxUnread = unread;
+    badge.textContent = unread > 99 ? "99+" : String(unread);
+    badge.classList.toggle("bmwc-hidden", unread <= 0);
+  }
+
+  function openNotificationInboxModal() {
+    const existing = document.querySelector(".bmwc-notification-inbox-backdrop");
+    if (existing) existing.remove();
+    localStorage.setItem(NOTIFICATION_INBOX_READ_AT_KEY, String(Date.now()));
+    updateNotificationInboxButton();
+    const items = readNotificationInbox();
+    const wrap = document.createElement("div");
+    wrap.className = "bmwc-modal-backdrop bmwc-user-prefs-backdrop bmwc-notification-inbox-backdrop";
+    applyDetachedModalTheme(wrap);
+    const rows = items.length ? items.map(item => `
+      <button type="button" class="bmwc-notification-row" data-message-id="${esc(item.messageId || "")}" data-dm-thread-id="${esc(item.dmThreadId || "")}" data-dm-message-id="${esc(item.dmMessageId || "")}" data-group-room-id="${esc(item.groupRoomId || "")}" data-group-message-id="${esc(item.groupMessageId || "")}" data-url="${esc(item.url || "")}">
+        <span class="bmwc-notification-row-title">${esc(item.title || configuredNotificationTitle())}</span>
+        ${item.body ? `<span class="bmwc-notification-row-body">${esc(item.body)}</span>` : ""}
+        <span class="bmwc-notification-row-time">${esc(formatMessageTime(Number(item.time || Date.now())))}</span>
+      </button>
+    `).join("") : `<div class="bmwc-dm-empty">${esc(t("notifications.empty", "No missed notifications."))}</div>`;
+    wrap.innerHTML = `
+      <div class="bmwc-modal bmwc-notification-inbox-modal">
+        <div class="bmwc-modal-head"><h3>${esc(t("notifications.inbox", "Notification inbox"))}</h3><button class="bmwc-button" id="bmwc-notification-close">${esc(t("button.close", "Close"))}</button></div>
+        <div class="bmwc-notification-list">${rows}</div>
+        <div class="bmwc-notification-actions"><button class="bmwc-button" id="bmwc-notification-clear">${esc(t("notifications.clear", "Clear notifications"))}</button></div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+    wrap.querySelector("#bmwc-notification-close").addEventListener("click", () => wrap.remove());
+    wrap.querySelector("#bmwc-notification-clear").addEventListener("click", () => {
+      writeNotificationInbox([]);
+      updateNotificationInboxButton();
+      wrap.remove();
+    });
+    wrap.querySelectorAll("[data-message-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const nav = {
+          messageId: btn.dataset.messageId || "",
+          dmThreadId: btn.dataset.dmThreadId || "",
+          dmMessageId: btn.dataset.dmMessageId || "",
+          groupRoomId: btn.dataset.groupRoomId || "",
+          groupMessageId: btn.dataset.groupMessageId || "",
+          url: btn.dataset.url || ""
+        };
+        wrap.remove();
+        navigateFromNotification(nav);
+      });
+    });
+  }
+
+  function cssEscapeValue(value) {
+    const text = String(value || "");
+    if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(text);
+    return text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
+
+  function parseNotificationNavigation(value) {
+    const nav = {};
+    if (value && typeof value === "object") {
+      nav.messageId = String(value.messageId || "");
+      nav.dmThreadId = String(value.dmThreadId || "");
+      nav.dmMessageId = String(value.dmMessageId || "");
+      nav.groupRoomId = String(value.groupRoomId || "");
+      nav.groupMessageId = String(value.groupMessageId || "");
+      value = value.url || "";
+    }
+    try {
+      const url = new URL(String(value || window.location.href), window.location.href);
+      nav.messageId = nav.messageId || url.searchParams.get("bmwcMessage") || "";
+      nav.dmThreadId = nav.dmThreadId || url.searchParams.get("bmwcDmThread") || "";
+      nav.dmMessageId = nav.dmMessageId || url.searchParams.get("bmwcDmMessage") || "";
+      nav.groupRoomId = nav.groupRoomId || url.searchParams.get("bmwcGroupRoom") || "";
+      nav.groupMessageId = nav.groupMessageId || url.searchParams.get("bmwcGroupMessage") || "";
+    } catch (_) {}
+    return nav;
+  }
+
+  function clearNotificationNavigationParams() {
+    try {
+      const url = new URL(window.location.href);
+      ["bmwcMessage", "bmwcDmThread", "bmwcDmMessage", "bmwcGroupRoom", "bmwcGroupMessage"].forEach(k => url.searchParams.delete(k));
+      window.history.replaceState(window.history.state, document.title, url.pathname + url.search + url.hash);
+    } catch (_) {}
+  }
+
+  async function centerPrivateMessage(box, selector) {
+    if (!box || !selector) return false;
+    const el = box.querySelector(selector);
+    if (!el) return false;
+    try { el.scrollIntoView({block: "center", behavior: "smooth"}); } catch (_) { try { el.scrollIntoView({block: "center"}); } catch (__) {} }
+    try { highlightMessageElement(el); } catch (_) {
+      el.classList.add("bmwc-reply-highlight");
+      setTimeout(() => { try { el.classList.remove("bmwc-reply-highlight"); } catch (__) {} }, 2600);
+    }
+    return true;
+  }
+
+  async function openDirectMessageNavigation(threadId, messageId) {
+    threadId = String(threadId || "").trim();
+    messageId = String(messageId || "").trim();
+    if (!threadId) return false;
+    if (!state.dmModalOpen) await openDirectMessageModal();
+    if (!state.dmModalOpen) return false;
+    await loadDirectMessageThreads(true);
+    state.dmDraftTarget = null;
+    state.dmActiveThreadId = threadId;
+    renderDirectMessageThreads();
+    updateDirectMessageViewMode();
+    await loadDirectMessageMessages(threadId);
+    if (!messageId || messageId === "0") return true;
+    const box = document.getElementById("bmwc-dm-messages");
+    const selector = `[data-dm-message-id="${cssEscapeValue(messageId)}"]`;
+    for (let i = 0; i < 20; i++) {
+      if (await centerPrivateMessage(box, selector)) return true;
+      if (!state.dmMessagesHasMore) break;
+      const loaded = await loadOlderDirectMessageMessagesFromEdge(box, "notification-click");
+      if (!loaded) break;
+    }
+    return false;
+  }
+
+  async function openGroupMessageNavigation(roomId, messageId) {
+    roomId = String(roomId || "").trim();
+    messageId = String(messageId || "").trim();
+    if (!roomId) return false;
+    if (!state.groupModalOpen) await openGroupChatModal();
+    if (!state.groupModalOpen) return false;
+    await loadGroupChatRooms(true);
+    await openGroupRoom(roomId);
+    if (!messageId || messageId === "0") return true;
+    const box = document.getElementById("bmwc-group-messages");
+    const selector = `[data-group-message-id="${cssEscapeValue(messageId)}"]`;
+    for (let i = 0; i < 20; i++) {
+      if (await centerPrivateMessage(box, selector)) return true;
+      if (!state.groupMessagesHasMore) break;
+      const loaded = await loadOlderGroupChatMessagesFromEdge(box, "notification-click");
+      if (!loaded) break;
+    }
+    return false;
+  }
+
+  async function navigateFromNotification(value) {
+    const nav = parseNotificationNavigation(value);
+    if (nav.dmThreadId) { await openDirectMessageNavigation(nav.dmThreadId, nav.dmMessageId); clearNotificationNavigationParams(); return; }
+    if (nav.groupRoomId) { await openGroupMessageNavigation(nav.groupRoomId, nav.groupMessageId); clearNotificationNavigationParams(); return; }
+    if (nav.messageId) { jumpToReplyTarget(nav.messageId); clearNotificationNavigationParams(); return; }
+  }
+
+  function notificationNavigationUrl(options = {}) {
+    try {
+      const url = new URL(window.location.href);
+      ["bmwcMessage", "bmwcDmThread", "bmwcDmMessage", "bmwcGroupRoom", "bmwcGroupMessage"].forEach(k => url.searchParams.delete(k));
+      if (options.messageId) url.searchParams.set("bmwcMessage", String(options.messageId));
+      if (options.dmThreadId) url.searchParams.set("bmwcDmThread", String(options.dmThreadId));
+      if (options.dmMessageId) url.searchParams.set("bmwcDmMessage", String(options.dmMessageId));
+      if (options.groupRoomId) url.searchParams.set("bmwcGroupRoom", String(options.groupRoomId));
+      if (options.groupMessageId) url.searchParams.set("bmwcGroupMessage", String(options.groupMessageId));
+      return url.href;
+    } catch (_) { return ""; }
+  }
+
+
   function notificationApiSupported() {
     return typeof window !== "undefined" && "Notification" in window;
   }
@@ -9574,6 +9870,7 @@
     {name: "dm", key: "bmwc.notify.dm", label: "notifyDm", fallback: () => notificationServerDefault("dm")},
     {name: "groupChat", key: "bmwc.notify.groupChat", label: "notifyGroupChat", fallback: () => notificationServerDefault("groupChat")},
     {name: "mentions", key: "bmwc.notify.mentions", label: "notifyMentions", fallback: () => notificationServerDefault("mentions")},
+    {name: "replies", key: "bmwc.notify.replies", label: "notifyReplies", fallback: () => notificationServerDefault("replies")},
     {name: "system", key: "bmwc.notify.system", label: "notifySystem", fallback: () => notificationServerDefault("system")},
     {name: "keywords", key: "bmwc.notify.keywords", label: "notifyKeywords", fallback: () => notificationServerDefault("keywords")},
     {name: "ownMessages", key: "bmwc.notify.ownMessages", label: "notifyOwnMessages", fallback: () => notificationServerDefault("ownMessages")},
@@ -9585,6 +9882,7 @@
     if (name === "dm") return state.browserNotificationsNotifyDm !== false;
     if (name === "groupChat") return state.browserNotificationsNotifyGroupChat !== false;
     if (name === "mentions") return state.browserNotificationsNotifyMentions !== false;
+    if (name === "replies") return state.browserNotificationsNotifyReplies !== false;
     if (name === "system") return state.browserNotificationsNotifySystem !== false;
     if (name === "keywords") return state.browserNotificationsNotifyKeywords !== false;
     if (name === "ownMessages") return state.browserNotificationsNotifyOwnMessages !== false;
@@ -9597,6 +9895,7 @@
     if (name === "dm") return state.webPushNotifyDm !== false;
     if (name === "groupChat") return state.webPushNotifyGroupChat !== false;
     if (name === "mentions") return state.webPushNotifyMentions !== false;
+    if (name === "replies") return state.webPushNotifyReplies !== false;
     if (name === "system") return state.webPushNotifySystem !== false;
     if (name === "keywords") return state.webPushNotifyKeywords !== false;
     if (name === "ownMessages") return state.webPushNotifyOwnMessages !== false;
@@ -9740,6 +10039,7 @@
       ${row("dm", "DM")}
       ${row("groupChat", "Group chat")}
       ${row("mentions", "Mentions")}
+      ${row("replies", "Replies")}
       ${row("system", "System/server")}
       ${row("keywords", "Keyword alerts")}
       ${row("ownMessages", "Own messages")}
@@ -9815,20 +10115,30 @@
 
   function showBrowserNotification(title, body, options = {}) {
     if (!state.browserNotificationsEnabled || localStorage.getItem("bmwc.notifications.enabled") !== "1") return false;
+    const finalTitle = title || configuredNotificationTitle();
+    const finalBody = String(body || "");
+    const navUrl = options.url || notificationNavigationUrl(options);
+    if (options.store !== false) addNotificationInboxItem({title: finalTitle, body: finalBody, type: options.type || "notification", tag: options.tag || "", messageId: options.messageId || "", dmThreadId: options.dmThreadId || "", dmMessageId: options.dmMessageId || "", groupRoomId: options.groupRoomId || "", groupMessageId: options.groupMessageId || "", url: navUrl || ""});
     if (!attentionNeededForNotification(options.force === true)) return false;
     const visibleBody = browserNotificationOption("preview") ? String(body || "") : "";
     if (window.parent && window.parent !== window && !state.isPip) {
       postFrame("showNotification", {
-        title: title || configuredNotificationTitle(),
+        title: finalTitle,
         body: visibleBody,
         tag: options.tag || "bmwc",
-        force: options.force === true
+        force: options.force === true,
+        url: navUrl || "",
+        messageId: options.messageId || "",
+        dmThreadId: options.dmThreadId || "",
+        dmMessageId: options.dmMessageId || "",
+        groupRoomId: options.groupRoomId || "",
+        groupMessageId: options.groupMessageId || ""
       });
       return true;
     }
     if (!notificationApiSupported() || Notification.permission !== "granted") return false;
     try {
-      const n = new Notification(title || configuredNotificationTitle(), {
+      const n = new Notification(finalTitle, {
         body: visibleBody,
         tag: options.tag || "bmwc",
         renotify: true,
@@ -9836,6 +10146,7 @@
       });
       n.onclick = () => {
         try { window.focus(); } catch (_) {}
+        try { navigateFromNotification({url: navUrl, messageId: options.messageId || "", dmThreadId: options.dmThreadId || "", dmMessageId: options.dmMessageId || "", groupRoomId: options.groupRoomId || "", groupMessageId: options.groupMessageId || ""}); } catch (_) {}
         try { n.close(); } catch (_) {}
       };
       return true;
@@ -9870,6 +10181,20 @@
     return body.includes("@" + lower) || body.includes(lower);
   }
 
+  function messageRepliesToCurrentUser(msg) {
+    if (!msg || !msg.replyToId) return false;
+    const target = messageById(msg.replyToId);
+    if (target && currentUserMatchesMessage(target)) return true;
+    const replySender = plainMinecraftName(String(msg.replyToSender || "")).trim().toLowerCase();
+    const username = plainMinecraftName(String(state.username || "")).trim().toLowerCase();
+    if (replySender && username && replySender === username) return true;
+    return false;
+  }
+
+  function replyNotificationTitle(sender) {
+    return fmt("notifications.replyTitle", "Reply from {sender}", {sender: sender || configuredNotificationTitle()});
+  }
+
   function maybeNotifyChatMessage(msg) {
     if (!msg) return;
     const own = currentUserMatchesMessage(msg);
@@ -9880,7 +10205,12 @@
     const body = plainNotificationText(msg.message || "", 180);
     const keyword = notificationKeywordMatch(sender + " " + body);
     if (keyword && browserNotificationOption("keywords")) {
-      showBrowserNotification(keywordNotificationTitle(keyword), (system ? configuredNotificationTitle() : sender) + (body ? ": " + body : ""), {tag: "bmwc-keyword-" + keyword});
+      showBrowserNotification(keywordNotificationTitle(keyword), (system ? configuredNotificationTitle() : sender) + (body ? ": " + body : ""), {tag: "bmwc-keyword-" + keyword, type: "keyword", messageId: msg.id || ""});
+      return;
+    }
+    const replyToMe = messageRepliesToCurrentUser(msg);
+    if (!system && replyToMe && browserNotificationOption("replies")) {
+      showBrowserNotification(replyNotificationTitle(sender), body, {tag: "bmwc-reply-" + String(msg.replyToId || msg.id || ""), type: "reply", messageId: msg.id || ""});
       return;
     }
     const mention = messageMentionsCurrentUser(msg.message || "");
@@ -9891,7 +10221,7 @@
     } else if (!browserNotificationOption("normalChat")) {
       return;
     }
-    showBrowserNotification(system ? configuredNotificationTitle() : sender, body, {tag: system ? "bmwc-system" : "bmwc-chat"});
+    showBrowserNotification(system ? configuredNotificationTitle() : sender, body, {tag: system ? "bmwc-system" : "bmwc-chat", type: system ? "system" : (mention ? "mention" : "chat"), messageId: msg.id || ""});
   }
 
   function maybeNotifyDirectMessage(message, threadId) {
@@ -9901,11 +10231,11 @@
     const body = plainNotificationText(message.body || "", 180);
     const keyword = notificationKeywordMatch(sender + " " + body);
     if (keyword && browserNotificationOption("keywords")) {
-      showBrowserNotification(keywordNotificationTitle(keyword), t("dm.title", "Messages") + ": " + sender + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword});
+      showBrowserNotification(keywordNotificationTitle(keyword), t("dm.title", "Messages") + ": " + sender + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword, type: "keyword", dmThreadId: threadId || message.threadId || "", dmMessageId: message.id || ""});
       return;
     }
     if (!browserNotificationOption("dm")) return;
-    showBrowserNotification(t("dm.title", "Messages") + ": " + sender, body, {tag: "bmwc-dm-" + String(threadId || message.threadId || "")});
+    showBrowserNotification(t("dm.title", "Messages") + ": " + sender, body, {tag: "bmwc-dm-" + String(threadId || message.threadId || ""), dmThreadId: threadId || message.threadId || "", dmMessageId: message.id || ""});
   }
 
   function maybeNotifyDirectThread(thread) {
@@ -9917,11 +10247,11 @@
     const body = plainNotificationText(thread.lastMessage || "", 180);
     const keyword = notificationKeywordMatch(sender + " " + body);
     if (keyword && browserNotificationOption("keywords")) {
-      showBrowserNotification(keywordNotificationTitle(keyword), t("dm.title", "Messages") + ": " + sender + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword});
+      showBrowserNotification(keywordNotificationTitle(keyword), t("dm.title", "Messages") + ": " + sender + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword, type: "keyword", dmThreadId: thread.id || ""});
       return;
     }
     if (!browserNotificationOption("dm")) return;
-    showBrowserNotification(t("dm.title", "Messages") + ": " + sender, body, {tag: "bmwc-dm-" + String(thread.id || "")});
+    showBrowserNotification(t("dm.title", "Messages") + ": " + sender, body, {tag: "bmwc-dm-" + String(thread.id || ""), dmThreadId: thread.id || ""});
   }
 
   function maybeNotifyGroupRoom(room) {
@@ -9931,11 +10261,11 @@
     const body = plainNotificationText(room.lastMessage || "", 180);
     const keyword = notificationKeywordMatch(roomName + " " + body);
     if (keyword && browserNotificationOption("keywords")) {
-      showBrowserNotification(keywordNotificationTitle(keyword), roomName + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword});
+      showBrowserNotification(keywordNotificationTitle(keyword), roomName + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword, type: "keyword", groupRoomId: room.id || ""});
       return;
     }
     if (!browserNotificationOption("groupChat")) return;
-    showBrowserNotification(roomName, body, {tag: "bmwc-group-" + String(room.id || "")});
+    showBrowserNotification(roomName, body, {tag: "bmwc-group-" + String(room.id || ""), groupRoomId: room.id || ""});
   }
 
   function maybeNotifyGroupMessage(message, room) {
@@ -9946,11 +10276,11 @@
     const body = plainNotificationText(message.body || "", 180);
     const keyword = notificationKeywordMatch(roomName + " " + sender + " " + body);
     if (keyword && browserNotificationOption("keywords")) {
-      showBrowserNotification(keywordNotificationTitle(keyword), roomName + (sender ? " · " + sender : "") + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword});
+      showBrowserNotification(keywordNotificationTitle(keyword), roomName + (sender ? " · " + sender : "") + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword, type: "keyword", groupRoomId: room && room.id || message.roomId || "", groupMessageId: message.id || ""});
       return;
     }
     if (!browserNotificationOption("groupChat")) return;
-    showBrowserNotification(roomName + (sender ? " · " + sender : ""), body, {tag: "bmwc-group-" + String(room && room.id || message.roomId || "")});
+    showBrowserNotification(roomName + (sender ? " · " + sender : ""), body, {tag: "bmwc-group-" + String(room && room.id || message.roomId || ""), groupRoomId: room && room.id || message.roomId || "", groupMessageId: message.id || ""});
   }
 
   function base64UrlToUint8Array(value) {
@@ -10046,6 +10376,7 @@
         notifyDm: opts.dm === true,
         notifyGroupChat: opts.groupChat === true,
         notifyMentions: opts.mentions === true,
+        notifyReplies: opts.replies === true,
         notifySystem: opts.system === true,
         notifyKeywords: opts.keywords === true,
         keywords: notificationKeywordsText(),
@@ -10196,6 +10527,7 @@
         notifyDm: t("preferences.notifyDm", "DM"),
         notifyGroupChat: t("preferences.notifyGroupChat", "Group chat"),
         notifyMentions: t("preferences.notifyMentions", "Mentions"),
+        notifyReplies: t("preferences.notifyReplies", "Replies"),
         notifySystem: t("preferences.notifySystem", "System/server"),
         notifyKeywords: t("preferences.notifyKeywords", "Keyword alerts"),
         notifyKeywordsList: t("preferences.notifyKeywordsList", "Keyword alert words"),
@@ -13978,6 +14310,21 @@
     if (state.token) connectStream({refreshAfterOpen: true, reason: "token-verify"});
   }
 
+  if (typeof navigator !== "undefined" && navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener("message", event => {
+      const data = event && event.data || {};
+      if (!data || (data.source !== "BlueMapWebChat" && data.source !== "BlueMapWebChatParent") || data.type !== "notificationNavigate") return;
+      navigateFromNotification(data.url || data);
+    });
+  }
+
+  window.addEventListener("message", event => {
+    const data = event && event.data || {};
+    if (!data || (data.source !== "BlueMapWebChat" && data.source !== "BlueMapWebChatParent") || data.type !== "notificationNavigate") return;
+    navigateFromNotification(data.url || data);
+  });
+
+
   async function start() {
     installFrameFocusBridge();
     installMapPointerRelayBridge();
@@ -13998,6 +14345,7 @@
     await loadDirectMessageThreads(true);
     await loadGroupChatRooms(true);
     await loadHistory();
+    await navigateFromNotification(window.location.href);
     connectStream();
   }
 

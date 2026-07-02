@@ -184,6 +184,7 @@ public class WebChatServer {
         server.createContext(p + "/admin/emojis/upload", this::handleAdminEmojiUpload);
         server.createContext(p + "/admin/emojis/delete", this::handleAdminEmojiDelete);
         server.createContext(p + "/admin/emojis/rename", this::handleAdminEmojiRename);
+        server.createContext(p + "/admin/emojis/move", this::handleAdminEmojiMove);
     }
 
     private Set<String> apiContextPrefixes(ConfigValues config) {
@@ -487,8 +488,9 @@ public class WebChatServer {
                 + "self.addEventListener('notificationclick',function(event){"
                 + "event.notification.close();var url=(event.notification.data&&event.notification.data.url)||'/';"
                 + "event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(function(list){"
-                + "for(var i=0;i<list.length;i++){var c=list[i];if(c.url&&c.url.indexOf(url)>=0){return c.focus();}}"
-                + "return clients.openWindow(url);" 
+                + "var target;try{target=new URL(url,self.location.origin);}catch(e){target=new URL('/',self.location.origin);}"
+                + "for(var i=0;i<list.length;i++){var c=list[i];try{var cu=new URL(c.url);if(cu.origin===target.origin&&cu.pathname===target.pathname){c.postMessage({source:'BlueMapWebChat',type:'notificationNavigate',url:target.href});return c.focus();}}catch(e){}}"
+                + "return clients.openWindow(target.href);" 
                 + "}));"
                 + "});";
         ex.getResponseHeaders().set("Service-Worker-Allowed", "/");
@@ -665,6 +667,7 @@ public class WebChatServer {
         m.put("browserNotificationsNotifyDm", c.browserNotificationsNotifyDm);
         m.put("browserNotificationsNotifyGroupChat", c.browserNotificationsNotifyGroupChat);
         m.put("browserNotificationsNotifyMentions", c.browserNotificationsNotifyMentions);
+        m.put("browserNotificationsNotifyReplies", c.browserNotificationsNotifyReplies);
         m.put("browserNotificationsNotifySystem", c.browserNotificationsNotifySystem);
         m.put("browserNotificationsNotifyKeywords", c.browserNotificationsNotifyKeywords);
         m.put("browserNotificationsNotifyOwnMessages", c.browserNotificationsNotifyOwnMessages);
@@ -679,6 +682,7 @@ public class WebChatServer {
         m.put("webPushNotifyDm", c.webPushNotifyDm);
         m.put("webPushNotifyGroupChat", c.webPushNotifyGroupChat);
         m.put("webPushNotifyMentions", c.webPushNotifyMentions);
+        m.put("webPushNotifyReplies", c.webPushNotifyReplies);
         m.put("webPushNotifySystem", c.webPushNotifySystem);
         m.put("webPushNotifyKeywords", c.webPushNotifyKeywords);
         m.put("webPushNotifyOwnMessages", c.webPushNotifyOwnMessages);
@@ -1240,7 +1244,7 @@ public class WebChatServer {
             return;
         }
         publishDirectMessageUpdate(ctx.account.uuid, target.uuid, result.thread == null ? "" : result.thread.id);
-        dispatchWebPushDirectMessage(ctx.account.uuid, plugin.displayNameForAccount(ctx.account), target.uuid, target.label(), message);
+        dispatchWebPushDirectMessage(ctx.account.uuid, plugin.displayNameForAccount(ctx.account), target.uuid, target.label(), result.thread == null ? "" : result.thread.id, result.message == null ? 0L : result.message.id, message);
         notifyOnlineDirectMessage(ctx.account, target, message);
         String threadJson = result.thread == null ? "null" : result.thread.toJson();
         String messageJson = result.message == null ? "null" : result.message.toJson();
@@ -4600,6 +4604,93 @@ public class WebChatServer {
     }
 
 
+    private void handleAdminEmojiMove(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        SessionContext ctx = requireRole(ex, Role.ADMIN);
+        if (ctx == null) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (!config.emojiEnabled) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"emoji_disabled\"}");
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, String> body = (Map<String, String>) ex.getAttribute("parsedBody");
+        if (body == null) body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        String id = String.valueOf(body.getOrDefault("id", "")).trim();
+        String targetPack = normalizeEmojiPackId(body.getOrDefault("pack", body.getOrDefault("targetPack", body.getOrDefault("target", ""))));
+        if (id.isBlank()) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_file\"}");
+            return;
+        }
+        if (targetPack.isBlank()) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_pack\"}");
+            return;
+        }
+
+        Path root = emojiDir();
+        Files.createDirectories(root);
+        Path targetDir = "default".equalsIgnoreCase(targetPack) ? root : emojiPackDir(targetPack);
+        if (!validEmojiPackTarget(root, targetDir)) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_pack\"}");
+            return;
+        }
+        Files.createDirectories(targetDir);
+
+        EmojiCatalog catalog = scanEmojiCatalog(config);
+        EmojiItem found = null;
+        for (EmojiItem item : catalog.items) {
+            if (id.equals(item.id)) {
+                found = item;
+                break;
+            }
+        }
+        if (found == null) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+        Path oldFile = root.resolve(found.relativePath).normalize();
+        if (!oldFile.startsWith(root) || !Files.isRegularFile(oldFile)) {
+            sendJson(ex, 404, "{\"ok\":false,\"error\":\"not_found\"}");
+            return;
+        }
+        Path target = targetDir.resolve(oldFile.getFileName().toString()).normalize();
+        if (!target.startsWith(root)) {
+            sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_path\"}");
+            return;
+        }
+        String currentPack = found.pack == null || found.pack.isBlank() ? "default" : found.pack;
+        if (oldFile.equals(target) || currentPack.equals(targetPack)) {
+            sendJson(ex, 200, "{\"ok\":true,\"id\":" + JsonUtil.quote(found.id) + ",\"pack\":" + JsonUtil.quote(currentPack) + "}");
+            return;
+        }
+        if (Files.exists(target)) {
+            sendJson(ex, 409, "{\"ok\":false,\"error\":\"already_exists\"}");
+            return;
+        }
+        Path oldSidecar = emojiPngSidecarPath(oldFile);
+        Path newSidecar = emojiPngSidecarPath(target);
+        if (oldSidecar != null && Files.isRegularFile(oldSidecar) && newSidecar != null && !oldSidecar.equals(newSidecar) && Files.exists(newSidecar)) {
+            sendJson(ex, 409, "{\"ok\":false,\"error\":\"already_exists\"}");
+            return;
+        }
+
+        Files.move(oldFile, target);
+        if (oldSidecar != null && Files.isRegularFile(oldSidecar) && newSidecar != null && !oldSidecar.equals(newSidecar)) {
+            Files.move(oldSidecar, newSidecar);
+        }
+        String base = target.getFileName().toString();
+        int dot = base.lastIndexOf('.');
+        String itemName = sanitizeEmojiSegment(dot >= 0 ? base.substring(0, dot) : base);
+        String newId = targetPack + "/" + itemName;
+        audit(ctx, "admin.emoji-move", Map.of("oldId", found.id, "newId", newId, "oldPack", currentPack, "newPack", targetPack));
+        sendJson(ex, 200, "{\"ok\":true,\"id\":" + JsonUtil.quote(newId) + ",\"pack\":" + JsonUtil.quote(targetPack) + "}");
+    }
+
+
     private void handleAdminEmojiDelete(HttpExchange ex) throws IOException {
         if (preflight(ex)) return;
         SessionContext ctx = requireRole(ex, Role.ADMIN);
@@ -5835,20 +5926,47 @@ public class WebChatServer {
         p.type = system ? "system" : "chat";
         p.title = configuredWebPushTitle();
         p.body = system ? String.valueOf(msg.message == null ? "" : msg.message) : notificationSender(msg.sender) + (msg.message == null || msg.message.isBlank() ? "" : ": " + msg.message);
-        p.url = standaloneOpenUrl();
+        p.url = system ? standaloneOpenUrl() : standaloneOpenUrlWithParams(Map.of("bmwcMessage", String.valueOf(msg.id == null ? "" : msg.id)));
         p.tag = system ? "bmwc-system" : "bmwc-chat";
         p.senderUuid = msg.playerUuid == null ? "" : msg.playerUuid;
+        String replyTargetUuid = replyTargetUuidFor(msg);
+        p.replyTargetUuid = replyTargetUuid;
         webPush.sendToAll(p);
+        dispatchWebPushReply(msg, replyTargetUuid);
     }
 
-    public void dispatchWebPushDirectMessage(String senderUuid, String senderName, String targetUuid, String targetName, String body) {
+    private String replyTargetUuidFor(ChatMessage msg) {
+        if (msg == null || msg.replyToId == null || msg.replyToId.isBlank()) return "";
+        ChatMessage target = findHistoryMessageById(msg.replyToId);
+        if (target == null || target.playerUuid == null || target.playerUuid.isBlank()) return "";
+        String targetUuid = target.playerUuid.trim().toLowerCase(Locale.ROOT);
+        String senderUuid = msg.playerUuid == null ? "" : msg.playerUuid.trim().toLowerCase(Locale.ROOT);
+        if (!senderUuid.isBlank() && senderUuid.equals(targetUuid)) return "";
+        return targetUuid;
+    }
+
+    private void dispatchWebPushReply(ChatMessage msg, String targetUuid) {
+        ConfigValues c = plugin.configValues();
+        if (c == null || !c.webPushEnabled || msg == null || targetUuid == null || targetUuid.isBlank()) return;
+        WebPushManager.Payload p = new WebPushManager.Payload();
+        p.type = "reply";
+        p.title = notificationSender(msg.sender);
+        p.body = msg.message == null ? "" : msg.message;
+        p.url = standaloneOpenUrlWithParams(Map.of("bmwcMessage", String.valueOf(msg.id == null ? "" : msg.id)));
+        p.tag = "bmwc-reply-" + targetUuid.replaceAll("[^A-Za-z0-9_-]", "");
+        p.senderUuid = msg.playerUuid == null ? "" : msg.playerUuid;
+        p.replyTargetUuid = targetUuid;
+        webPush.sendToUser(targetUuid, p);
+    }
+
+    public void dispatchWebPushDirectMessage(String senderUuid, String senderName, String targetUuid, String targetName, String threadId, long messageId, String body) {
         ConfigValues c = plugin.configValues();
         if (c == null || !c.webPushEnabled) return;
         WebPushManager.Payload p = new WebPushManager.Payload();
         p.type = "dm";
         p.title = notificationSender(senderName);
         p.body = body == null ? "" : body;
-        p.url = standaloneOpenUrl();
+        p.url = standaloneOpenUrlWithParams(Map.of("bmwcDmThread", String.valueOf(threadId == null ? "" : threadId), "bmwcDmMessage", String.valueOf(messageId > 0 ? messageId : 0)));
         p.tag = "bmwc-dm-" + String.valueOf(targetUuid == null ? "" : targetUuid).replaceAll("[^A-Za-z0-9_-]", "");
         p.senderUuid = senderUuid == null ? "" : senderUuid;
         webPush.sendToUser(targetUuid, p);
@@ -5868,7 +5986,7 @@ public class WebChatServer {
         p.type = "group";
         p.title = roomName + " · " + notificationSender(senderName);
         p.body = body == null ? "" : body;
-        p.url = standaloneOpenUrl();
+        p.url = standaloneOpenUrlWithParams(Map.of("bmwcGroupRoom", roomId, "bmwcGroupMessage", String.valueOf(message == null || message.id <= 0 ? 0 : message.id)));
         p.tag = "bmwc-group-" + roomId.replaceAll("[^A-Za-z0-9_-]", "");
         p.senderUuid = senderUuid == null ? (message == null ? "" : message.senderUuid) : senderUuid;
         webPush.sendToUsers(members, p);
@@ -5878,6 +5996,24 @@ public class WebChatServer {
         ConfigValues c = plugin.configValues();
         if (c != null && c.standaloneWebPath != null && !c.standaloneWebPath.isBlank()) return c.standaloneWebPath;
         return "/";
+    }
+
+    private String standaloneOpenUrlWithParams(Map<String, String> params) {
+        String base = standaloneOpenUrl();
+        if (params == null || params.isEmpty()) return base;
+        StringBuilder query = new StringBuilder();
+        for (Map.Entry<String, String> e : params.entrySet()) {
+            String k = e.getKey() == null ? "" : e.getKey().trim();
+            String v = e.getValue() == null ? "" : e.getValue().trim();
+            if (k.isBlank() || v.isBlank()) continue;
+            if (query.length() > 0) query.append('&');
+            query.append(java.net.URLEncoder.encode(k, StandardCharsets.UTF_8));
+            query.append('=');
+            query.append(java.net.URLEncoder.encode(v, StandardCharsets.UTF_8));
+        }
+        if (query.length() == 0) return base;
+        String sep = base.contains("?") ? (base.endsWith("?") || base.endsWith("&") ? "" : "&") : "?";
+        return base + sep + query;
     }
 
     private String notificationSender(String value) {

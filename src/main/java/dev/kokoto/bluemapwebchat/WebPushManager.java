@@ -60,6 +60,7 @@ public class WebPushManager {
         public String url = "";
         public String tag = "bmwc";
         public String senderUuid = "";
+        public String replyTargetUuid = "";
     }
 
     private static class Subscription {
@@ -72,6 +73,7 @@ public class WebPushManager {
         boolean notifyDm;
         boolean notifyGroupChat;
         boolean notifyMentions;
+        boolean notifyReplies;
         boolean notifySystem;
         boolean notifyKeywords;
         List<String> keywords = new ArrayList<>();
@@ -127,6 +129,7 @@ public class WebPushManager {
         s.notifyDm = (c == null || c.webPushNotifyDm) && readBool(body, "notifyDm", c == null || c.webPushNotifyDm);
         s.notifyGroupChat = (c == null || c.webPushNotifyGroupChat) && readBool(body, "notifyGroupChat", c == null || c.webPushNotifyGroupChat);
         s.notifyMentions = (c == null || c.webPushNotifyMentions) && readBool(body, "notifyMentions", c == null || c.webPushNotifyMentions);
+        s.notifyReplies = (c == null || c.webPushNotifyReplies) && readBool(body, "notifyReplies", c == null || c.webPushNotifyReplies);
         s.notifySystem = (c == null || c.webPushNotifySystem) && readBool(body, "notifySystem", c == null || c.webPushNotifySystem);
         s.notifyKeywords = (c == null || c.webPushNotifyKeywords) && readBool(body, "notifyKeywords", c == null || c.webPushNotifyKeywords);
         s.keywords = normalizeKeywords(body == null ? "" : body.get("keywords"));
@@ -202,6 +205,12 @@ public class WebPushManager {
             if (!c.webPushNotifyOwnMessages || !s.notifyOwnMessages) return false;
         }
         if (c.webPushNotifyKeywords && s.notifyKeywords && !matchedKeyword(s, payload).isBlank()) return true;
+        String replyTarget = payload.replyTargetUuid == null ? "" : payload.replyTargetUuid.trim().toLowerCase(Locale.ROOT);
+        boolean isReplyTarget = !replyTarget.isBlank() && replyTarget.equalsIgnoreCase(s.userUuid);
+        if ("reply".equals(type)) {
+            return c.webPushNotifyReplies && s.notifyReplies;
+        }
+        if (isReplyTarget && c.webPushNotifyReplies && s.notifyReplies) return false;
         if ("dm".equals(type)) {
             if (!c.webPushNotifyDm || !s.notifyDm) return false;
         } else if ("group".equals(type) || "group-chat".equals(type)) {
@@ -309,6 +318,10 @@ public class WebPushManager {
         } else {
             m.put("title", baseTitle);
             String detailPrefix = title.equals(baseTitle) ? "" : title;
+            if ("reply".equals(type)) {
+                String replyLabel = subscriptionText(sub, "notification.reply", "Reply");
+                detailPrefix = replyLabel + (detailPrefix.isBlank() ? "" : ": " + detailPrefix);
+            }
             if ("dm".equals(type) && !detailPrefix.isBlank()) {
                 detailPrefix = subscriptionText(sub, "notification.dm", "DM") + ": " + detailPrefix;
             }
@@ -588,6 +601,7 @@ public class WebPushManager {
                 s.notifyDm = (c == null || c.webPushNotifyDm) && readBool(m, "notifyDm", c == null || c.webPushNotifyDm);
                 s.notifyGroupChat = (c == null || c.webPushNotifyGroupChat) && readBool(m, "notifyGroupChat", c == null || c.webPushNotifyGroupChat);
                 s.notifyMentions = (c == null || c.webPushNotifyMentions) && readBool(m, "notifyMentions", c == null || c.webPushNotifyMentions);
+                s.notifyReplies = (c == null || c.webPushNotifyReplies) && readBool(m, "notifyReplies", c == null || c.webPushNotifyReplies);
                 s.notifySystem = (c == null || c.webPushNotifySystem) && readBool(m, "notifySystem", c == null || c.webPushNotifySystem);
                 s.notifyKeywords = (c == null || c.webPushNotifyKeywords) && readBool(m, "notifyKeywords", c == null || c.webPushNotifyKeywords);
                 s.keywords = normalizeKeywords(m.get("keywords"));
@@ -618,6 +632,7 @@ public class WebPushManager {
                 m.put("notifyDm", s.notifyDm);
                 m.put("notifyGroupChat", s.notifyGroupChat);
                 m.put("notifyMentions", s.notifyMentions);
+                m.put("notifyReplies", s.notifyReplies);
                 m.put("notifySystem", s.notifySystem);
                 m.put("notifyKeywords", s.notifyKeywords);
                 m.put("keywords", String.join("\n", s.keywords == null ? Collections.emptyList() : s.keywords));

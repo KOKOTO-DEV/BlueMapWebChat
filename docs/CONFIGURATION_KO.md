@@ -307,7 +307,7 @@ TikTok은 공식 `player/v1` iframe을 사용하고 `description=0`, `music_info
 
 ## 브라우저 알림과 Web Push
 
-`browser-notifications`는 웹페이지가 열려 있을 때 브라우저의 OS 시스템 알림을 제어합니다. 사용자는 브라우저 알림 권한을 직접 허용해야 합니다. `notify-*` 값은 서버 측 허용 상한선입니다. `true`로 두면 각 사용자/브라우저가 채팅 설정에서 켜고 끌 수 있고, `false`로 두면 사용자가 켜도 해당 알림 종류는 차단됩니다. `notify-keywords`는 사용자가 직접 지정하는 키워드 알림을 제어합니다. 키워드 목록은 브라우저/기기별로 저장되며, 백그라운드 매칭을 위해 해당 기기의 Web Push 구독에만 동기화됩니다.
+`browser-notifications`는 웹페이지가 열려 있을 때 브라우저의 OS 시스템 알림을 제어합니다. 사용자는 브라우저 알림 권한을 직접 허용해야 합니다. `notify-*` 값은 서버 측 허용 상한선입니다. `true`로 두면 각 사용자/브라우저가 채팅 설정에서 켜고 끌 수 있고, `false`로 두면 사용자가 켜도 해당 알림 종류는 차단됩니다. `notify-keywords`는 사용자가 직접 지정하는 키워드 알림을 제어하고, `notify-replies`는 공개 채팅에서 내 메시지에 답글이 달렸을 때의 알림을 제어합니다. 키워드 목록은 브라우저/기기별로 저장되며, 백그라운드 매칭을 위해 해당 기기의 Web Push 구독에만 동기화됩니다.
 
 `web-push`는 HTTPS 또는 localhost, 브라우저 알림 권한, Service Worker/Push API 지원이 맞으면 백그라운드/모바일 푸시를 보낼 수 있습니다. iOS/iPadOS의 일반 브라우저 탭은 Web Push를 지원하지 않으므로 standalone 페이지를 홈 화면 웹앱으로 추가한 경우에만 시도하고, 지원되지 않는 동작은 플랫폼 제한으로 봅니다. `web-push`의 `notify-*` 값도 푸시 전송의 서버 측 허용 상한선입니다. `web-push.enabled: true` 상태에서 VAPID 키를 비워두면 플러그인이 `web-push-vapid.properties`에 지속 키를 생성합니다. `web-push.subject`는 `mailto:admin@example.com` 또는 `https://map.example.com`처럼 실제 연락처/운영자 식별용 VAPID URI로 두는 것을 권장합니다. 임의 문자열은 권장하지 않으며 일부 push 서비스에서 거부되거나 신뢰도가 낮게 처리될 수 있습니다. 모바일의 “스팸일 수 있음” 같은 경고는 브라우저/OS가 표시하는 것이므로 플러그인에서 끌 수 없습니다. 안정적인 HTTPS 도메인, 의미 있는 알림 제목/본문, 보수적인 알림 필터, 반복 테스트 알림 최소화로 가능성을 줄이는 쪽으로 관리합니다. 테스트는 모바일 브라우저에서 HTTPS standalone 페이지를 열고 로그인한 뒤 설정 > 알림에서 모바일 푸시를 켜고 `모바일 푸시 테스트`를 누릅니다.
 
@@ -367,3 +367,6 @@ ui:
 
 
 `standalone-web.app-name`과 `standalone-web.app-short-name`은 standalone 페이지/PWA 이름을 제어합니다. 모바일 홈 화면 웹앱으로 설치한 뒤 값을 바꿨다면 다시 설치해야 반영됩니다. `web-push.notification-title`은 테스트/시스템/백그라운드 푸시의 기본 제목을 제어하며, 비워두면 `standalone-web.app-name`을 사용합니다.
+
+
+기존 config에 `BlueMapWebChat` 또는 `BM WebChat` 같은 예전 기본 이름이 남아 있으면 레거시 기본값으로 보고 새 fallback을 사용합니다.

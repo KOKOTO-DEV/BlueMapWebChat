@@ -38,6 +38,8 @@ web:
     moderationActionsDisable: 停用固定/删除
     unpin: 取消置顶
     moveUp: 上移
+    move: 移动
+    moveSelected: 移动所选
     moveDown: 下移
     commands: 命令
     search: 搜索
@@ -100,6 +102,12 @@ web:
     emojiPackNameRequired: 请输入文件夹名称。
     emojiFileRequired: 请选择表情文件。
     confirmDeleteEmoji: 要删除这个表情吗？
+    emojiMoveSelectRequired: 请选择要移动的表情。
+    emojiMoveTargetRequired: 请选择目标文件夹。
+    emojiMoveTargetSame: 请选择其他文件夹。
+    confirmMoveEmoji: 要将此表情移动到 {pack} 文件夹吗？
+    confirmMoveSelectedEmoji: 要将选中的 {count} 个表情移动到 {pack} 文件夹吗？
+    moveFailed: "移动失败：{error}"
     emojiSelectRequired: 请选择要删除的表情。
     confirmDeleteSelectedEmoji: 要删除选中的 {count} 个表情吗？
     confirmDeleteEmojiPack: 要删除文件夹 {pack} 及其中所有表情吗？
@@ -155,6 +163,8 @@ web:
     never: 永不
     emojis: 表情
     emojiTitle: 自定义表情
+    emojiMoveTarget: 移动到文件夹
+    emojiNoOtherFolder: 没有其他文件夹
     emojiCurrent: 当前表情
     emojiLimits: 单文件 {file} KB / 总计 {total} MB
     emojiFileLimit: 单文件 {file}
@@ -302,6 +312,7 @@ web:
     notifyNormalChat: '普通聊天'
     notifyDm: '私信'
     notifyGroupChat: '群聊'
+    notifyReplies: '回复'
     notifyMentions: '提及'
     notifySystem: '系统/服务器'
     notifyKeywords: '关键词提醒'
@@ -529,7 +540,14 @@ web:
     bed-enter: 💤 {player} 上床了。
     web-login: 🌐 {name} 登录了网页聊天。
     web-logout: 🌐 {name} 退出了网页聊天。
+  notifications:
+    inbox: '通知箱'
+    empty: '没有错过的通知。'
+    clear: '清空通知'
+    replyTitle: '来自 {sender} 的回复'
+
   notification:
+    reply: '回复'
     keyword: '关键词'
     dm: '私信'
     groupChat: '群聊'

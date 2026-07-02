@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.5.1
+
+- Added notification click navigation for browser/Web Push notifications. Public chat/reply/keyword notifications can open and jump to the message; DM notifications can open the DM thread and target message when available; group chat notifications can open the room and target message when available.
+- Added service-worker notification click forwarding to already-open chat windows so mobile/background pushes focus the existing page instead of only opening the standalone page.
+- Added emoji folder moving from the admin emoji manager. Admins can select a destination folder and move one emoji or multiple selected emojis without re-uploading files.
+- Added server-side `/admin/emojis/move` handling with path validation, conflict checks, PNG sidecar movement, and audit logging as `admin.emoji-move`.
+
 
 ## 4.5.0
 

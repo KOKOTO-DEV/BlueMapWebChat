@@ -38,6 +38,8 @@ web:
     moderationActionsDisable: Disable pin/delete
     unpin: unpin
     moveUp: Move up
+    move: Move
+    moveSelected: Move selected
     moveDown: Move down
     commands: Commands
     search: Search
@@ -100,6 +102,12 @@ web:
     emojiPackNameRequired: Enter a folder name.
     emojiFileRequired: Choose an emoji file.
     confirmDeleteEmoji: Delete this emoji?
+    emojiMoveSelectRequired: Select emojis to move.
+    emojiMoveTargetRequired: Choose a destination folder.
+    emojiMoveTargetSame: Choose a different folder.
+    confirmMoveEmoji: Move this emoji to {pack}?
+    confirmMoveSelectedEmoji: Move {count} selected emojis to {pack}?
+    moveFailed: "Move failed: {error}"
     emojiSelectRequired: Select emojis to delete.
     confirmDeleteSelectedEmoji: Delete {count} selected emojis?
     confirmDeleteEmojiPack: Delete folder {pack} and all emojis inside?
@@ -155,6 +163,8 @@ web:
     never: never
     emojis: Emojis
     emojiTitle: Custom emojis
+    emojiMoveTarget: Move to folder
+    emojiNoOtherFolder: No other folder
     emojiCurrent: Current emojis
     emojiLimits: Per file {file} KB / total {total} MB
     emojiFileLimit: Per file {file}
@@ -302,6 +312,7 @@ web:
     notifyNormalChat: 'Normal chat'
     notifyDm: 'DM'
     notifyGroupChat: 'Group chat'
+    notifyReplies: 'Replies'
     notifyMentions: 'Mentions'
     notifySystem: 'System/server'
     notifyKeywords: 'Keyword alerts'
@@ -529,7 +540,14 @@ web:
     bed-enter: 💤 {player} entered a bed.
     web-login: 🌐 {name} logged in to web chat.
     web-logout: 🌐 {name} logged out of web chat.
+  notifications:
+    inbox: 'Notification inbox'
+    empty: 'No missed notifications.'
+    clear: 'Clear notifications.'
+    replyTitle: 'Reply from {sender}'
+
   notification:
+    reply: 'Reply'
     keyword: 'Keyword'
     dm: 'DM'
     groupChat: 'Group chat'

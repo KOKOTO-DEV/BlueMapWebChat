@@ -163,6 +163,7 @@ public class ConfigValues {
     public boolean browserNotificationsNotifyDm;
     public boolean browserNotificationsNotifyGroupChat;
     public boolean browserNotificationsNotifyMentions;
+    public boolean browserNotificationsNotifyReplies;
     public boolean browserNotificationsNotifySystem;
     public boolean browserNotificationsNotifyKeywords;
     public boolean browserNotificationsNotifyOwnMessages;
@@ -179,6 +180,7 @@ public class ConfigValues {
     public boolean webPushNotifyDm;
     public boolean webPushNotifyGroupChat;
     public boolean webPushNotifyMentions;
+    public boolean webPushNotifyReplies;
     public boolean webPushNotifySystem;
     public boolean webPushNotifyKeywords;
     public boolean webPushNotifyOwnMessages;
@@ -376,9 +378,8 @@ public class ConfigValues {
         v.standaloneWebPath = normalizePrefix(c.getString("standalone-web.path", "/chat"));
         if ("/".equals(v.standaloneWebPath)) v.standaloneWebPath = "/chat";
         v.standaloneWebApiBaseUrl = c.getString("standalone-web.api-base-url", "");
-        v.standaloneWebAppName = c.getString("standalone-web.app-name", "Web Chat");
-        if (v.standaloneWebAppName == null || v.standaloneWebAppName.isBlank()) v.standaloneWebAppName = "Web Chat";
-        v.standaloneWebAppShortName = c.getString("standalone-web.app-short-name", "BM WebChat");
+        v.standaloneWebAppName = normalizeDisplayName(c.getString("standalone-web.app-name", "Web Chat"), "Web Chat");
+        v.standaloneWebAppShortName = normalizeDisplayName(c.getString("standalone-web.app-short-name", ""), "");
         if (v.standaloneWebAppShortName == null || v.standaloneWebAppShortName.isBlank()) v.standaloneWebAppShortName = v.standaloneWebAppName;
 
         v.webAutoInstall = c.getBoolean("web-addon.auto-install", true);
@@ -565,6 +566,7 @@ public class ConfigValues {
         v.browserNotificationsNotifyDm = c.getBoolean("browser-notifications.notify-dm", true);
         v.browserNotificationsNotifyGroupChat = c.getBoolean("browser-notifications.notify-group-chat", true);
         v.browserNotificationsNotifyMentions = c.getBoolean("browser-notifications.notify-mentions", true);
+        v.browserNotificationsNotifyReplies = c.getBoolean("browser-notifications.notify-replies", true);
         v.browserNotificationsNotifySystem = c.getBoolean("browser-notifications.notify-system", true);
         v.browserNotificationsNotifyKeywords = c.getBoolean("browser-notifications.notify-keywords", true);
         v.browserNotificationsNotifyOwnMessages = c.getBoolean("browser-notifications.notify-own-messages", true);
@@ -574,7 +576,7 @@ public class ConfigValues {
         v.webPushVapidPublicKey = c.getString("web-push.vapid-public-key", "");
         v.webPushVapidPrivateKey = c.getString("web-push.vapid-private-key", "");
         v.webPushSubject = c.getString("web-push.subject", "mailto:admin@example.com");
-        v.webPushNotificationTitle = c.getString("web-push.notification-title", "");
+        v.webPushNotificationTitle = normalizeDisplayName(c.getString("web-push.notification-title", ""), "");
         if (v.webPushNotificationTitle == null || v.webPushNotificationTitle.isBlank()) v.webPushNotificationTitle = v.standaloneWebAppName;
         if (v.webPushNotificationTitle == null || v.webPushNotificationTitle.isBlank()) v.webPushNotificationTitle = "Web Chat";
         v.webPushSubscriptionsFile = c.getString("web-push.subscriptions-file", "web-push-subscriptions.jsonl");
@@ -583,6 +585,7 @@ public class ConfigValues {
         v.webPushNotifyDm = c.getBoolean("web-push.notify-dm", true);
         v.webPushNotifyGroupChat = c.getBoolean("web-push.notify-group-chat", true);
         v.webPushNotifyMentions = c.getBoolean("web-push.notify-mentions", true);
+        v.webPushNotifyReplies = c.getBoolean("web-push.notify-replies", true);
         v.webPushNotifySystem = c.getBoolean("web-push.notify-system", true);
         v.webPushNotifyKeywords = c.getBoolean("web-push.notify-keywords", true);
         v.webPushNotifyOwnMessages = c.getBoolean("web-push.notify-own-messages", true);
@@ -848,6 +851,18 @@ public class ConfigValues {
         }
 
         return out;
+    }
+
+
+    private static String normalizeDisplayName(String value, String fallback) {
+        String v = String.valueOf(value == null ? "" : value).trim();
+        // Treat old generated defaults as legacy placeholders, not intentional custom names.
+        // Existing configs generated before the display-name options may still contain these
+        // values, which made notifications keep showing the plugin name even after the
+        // runtime fallback was changed.
+        if (v.equalsIgnoreCase("BlueMapWebChat") || v.equalsIgnoreCase("BM WebChat")) v = "";
+        if (v.isBlank()) return String.valueOf(fallback == null ? "" : fallback).trim();
+        return v;
     }
 
 

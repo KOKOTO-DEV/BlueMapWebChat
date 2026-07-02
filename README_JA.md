@@ -22,7 +22,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-4.5.0.jar
+target/BlueMapWebChat-4.5.1.jar
 ```
 
 ## インストール
