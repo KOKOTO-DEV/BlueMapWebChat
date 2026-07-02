@@ -31,6 +31,7 @@
     token: localStorage.getItem("bmwc.token") || "",
     username: localStorage.getItem("bmwc.username") || "",
     role: localStorage.getItem("bmwc.role") || "",
+    loginRequiredUntilLogin: localStorage.getItem("bmwc.loginRequiredUntilLogin") === "1",
     guestName: localStorage.getItem("bmwc.guestName") || "",
     captcha: null,
     captchaPass: localStorage.getItem("bmwc.captchaPass") || "",
@@ -58,6 +59,7 @@
     frameMinimizedHeight: 71,
     frameNormalWidth: 372,
     frameNormalHeight: 462,
+    resizeLocked: localStorage.getItem("bmwc.resizeLocked") === "1",
     resizeStart: null,
     themeSyncTimer: null,
     loginModalOpen: false,
@@ -88,6 +90,8 @@
     directMessageConfirmHide: true,
     dmUnread: 0,
     dmThreads: [],
+    dmAdminThreads: [],
+    dmCleanupPreview: null,
     dmModalOpen: false,
     dmActiveThreadId: "",
     dmDraftTarget: null,
@@ -102,6 +106,50 @@
     dmEdgePendingTopUntil: 0,
     dmEdgePendingBottomUntil: 0,
     dmEdgeBottomExtraScrollCount: 0,
+    dmMessages: [],
+    dmMessagesHasMore: false,
+    dmMessagesLoading: false,
+    dmBottomRetryInFlight: false,
+    dmLastBottomRetryAt: 0,
+
+    groupChatEnabled: false,
+    groupChatAllowWebSend: true,
+    groupChatAllowPublicRooms: true,
+    groupChatAllowRoomPasswords: true,
+    groupChatMaxMessageLength: 500,
+    groupChatRetentionDays: 30,
+    groupChatConfirmLeave: true,
+    groupChatConfirmHide: true,
+    groupUnread: 0,
+    groupRooms: [],
+    groupInvites: [],
+    groupHiddenRooms: [],
+    groupAdminRooms: [],
+    groupCleanupPreview: null,
+    privateChatSuperAdmin: false,
+    groupModalOpen: false,
+    groupActiveRoomId: "",
+    groupActiveRoom: null,
+    groupSearchPanelOpen: false,
+    groupSearchTimer: null,
+    groupEmojiPanelOpen: false,
+    groupEmojiSelectedPack: "",
+    groupEdgeToastVisible: false,
+    groupEdgeToastVisibleUntil: 0,
+    groupEdgeToastLastShownAt: 0,
+    groupEdgeToastTimer: null,
+    groupEdgePendingTopUntil: 0,
+    groupEdgePendingBottomUntil: 0,
+    groupEdgeBottomExtraScrollCount: 0,
+    groupMessages: [],
+    groupMessagesHasMore: false,
+    groupMessagesLoading: false,
+    groupBottomRetryInFlight: false,
+    groupLastBottomRetryAt: 0,
+    groupScrollbarDragActive: false,
+    groupScrollbarDragLastX: null,
+    groupScrollbarDragLastY: null,
+
     activeComposeInputId: "bmwc-message",
 
     emojiEnabled: false,
@@ -209,7 +257,32 @@
     viewportMaintenanceDueAt: 0,
     dragUploadDepth: 0,
     senderIdentityMode: localStorage.getItem("bmwc.senderIdentityMode") === "real" ? "real" : "display",
-    timeDisplayMode: localStorage.getItem("bmwc.timeDisplayMode") === "full" ? "full" : "short"
+    timeDisplayMode: localStorage.getItem("bmwc.timeDisplayMode") === "full" ? "full" : "short",
+
+    browserNotificationsEnabled: true,
+    browserNotificationsOnlyWhenHidden: true,
+    browserNotificationsNotifyNormalChat: true,
+    browserNotificationsNotifyDm: true,
+    browserNotificationsNotifyGroupChat: true,
+    browserNotificationsNotifyMentions: true,
+    browserNotificationsNotifySystem: true,
+    browserNotificationsNotifyKeywords: true,
+    browserNotificationsNotifyOwnMessages: true,
+    browserNotificationsShowMessagePreview: true,
+    webPushEnabled: false,
+    webPushAvailable: false,
+    webPushVapidPublicKey: "",
+    webPushNotificationTitle: "",
+    webPushNotifyNormalChat: true,
+    webPushNotifyDm: true,
+    webPushNotifyGroupChat: true,
+    webPushNotifyMentions: true,
+    webPushNotifySystem: true,
+    webPushNotifyKeywords: true,
+    webPushNotifyOwnMessages: true,
+    webPushShowMessagePreview: true,
+    webPushRegistering: false,
+    webPushLastError: ""
   };
 
   function normalizeCommandMaxLength(value, fallback = 0) {
@@ -289,6 +362,17 @@
 
   function plainLegacyText(value) {
     return stripMinecraftColorCodes(normalizeMinecraftLegacySource(value));
+  }
+
+  function plainDialogText(value) {
+    let text = plainLegacyText(value);
+    text = text.replace(/<\/?[a-zA-Z][^>]*>/g, "");
+    text = text.replace(/[\r\n]+/g, "\n").trim();
+    return text;
+  }
+
+  function confirmPlain(value) {
+    return confirm(plainDialogText(value));
   }
 
   function formatReplyComposeLabelHtml(sender) {
@@ -1805,7 +1889,8 @@
     scroll.dataset.bmwcWheelStepInstalled = "1";
     scroll.addEventListener("wheel", event => {
       const isDmPanel = panel && panel.id === "bmwc-dm-emoji-panel";
-      const open = isDmPanel ? state.dmEmojiPanelOpen : state.emojiPanelOpen;
+      const isGroupPanel = panel && panel.id === "bmwc-group-emoji-panel";
+      const open = isDmPanel ? state.dmEmojiPanelOpen : (isGroupPanel ? state.groupEmojiPanelOpen : state.emojiPanelOpen);
       if (!open || panel.classList.contains("bmwc-hidden")) return;
       if (event.ctrlKey || event.metaKey || event.shiftKey) return;
       const deltaY = Number(event.deltaY || 0);
@@ -1829,13 +1914,27 @@
   }
 
   function syncDirectMessageModalSettings() {
-    const wrap = document.querySelector(".bmwc-dm-modal-backdrop");
+    const wrap = document.querySelector(".bmwc-dm-modal-backdrop:not(.bmwc-group-modal-backdrop)");
+    if (wrap) {
+      try { applyDetachedModalTheme(wrap); } catch (_) {}
+      wrap.style.setProperty("--bmwc-emoji-render-size", emojiRenderSizePx() + "px");
+      wrap.style.setProperty("--bmwc-emoji-picker-size", emojiPickerSizePx() + "px");
+      wrap.style.setProperty("--bmwc-emoji-panel-height", emojiPanelHeightPx() + "px");
+      const panel = document.getElementById("bmwc-dm-emoji-panel");
+      const minHeight = emojiPanelMinHeightPx(panel);
+      wrap.style.setProperty("--bmwc-emoji-panel-min-height", minHeight + "px");
+    }
+    syncGroupChatModalSettings();
+  }
+
+  function syncGroupChatModalSettings() {
+    const wrap = document.querySelector(".bmwc-group-modal-backdrop");
     if (!wrap) return;
     try { applyDetachedModalTheme(wrap); } catch (_) {}
     wrap.style.setProperty("--bmwc-emoji-render-size", emojiRenderSizePx() + "px");
     wrap.style.setProperty("--bmwc-emoji-picker-size", emojiPickerSizePx() + "px");
     wrap.style.setProperty("--bmwc-emoji-panel-height", emojiPanelHeightPx() + "px");
-    const panel = document.getElementById("bmwc-dm-emoji-panel");
+    const panel = document.getElementById("bmwc-group-emoji-panel");
     const minHeight = emojiPanelMinHeightPx(panel);
     wrap.style.setProperty("--bmwc-emoji-panel-min-height", minHeight + "px");
   }
@@ -1875,6 +1974,38 @@
     if (input) {
       if (state.directMessageMaxMessageLength > 0) input.maxLength = state.directMessageMaxMessageLength;
       else input.removeAttribute("maxlength");
+    }
+  }
+
+  function updateGroupChatComposeControls() {
+    if (!state.groupModalOpen) return;
+    syncGroupChatModalSettings();
+    const emojiVisible = canUseCustomEmoji();
+    const emojiBtn = document.getElementById("bmwc-group-emoji");
+    setElementVisible(emojiBtn, emojiVisible);
+    if (emojiBtn) emojiBtn.title = t("button.emoji", "Emoji");
+    if (!emojiVisible) {
+      closeGroupChatEmojiPanel();
+    } else if (state.groupEmojiPanelOpen) {
+      renderGroupChatEmojiPanel();
+    }
+    updateGroupChatEmojiResizeHandleVisibility();
+
+    const uploadVisible = canUpload();
+    const uploadBtn = document.getElementById("bmwc-group-upload");
+    const fileInput = document.getElementById("bmwc-group-file");
+    setElementVisible(uploadBtn, uploadVisible);
+    if (uploadBtn) uploadBtn.title = t("button.upload", "Attach");
+    if (fileInput) {
+      fileInput.disabled = !uploadVisible || !!state.uploadActive;
+      fileInput.accept = uploadAcceptList();
+    }
+
+    const input = document.getElementById("bmwc-group-input");
+    if (input) {
+      if (state.groupChatMaxMessageLength > 0) input.maxLength = state.groupChatMaxMessageLength;
+      else input.removeAttribute("maxlength");
+      input.disabled = !state.groupActiveRoomId || !state.groupChatAllowWebSend;
     }
   }
 
@@ -2396,6 +2527,7 @@
     return t("source." + source, source);
   }
 
+
   async function loadLang() {
     try {
       const lang = String(state.selectedLanguage || localStorage.getItem("bmwc.language") || "").trim();
@@ -2617,6 +2749,32 @@
     localStorage.setItem("bmwc.windowHeight", String(state.frameNormalHeight));
   }
 
+
+  function updateResizeLockButton() {
+    const btn = document.getElementById("bmwc-resize-lock");
+    const root = document.getElementById("bmwc-root");
+    const canResize = !!(state.config && state.config.uiResizable);
+    const visible = canResize && !state.minimized && !guestChatHidden();
+    if (root) {
+      root.classList.toggle("bmwc-resizable", canResize && !state.resizeLocked);
+      root.classList.toggle("bmwc-resize-locked", !!state.resizeLocked);
+    }
+    if (!btn) return;
+    btn.classList.toggle("bmwc-hidden", !visible);
+    btn.setAttribute("aria-pressed", state.resizeLocked ? "true" : "false");
+    btn.textContent = state.resizeLocked ? "🔒" : "⇲";
+    btn.title = state.resizeLocked ? t("button.resizeUnlock", "Unlock resize") : t("button.resizeLock", "Lock resize");
+    btn.setAttribute("aria-label", btn.title);
+  }
+
+  function toggleResizeLocked() {
+    state.resizeLocked = !state.resizeLocked;
+    localStorage.setItem("bmwc.resizeLocked", state.resizeLocked ? "1" : "0");
+    if (state.resizeStart) state.resizeStart = null;
+    updateResizeLockButton();
+    updateFrameSize();
+  }
+
   function updateFrameSize() {
     if (state.isPip) {
       const title = document.querySelector(".bmwc-title");
@@ -2630,12 +2788,13 @@
       minimized: state.minimized,
       height: state.minimized ? state.frameMinimizedHeight : state.frameNormalHeight,
       width: state.minimized ? 124 : state.frameNormalWidth,
-      resizable: !!(state.config && state.config.uiResizable),
+      resizable: !!(state.config && state.config.uiResizable && !state.resizeLocked),
       minW: state.config ? state.config.uiMinWidth : 280,
       minH: state.config ? state.config.uiMinHeight : 240,
       maxW: state.config ? state.config.uiMaxWidth : 640,
       maxH: state.config ? state.config.uiMaxHeight : 720
     });
+    updateResizeLockButton();
   }
 
 
@@ -2690,6 +2849,49 @@
         state.frameNormalHeight = clampNumber(data.height, b.minH, b.maxH, state.frameNormalHeight);
         // Do not write localStorage on every resize frame; the parent frame already
         // persists the final size at resize end.
+      } else if (data.type === "notificationAction") {
+        (async () => {
+          const action = String(data.action || "");
+          if (action === "togglePage") {
+            if (localStorage.getItem("bmwc.notifications.enabled") === "1") localStorage.setItem("bmwc.notifications.enabled", "0");
+            else localStorage.setItem("bmwc.notifications.enabled", "1");
+          } else if (action === "setPage") {
+            localStorage.setItem("bmwc.notifications.enabled", data.enabled === false ? "0" : "1");
+          } else if (action === "testPage") {
+            localStorage.setItem("bmwc.notifications.enabled", "1");
+            showBrowserNotification(configuredNotificationTitle(), t("preferences.notificationsTest", "Test notification"), {tag: "bmwc-test", force: true});
+          } else if (action === "setNotificationOptions") {
+            const opts = data.options && typeof data.options === "object" ? data.options : {};
+            Object.keys(opts).forEach(name => setNotificationOption(name, opts[name] === true));
+            if (localStorage.getItem("bmwc.webPush.enabled") === "1") await enableWebPush();
+          } else if (action === "setKeywords") {
+            setNotificationKeywordsText(data.keywords || "");
+            if (localStorage.getItem("bmwc.webPush.enabled") === "1") await enableWebPush();
+          } else if (action === "applyKeywords") {
+            const keywordText = String(data.keywords || "");
+            setNotificationKeywordsText(keywordText);
+            if (keywordText.trim() && notificationServerAllows("keywords")) setNotificationOption("keywords", true);
+            if (localStorage.getItem("bmwc.webPush.enabled") === "1") await enableWebPush();
+          } else if (action === "enableWebPush") {
+            const opts = data.options && typeof data.options === "object" ? data.options : null;
+            if (opts) Object.keys(opts).forEach(name => setNotificationOption(name, opts[name] === true));
+            await enableWebPush();
+          } else if (action === "disableWebPush") {
+            await disableWebPush();
+          } else if (action === "testWebPush") {
+            await testWebPush();
+          }
+          postFrame("notificationStatus", {
+            notificationsStatus: notificationStatusText({}),
+            webPushStatus: webPushStatusText({}),
+            notificationsEnabledLocal: localStorage.getItem("bmwc.notifications.enabled") === "1",
+            webPushEnabledLocal: localStorage.getItem("bmwc.webPush.enabled") === "1",
+            webPushAvailable: canUseWebPush(),
+            notificationOptions: currentNotificationOptions(),
+            notificationOptionsAllowed: currentNotificationOptionsAllowed(),
+            notificationKeywords: notificationKeywordsText()
+          });
+        })();
       } else if (data.type === "userPreferencesSet") {
         const persist = data.final !== false;
         if (data.key === "opacity") setUserOpacity(data.value, persist);
@@ -2703,6 +2905,12 @@
         else if (data.key === "inputBackgroundColor") setUserInputBackgroundColor(data.value);
         else if (data.key === "language") setUserLanguage(data.value);
         else if (data.key === "theme") setUserTheme(data.value);
+      } else if (data.type === "userPreferencesApplyStorage") {
+        applyChatSettingPresetStorage(data.storage || {});
+        applyFontSizeConfig();
+        applyThemeConfig();
+        refreshRenderedMessagesForLocale();
+        scheduleVirtualRender({preserveScroll: true, stickToBottom: false, allowDuringMedia: true, deferDuringScroll: false, deferDuringMediaLayout: false});
       } else if (data.type === "userPreferencesReset") {
         resetUserOpacity();
         resetUserFontSize();
@@ -2873,7 +3081,7 @@
     };
 
     const begin = event => {
-      if (state.minimized || !state.config || !state.config.uiResizable) return;
+      if (state.minimized || state.resizeLocked || !state.config || !state.config.uiResizable) return;
       if (state.resizeStart) return;
 
       const p = pointFromEvent(event);
@@ -2976,6 +3184,11 @@
       document.body.classList.add("bmwc-pip-mode");
       root.classList.add("bmwc-pip-mode");
     }
+    if (state.isStandalone) {
+      document.documentElement.classList.add("bmwc-standalone-mode");
+      document.body.classList.add("bmwc-standalone-mode");
+      root.classList.add("bmwc-standalone-mode");
+    }
     root.innerHTML = `
       <div class="bmwc-panel">
         <div class="bmwc-header">
@@ -2985,7 +3198,7 @@
           </div>
           <div class="bmwc-actions">
             ${state.directMessageEnabled ? `<button class="bmwc-button bmwc-dm-button bmwc-hidden" id="bmwc-dm" title="${t("button.directMessages", "Messages")}">✉<span class="bmwc-dm-badge bmwc-hidden" id="bmwc-dm-badge">0</span></button>` : ""}
-            <button class="bmwc-button bmwc-hidden" id="bmwc-admin">${t("button.admin", "Admin")}</button>
+            ${state.groupChatEnabled ? `<button class="bmwc-button bmwc-group-button bmwc-hidden" id="bmwc-group" title="${t("group.title", "Group chats")}">👥<span class="bmwc-dm-badge bmwc-hidden" id="bmwc-group-badge">0</span></button>` : ""}
             <button class="bmwc-button" id="bmwc-login">${t("button.login", "Login")}</button>
             ${state.config && state.config.uiPictureInPictureEnabled === true && !state.isPip ? `<button class="bmwc-button bmwc-pip" id="bmwc-pip" title="${t("button.pip", "PIP")}">▣</button>` : ""}
             <button class="bmwc-button" id="bmwc-min">_</button>
@@ -3007,6 +3220,7 @@
           <span id="bmwc-jump-latest-label">${t("button.jumpLatest", "Jump to latest")}</span>
         </button>
         <button class="bmwc-button bmwc-search-button bmwc-search-float bmwc-hidden" id="bmwc-search-open" type="button" title="${t("button.search", "Search")}" aria-label="${t("button.search", "Search")}">⌕</button>
+        <button class="bmwc-button bmwc-resize-lock-button bmwc-resize-lock-float bmwc-hidden" id="bmwc-resize-lock" type="button" title="${t("button.resizeLock", "Lock resize")}" aria-label="${t("button.resizeLock", "Lock resize")}" aria-pressed="false">⇲</button>
         <div class="bmwc-emoji-resize-handle bmwc-hidden" id="bmwc-emoji-resize" title="${t("button.resizeEmojiPanel", "Drag to resize emoji picker")}" aria-label="${t("button.resizeEmojiPanel", "Drag to resize emoji picker")}"></div>
         <div class="bmwc-form">
           <div class="bmwc-row" id="bmwc-guest-row">
@@ -3077,8 +3291,16 @@
       event.stopPropagation();
       if (!state.minimized) openSearchModal();
     });
+    const resizeLockBtn = document.getElementById("bmwc-resize-lock");
+    if (resizeLockBtn) resizeLockBtn.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleResizeLocked();
+    });
     const dmBtn = document.getElementById("bmwc-dm");
     if (dmBtn) dmBtn.addEventListener("click", () => openDirectMessageModal());
+    const groupBtn = document.getElementById("bmwc-group");
+    if (groupBtn) groupBtn.addEventListener("click", () => openGroupChatModal());
     const commandBtn = document.getElementById("bmwc-command");
     if (commandBtn) commandBtn.addEventListener("click", () => openCommandModal());
     const emojiBtn = document.getElementById("bmwc-emoji");
@@ -3117,7 +3339,8 @@
     document.getElementById("bmwc-login").addEventListener("click", () => {
       if (!state.minimized) openLoginModal();
     });
-    document.getElementById("bmwc-admin").addEventListener("click", () => {
+    const legacyAdminBtn = document.getElementById("bmwc-admin");
+    if (legacyAdminBtn) legacyAdminBtn.addEventListener("click", () => {
       if (!state.minimized) openAdminModal();
     });
     const pipBtn = document.getElementById("bmwc-pip");
@@ -3181,6 +3404,8 @@
     if (title) title.textContent = state.minimized ? t("title.minimized", "Chat") : t("title.full", "BlueMap Chat");
     updateFrameSize();
     updatePipButton();
+    updateDirectMessageButton();
+    updateGroupChatButton();
     if (!state.minimized) {
       scheduleVirtualRender();
       protectHistoryEndNotice("unminimize", 8000);
@@ -3190,7 +3415,20 @@
   }
 
 
+  function setLoginRequiredUntilLogin(required) {
+    state.loginRequiredUntilLogin = required === true;
+    try {
+      if (state.loginRequiredUntilLogin) localStorage.setItem("bmwc.loginRequiredUntilLogin", "1");
+      else localStorage.removeItem("bmwc.loginRequiredUntilLogin");
+    } catch (_) {}
+  }
+
+  function loggedOutChatHidden() {
+    return !!(state.loginRequiredUntilLogin && !state.token);
+  }
+
   function guestChatHidden() {
+    if (loggedOutChatHidden()) return true;
     return !!(
       state.config &&
       state.config.guestEnabled === false &&
@@ -3240,8 +3478,9 @@
   function refreshStaticLabels() {
     const title = document.querySelector(".bmwc-title");
     if (title) title.textContent = state.minimized ? t("title.minimized", "Chat") : t("title.full", "BlueMap Chat");
-    const adminBtn = document.getElementById("bmwc-admin");
-    if (adminBtn) adminBtn.textContent = t("button.admin", "Admin");
+    const adminStatus = document.getElementById("bmwc-status");
+    if (adminStatus && adminStatus.classList.contains("bmwc-status-admin-action")) adminStatus.title = t("button.admin", "Admin");
+    updateResizeLockButton();
     const sendBtn = document.getElementById("bmwc-send");
     if (sendBtn) sendBtn.textContent = t("button.send", "Send");
     const uploadBtn = document.getElementById("bmwc-upload");
@@ -3278,8 +3517,8 @@
     const btn = document.getElementById("bmwc-login");
     const status = document.getElementById("bmwc-status");
     const guestRow = document.getElementById("bmwc-guest-row");
-    const adminBtn = document.getElementById("bmwc-admin");
     const dmBtn = document.getElementById("bmwc-dm");
+    const groupBtn = document.getElementById("bmwc-group");
     const uploadBtn = document.getElementById("bmwc-upload");
     const emojiBtn = document.getElementById("bmwc-emoji");
     const commandBtn = document.getElementById("bmwc-command");
@@ -3290,14 +3529,16 @@
     const moderationEnabled = !state.config || state.config.moderationEnabled !== false;
     const canManageMutes = moderationEnabled && state.token && (state.role === "ADMIN" || (state.role === "MODERATOR" && (!state.config || state.config.allowModeratorGuestMute !== false)));
     const canUseAdminPanel = state.token && adminPanelAllowed && (state.role === "ADMIN" || canManageMutes);
-    if (adminBtn) adminBtn.classList.toggle("bmwc-hidden", !canUseAdminPanel);
-    if (dmBtn) dmBtn.classList.toggle("bmwc-hidden", !(state.token && state.directMessageEnabled));
+    if (dmBtn) dmBtn.classList.toggle("bmwc-hidden", !(state.token && state.directMessageEnabled) || state.minimized);
+    if (groupBtn) groupBtn.classList.toggle("bmwc-hidden", !(state.token && state.groupChatEnabled) || state.minimized);
     updateDirectMessageButton();
+    updateGroupChatButton();
     if (uploadBtn) uploadBtn.classList.toggle("bmwc-hidden", !canUpload());
     updateEmojiButton();
     updateDirectMessageComposeControls();
     updateCommandButton();
     updatePipButton();
+    updateResizeLockButton();
 
     btn.classList.remove("bmwc-login-user", "bmwc-user-role-ADMIN", "bmwc-user-role-MODERATOR", "bmwc-user-role-USER", "bmwc-user-role-GUEST");
     if (state.token) {
@@ -3305,13 +3546,31 @@
       btn.title = t("preferences.title", "Chat settings");
       btn.classList.add("bmwc-login-user", "bmwc-user-role-" + String(state.role || "USER"));
       status.textContent = roleLabel(state.role);
-      status.title = state.role || "";
+      status.title = canUseAdminPanel ? t("button.admin", "Admin") : (state.role || "");
       status.classList.add("bmwc-status-role-" + String(state.role || "USER"));
+      status.classList.toggle("bmwc-status-admin-action", !!canUseAdminPanel);
+      if (canUseAdminPanel) {
+        status.setAttribute("role", "button");
+        status.setAttribute("tabindex", "0");
+        status.onclick = event => { event.preventDefault(); event.stopPropagation(); if (!state.minimized) openAdminModal(); };
+        status.onkeydown = event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (!state.minimized) openAdminModal(); } };
+      } else {
+        status.removeAttribute("role");
+        status.removeAttribute("tabindex");
+        status.onclick = null;
+        status.onkeydown = null;
+      }
       if (guestRow) guestRow.classList.add("bmwc-hidden");
     } else {
       btn.title = t("button.login", "Login");
       btn.textContent = t("button.login", "Login");
       status.textContent = t("status.guest", "guest");
+      status.title = "";
+      status.classList.remove("bmwc-status-admin-action");
+      status.removeAttribute("role");
+      status.removeAttribute("tabindex");
+      status.onclick = null;
+      status.onkeydown = null;
       const allowGuestName = !state.config || state.config.guestAllowCustomName !== false;
       if (guestRow) guestRow.classList.toggle("bmwc-hidden", !allowGuestName || guestChatHidden());
     }
@@ -3809,9 +4068,38 @@
     state.scrollIdleTimer = setTimeout(flushScrollInteractionWork, scrollInteractionIdleMs());
   }
 
+  function cancelExplicitLatestFollowForUserScroll(reason = "user-scroll") {
+    const now = Date.now();
+    const hadLatestFollow = now < Number(state.explicitLatestFollowUntil || 0)
+      || now < Number(state.forceLatestJumpUntil || 0)
+      || now < Number(state.autoFollowMediaLayoutUntil || 0);
+    if (!hadLatestFollow) return;
+
+    // Upload/send/latest actions temporarily request latest-follow so the newly
+    // inserted media is visible. As soon as the user starts a real scroll, that
+    // request must be cancelled; otherwise late image load/layout events can keep
+    // restoring the viewport to the uploaded media/latest position.
+    state.explicitLatestFollowUntil = 0;
+    state.explicitLatestFollowReason = "";
+    state.forceLatestJumpUntil = 0;
+    state.autoFollowMediaLayoutUntil = 0;
+    state.autoFollowLatest = false;
+    state.preventBottomStickUntil = Math.max(Number(state.preventBottomStickUntil || 0), now + 420);
+    state.pendingScrollRenderOptions = mergeRenderOptions(state.pendingScrollRenderOptions, {
+      preserveScroll: true,
+      stickToBottom: false,
+      suppressBottomStick: true,
+      forcePreservePosition: true,
+      allowDuringMedia: true,
+      allowDuringVisibleMedia: true,
+      deferDuringMediaLayout: false
+    });
+  }
+
   function markDirectScrollInput() {
     state.lastDirectScrollInputAt = Date.now();
     cancelReplyJumpForUserScroll("direct-scroll-input");
+    cancelExplicitLatestFollowForUserScroll("direct-scroll-input");
     markScrollInteraction();
   }
 
@@ -5880,21 +6168,19 @@
     const root = document.getElementById("bmwc-root");
     if (!root || !state.config) return;
 
+    const baseFontSize = Number(state.config.uiFontSize) || 13;
+    const configuredMessageSize = Number(state.config.uiMessageFontSize) || baseFontSize;
     const userSize = state.config.uiUserPreferencesControl === false ? null : (state.liveUserFontSize || savedUserFontSize());
-    if (userSize == null) {
-      root.style.setProperty("--bmwc-font-size", fontPx(state.config.uiFontSize, 13));
-      root.style.setProperty("--bmwc-message-font-size", fontPx(state.config.uiMessageFontSize, Number(state.config.uiFontSize) || 13));
-      root.style.setProperty("--bmwc-input-font-size", fontPx(state.config.uiInputFontSize, Number(state.config.uiFontSize) || 13));
-      root.style.setProperty("--bmwc-button-font-size", fontPx(state.config.uiButtonFontSize, 12));
-      root.style.setProperty("--bmwc-badge-font-size", fontPx(state.config.uiBadgeFontSize, 10));
-      return;
-    }
 
-    root.style.setProperty("--bmwc-font-size", fontPx(userSize, 13));
-    root.style.setProperty("--bmwc-message-font-size", fontPx(userSize, 13));
-    root.style.setProperty("--bmwc-input-font-size", fontPx(userSize, 13));
-    root.style.setProperty("--bmwc-button-font-size", fontPx(Math.max(8, userSize - 1), 12));
-    root.style.setProperty("--bmwc-badge-font-size", fontPx(Math.max(8, userSize - 3), 10));
+    // Keep the UI chrome, menus, settings, sidebars, search fields, and buttons on
+    // their theme/config defaults.  The user's Chat Settings font-size slider is
+    // scoped to real chat message history only via --bmwc-chat-message-font-size.
+    root.style.setProperty("--bmwc-font-size", fontPx(state.config.uiFontSize, 13));
+    root.style.setProperty("--bmwc-message-font-size", fontPx(state.config.uiMessageFontSize, baseFontSize));
+    root.style.setProperty("--bmwc-input-font-size", fontPx(state.config.uiInputFontSize, baseFontSize));
+    root.style.setProperty("--bmwc-button-font-size", fontPx(state.config.uiButtonFontSize, 12));
+    root.style.setProperty("--bmwc-badge-font-size", fontPx(state.config.uiBadgeFontSize, 10));
+    root.style.setProperty("--bmwc-chat-message-font-size", fontPx(userSize == null ? configuredMessageSize : userSize, configuredMessageSize));
   }
 
   function clampOpacity(value) {
@@ -6254,11 +6540,7 @@
     if (mode === "custom") return custom || "0 1px 2px rgba(0, 0, 0, 0.85)";
     if (mode === "light") return "0 1px 2px rgba(255, 255, 255, 0.85)";
     if (mode === "dark") return "0 1px 2px rgba(0, 0, 0, 0.85)";
-    // Auto shadow should not make the light theme fuzzy. Dark theme keeps the
-    // original shadowed look; light theme uses crisp text unless the user
-    // explicitly selects a shadow preset.
-    if (effectiveTheme() === "light") return "none";
-    const sample = normalizeHexColor(sampleColor) || fallbackTextColorForTheme();
+    const sample = normalizeHexColor(sampleColor) || effectiveUserBackgroundColor() || fallbackBackgroundColorForTheme();
     return colorBrightness(sample) >= 150 ? "0 1px 2px rgba(0, 0, 0, 0.85)" : "0 1px 2px rgba(255, 255, 255, 0.85)";
   }
 
@@ -6273,7 +6555,7 @@
   }
 
   function effectiveUserTextShadowCss() {
-    return textShadowCssForMode(effectiveUserTextShadowMode(), effectiveUserTextShadowCustom(), effectiveUserTextColor() || fallbackTextColorForTheme());
+    return textShadowCssForMode(effectiveUserTextShadowMode(), effectiveUserTextShadowCustom(), effectiveUserBackgroundColor() || fallbackBackgroundColorForTheme());
   }
 
   function applyUserColorOverrides(root) {
@@ -6281,45 +6563,45 @@
     const prefsEnabled = state.config.uiUserPreferencesControl !== false;
     const text = (prefsEnabled ? savedUserTextColor() : "") || normalizeHexColor(state.config && state.config.uiTextColor);
     const uiText = (prefsEnabled ? savedUserUiTextColor() : "") || normalizeHexColor(state.config && state.config.uiUiTextColor);
+    // uiTextColor is scoped to the real message metadata line only: source/type,
+    // separators, and timestamps. Sender/name spans are intentionally excluded so
+    // Minecraft/user color-code rendering stays intact.
     const shadowMode = (prefsEnabled ? savedUserTextShadowMode() : "") || (state.config && state.config.uiTextShadowMode) || "auto";
     const shadowCustom = (prefsEnabled ? savedUserTextShadowCustom() : "") || (state.config && state.config.uiTextShadowCustom) || "0 1px 2px rgba(0, 0, 0, 0.85)";
-    const shadowCss = textShadowCssForMode(shadowMode, shadowCustom, text || fallbackTextColorForTheme());
-    const uiShadowCss = textShadowCssForMode(shadowMode, shadowCustom, uiText || text || fallbackUiTextColorForTheme());
-    const bg = prefsEnabled ? savedUserBackgroundColor() : "";
+    const bg = (prefsEnabled ? savedUserBackgroundColor() : "") || normalizeHexColor(state.config && state.config.uiBackgroundColor);
     const inputBg = (prefsEnabled ? savedUserInputBackgroundColor() : "") || normalizeHexColor(state.config && state.config.uiInputBackgroundColor);
-    if (text) {
-      root.style.setProperty("--bmwc-text-color", text);
-    } else {
-      root.style.removeProperty("--bmwc-text-color");
-    }
-    if (uiText) {
-      root.style.setProperty("--bmwc-ui-color", uiText);
-      root.style.setProperty("--bmwc-ui-text-color", uiText);
-      root.style.setProperty("--bmwc-button-text", uiText);
-      root.style.setProperty("--bmwc-muted-color", uiText);
-    } else {
-      root.style.removeProperty("--bmwc-ui-color");
-      root.style.removeProperty("--bmwc-ui-text-color");
-      root.style.removeProperty("--bmwc-button-text");
-      root.style.removeProperty("--bmwc-muted-color");
-    }
-    if (bg) {
-      const rgb = hexToRgbList(bg);
-      if (rgb) {
-        root.style.setProperty("--bmwc-panel-bg-rgb", rgb);
-        root.style.setProperty("--bmwc-modal-bg-rgb", rgb);
-      }
-    } else {
-      root.style.removeProperty("--bmwc-panel-bg-rgb");
-      root.style.removeProperty("--bmwc-modal-bg-rgb");
-    }
-    root.style.setProperty("--bmwc-text-shadow", shadowCss || "none");
-    root.style.setProperty("--bmwc-ui-text-shadow", uiShadowCss || shadowCss || "none");
-    if (inputBg) {
-      root.style.setProperty("--bmwc-input-bg", inputBg);
-    } else {
-      root.style.removeProperty("--bmwc-input-bg");
-    }
+    const shadowSampleBg = bg || fallbackBackgroundColorForTheme();
+    const shadowCss = textShadowCssForMode(shadowMode, shadowCustom, shadowSampleBg);
+
+    // Remove any stale global overrides from older builds. Theme variables must keep
+    // their normal dark/light/high-contrast defaults outside real chat histories.
+    [
+      "--bmwc-text-color",
+      "--bmwc-ui-color",
+      "--bmwc-ui-text-color",
+      "--bmwc-button-text",
+      "--bmwc-muted-color",
+      "--bmwc-panel-bg-rgb",
+      "--bmwc-modal-bg-rgb",
+      "--bmwc-input-bg",
+      "--bmwc-text-shadow",
+      "--bmwc-ui-text-shadow"
+    ].forEach(name => root.style.removeProperty(name));
+
+    if (text) root.style.setProperty("--bmwc-chat-text-color", text);
+    else root.style.removeProperty("--bmwc-chat-text-color");
+
+    if (uiText) root.style.setProperty("--bmwc-chat-ui-text-color", uiText);
+    else root.style.removeProperty("--bmwc-chat-ui-text-color");
+
+    if (bg) root.style.setProperty("--bmwc-chat-background-color", bg);
+    else root.style.removeProperty("--bmwc-chat-background-color");
+
+    root.style.setProperty("--bmwc-chat-text-shadow", shadowCss || "none");
+
+    // Input background is scoped to real compose boxes only: normal chat, DM, group.
+    if (inputBg) root.style.setProperty("--bmwc-compose-input-bg", inputBg);
+    else root.style.removeProperty("--bmwc-compose-input-bg");
   }
 
   function applyThemeConfig() {
@@ -6332,8 +6614,13 @@
     root.style.setProperty("--bmwc-panel-opacity", effectiveOpacity());
 
     const userFamily = state.config.uiUserPreferencesControl === false ? "" : savedUserFontFamily();
-    const family = String(userFamily || state.config.uiFontFamily || "").trim();
-    root.style.fontFamily = family || "";
+    const uiFamily = String(state.config.uiFontFamily || "").trim();
+    const chatFamily = String(userFamily || uiFamily || "").trim();
+    // Keep the UI chrome on the configured/theme font. The user's Chat Settings
+    // font family is scoped to real chat history through --bmwc-chat-font-family.
+    root.style.fontFamily = uiFamily || "";
+    if (chatFamily) root.style.setProperty("--bmwc-chat-font-family", chatFamily);
+    else root.style.removeProperty("--bmwc-chat-font-family");
     applyUserColorOverrides(root);
 
     if (state.themeSyncTimer) {
@@ -6377,6 +6664,38 @@
       state.directMessageRetentionDays = Math.max(0, Math.floor(Number(data.directMessageRetentionDays) || 0));
       state.directMessageWebUnreadBadge = data.directMessageWebUnreadBadge !== false;
       state.directMessageConfirmHide = data.directMessageConfirmHide !== false;
+      state.groupChatEnabled = data.groupChatEnabled === true;
+      state.groupChatAllowWebSend = data.groupChatAllowWebSend !== false;
+      state.groupChatAllowPublicRooms = data.groupChatAllowPublicRooms !== false;
+      state.groupChatAllowRoomPasswords = data.groupChatAllowRoomPasswords !== false;
+      state.groupChatMaxMessageLength = Math.max(0, Math.floor(Number(data.groupChatMaxMessageLength) || 0));
+      state.groupChatRetentionDays = Math.max(0, Math.floor(Number(data.groupChatRetentionDays) || 0));
+      state.groupChatConfirmLeave = data.groupChatConfirmLeave !== false;
+      state.groupChatConfirmHide = data.groupChatConfirmHide !== false;
+      state.browserNotificationsEnabled = data.browserNotificationsEnabled !== false;
+      state.browserNotificationsOnlyWhenHidden = data.browserNotificationsOnlyWhenHidden !== false;
+      state.browserNotificationsNotifyNormalChat = data.browserNotificationsNotifyNormalChat !== false;
+      state.browserNotificationsNotifyDm = data.browserNotificationsNotifyDm !== false;
+      state.browserNotificationsNotifyGroupChat = data.browserNotificationsNotifyGroupChat !== false;
+      state.browserNotificationsNotifyMentions = data.browserNotificationsNotifyMentions !== false;
+      state.browserNotificationsNotifySystem = data.browserNotificationsNotifySystem !== false;
+      state.browserNotificationsNotifyKeywords = data.browserNotificationsNotifyKeywords !== false;
+      state.browserNotificationsNotifyOwnMessages = data.browserNotificationsNotifyOwnMessages !== false;
+      state.browserNotificationsShowMessagePreview = data.browserNotificationsShowMessagePreview !== false;
+      state.webPushEnabled = data.webPushEnabled === true;
+      state.webPushAvailable = data.webPushAvailable === true;
+      state.webPushVapidPublicKey = data.webPushVapidPublicKey || "";
+      state.standaloneWebAppName = String(data.standaloneWebAppName || "");
+      state.standaloneWebAppShortName = String(data.standaloneWebAppShortName || "");
+      state.webPushNotificationTitle = String(data.webPushNotificationTitle || "");
+      state.webPushNotifyNormalChat = data.webPushNotifyNormalChat !== false;
+      state.webPushNotifyDm = data.webPushNotifyDm !== false;
+      state.webPushNotifyGroupChat = data.webPushNotifyGroupChat !== false;
+      state.webPushNotifyMentions = data.webPushNotifyMentions !== false;
+      state.webPushNotifySystem = data.webPushNotifySystem !== false;
+      state.webPushNotifyKeywords = data.webPushNotifyKeywords !== false;
+      state.webPushNotifyOwnMessages = data.webPushNotifyOwnMessages !== false;
+      state.webPushShowMessagePreview = data.webPushShowMessagePreview !== false;
       state.emojiEnabled = data.emojiEnabled !== false;
       state.emojiShowButton = data.emojiShowButton !== false;
       state.emojiRenderSizePx = Math.max(16, Math.min(1024, Number(data.emojiRenderSizePx) || 32));
@@ -7100,6 +7419,7 @@
           return;
         }
         addMessage(msg);
+        maybeNotifyChatMessage(msg);
       } catch (_) {}
     });
     es.addEventListener("delete", e => {
@@ -7110,8 +7430,23 @@
         const data = JSON.parse(e.data || "{}");
         if (!state.directMessageEnabled || !state.token) return;
         loadDirectMessageThreads(true).then(() => {
+          const thread = (state.dmThreads || []).find(t => String(t.id || "") === String(data.threadId || ""));
+          if (thread) maybeNotifyDirectThread(thread);
           if (state.dmModalOpen && state.dmActiveThreadId && (!data.threadId || data.threadId === state.dmActiveThreadId)) {
             loadDirectMessageMessages(state.dmActiveThreadId);
+          }
+        });
+      } catch (_) {}
+    });
+    es.addEventListener("group", e => {
+      try {
+        const data = JSON.parse(e.data || "{}");
+        if (!state.groupChatEnabled || !state.token) return;
+        loadGroupChatRooms(true).then(() => {
+          const room = (state.groupRooms || []).find(r => String(r.id || "") === String(data.roomId || ""));
+          if (room) maybeNotifyGroupRoom(room);
+          if (state.groupModalOpen && state.groupActiveRoomId && (!data.roomId || data.roomId === state.groupActiveRoomId)) {
+            loadGroupChatMessages(state.groupActiveRoomId);
           }
         });
       } catch (_) {}
@@ -7206,8 +7541,8 @@
     const preferred = document.getElementById(state.activeComposeInputId || "");
     if (preferred && !preferred.disabled && document.body.contains(preferred)) return preferred;
     const active = document.activeElement;
-    if (active && active.id && (active.id === "bmwc-dm-input" || active.id === "bmwc-message")) return active;
-    return document.getElementById("bmwc-message") || document.getElementById("bmwc-dm-input");
+    if (active && active.id && (active.id === "bmwc-group-input" || active.id === "bmwc-dm-input" || active.id === "bmwc-message")) return active;
+    return document.getElementById("bmwc-message") || document.getElementById("bmwc-dm-input") || document.getElementById("bmwc-group-input");
   }
 
   function insertCustomEmoji(id) {
@@ -7331,6 +7666,7 @@
       state.emojiByAlias = new Map();
       updateEmojiButton();
       updateDirectMessageComposeControls();
+      updateGroupChatComposeControls();
       return;
     }
     state.emojiLoading = true;
@@ -7347,6 +7683,7 @@
       state.emojiPickerSizePx = Math.max(24, Math.min(1024, Number(res.pickerSizePx || state.emojiPickerSizePx || 44)));
       applyEmojiPickerSize();
       updateDirectMessageComposeControls();
+      updateGroupChatComposeControls();
       state.emojiMessageTokenLimit = Math.max(0, Math.floor(Number(res.messageTokenLimit || state.emojiMessageTokenLimit || 0)));
       state.emojiTokenFormat = normalizeEmojiTokenFormat(res.tokenFormat || state.emojiTokenFormat);
       if (state.messages && state.messages.length) scheduleVirtualRender({preserveScroll: true, deferDuringScroll: false});
@@ -7360,6 +7697,7 @@
       state.emojiLoading = false;
       updateEmojiButton();
       updateDirectMessageComposeControls();
+      updateGroupChatComposeControls();
       renderEmojiPanel();
     }
   }
@@ -7446,8 +7784,37 @@
   }
 
 
+  function uploadProgressScopeId() {
+    const id = String(state.activeComposeInputId || "");
+    if (id === "bmwc-dm-input" && document.getElementById("bmwc-dm-upload-progress")) return "dm";
+    if (id === "bmwc-group-input" && document.getElementById("bmwc-group-upload-progress")) return "group";
+    return "main";
+  }
+
+  function uploadProgressElements(scope = null) {
+    const name = scope || uploadProgressScopeId();
+    const prefix = name === "dm" ? "bmwc-dm-upload-progress" : (name === "group" ? "bmwc-group-upload-progress" : "bmwc-upload-progress");
+    return {
+      panel: document.getElementById(prefix),
+      text: document.getElementById(prefix + "-text") || document.getElementById("bmwc-upload-progress-text"),
+      fill: document.getElementById(prefix + "-fill") || document.getElementById("bmwc-upload-progress-fill"),
+      cancel: document.getElementById(prefix + "-cancel") || document.getElementById("bmwc-upload-cancel")
+    };
+  }
+
+  function hideInactiveUploadProgressPanels(activeScope = null) {
+    const keep = activeScope || uploadProgressScopeId();
+    ["main", "dm", "group"].forEach(scope => {
+      if (scope === keep) return;
+      const el = uploadProgressElements(scope);
+      if (el.panel) el.panel.classList.add("bmwc-hidden");
+    });
+  }
+
   function setUploadProgressVisible(visible) {
-    const panel = document.getElementById("bmwc-upload-progress");
+    const scope = uploadProgressScopeId();
+    hideInactiveUploadProgressPanels(scope);
+    const panel = uploadProgressElements(scope).panel;
     if (panel) panel.classList.toggle("bmwc-hidden", !visible);
   }
 
@@ -7456,17 +7823,20 @@
     const fileInput = document.getElementById("bmwc-file");
     const dmUploadBtn = document.getElementById("bmwc-dm-upload");
     const dmFileInput = document.getElementById("bmwc-dm-file");
+    const groupUploadBtn = document.getElementById("bmwc-group-upload");
+    const groupFileInput = document.getElementById("bmwc-group-file");
     if (uploadBtn) uploadBtn.disabled = !!busy;
     if (fileInput) fileInput.disabled = !!busy;
     if (dmUploadBtn) dmUploadBtn.disabled = !!busy;
     if (dmFileInput) dmFileInput.disabled = !!busy;
+    if (groupUploadBtn) groupUploadBtn.disabled = !!busy;
+    if (groupFileInput) groupFileInput.disabled = !!busy;
   }
 
   function updateUploadProgress(label, percent, active = true) {
-    const panel = document.getElementById("bmwc-upload-progress");
-    const text = document.getElementById("bmwc-upload-progress-text");
-    const fill = document.getElementById("bmwc-upload-progress-fill");
-    const cancel = document.getElementById("bmwc-upload-cancel");
+    const scope = uploadProgressScopeId();
+    hideInactiveUploadProgressPanels(scope);
+    const {panel, text, fill, cancel} = uploadProgressElements(scope);
 
     if (panel) panel.classList.toggle("bmwc-hidden", !active);
     if (text) text.textContent = label || "";
@@ -7691,6 +8061,17 @@
     await uploadFiles(files, "file");
   }
 
+  function uploadProgressHtml(prefix) {
+    const id = String(prefix || "bmwc-upload-progress");
+    return `<div class="bmwc-upload-progress bmwc-hidden" id="${id}" aria-live="polite">
+      <div class="bmwc-upload-progress-head">
+        <span id="${id}-text">${esc(t("upload.ready", "Ready"))}</span>
+        <button class="bmwc-button bmwc-upload-cancel" id="${id}-cancel" type="button">${esc(t("button.cancel", "Cancel"))}</button>
+      </div>
+      <div class="bmwc-upload-progress-bar"><div id="${id}-fill"></div></div>
+    </div>`;
+  }
+
   async function uploadFiles(files, source) {
     files = Array.from(files || []).map((file, index) => normalizeUploadFile(file, index, source)).filter(Boolean);
     if (!files.length) return;
@@ -7739,7 +8120,8 @@
 
     state.uploadCancelRequested = false;
     state.uploadActive = true;
-    markExplicitLatestFollow("upload", 90000);
+    const uploadIntoModal = state.activeComposeInputId === "bmwc-dm-input" || state.activeComposeInputId === "bmwc-group-input";
+    if (!uploadIntoModal) markExplicitLatestFollow("upload", 8000);
     setUploadControlsBusy(true);
     updateUploadProgress(t("upload.preparing", "Preparing upload..."), 0, true);
 
@@ -7796,16 +8178,18 @@
 
     if (uploaded.length) {
       const dmTargetActive = state.activeComposeInputId === "bmwc-dm-input" && !!document.getElementById("bmwc-dm-input");
-      if (!dmTargetActive) forceLatestChatView("upload");
+      const groupTargetActive = state.activeComposeInputId === "bmwc-group-input" && !!document.getElementById("bmwc-group-input");
+      const modalTargetActive = dmTargetActive || groupTargetActive;
+      if (!modalTargetActive) forceLatestChatView("upload");
       const text = normalizeInsertedMediaLinks(uploaded.join(" "));
       const mode = String((state.config && state.config.uploadClipboardSendMode) || "insert").toLowerCase();
-      if (!dmTargetActive && source === "clipboard" && mode === "send") {
+      if (!modalTargetActive && source === "clipboard" && mode === "send") {
         const ok = await sendMessageText(text, null, {forceLatest: true});
         if (!ok) appendToMessage(text, {mediaLinks: true});
       } else {
         appendToMessage(text, {mediaLinks: true});
       }
-      if (!dmTargetActive) forceLatestChatView("upload-complete");
+      if (!modalTargetActive) forceLatestChatView("upload-complete");
       hideUploadProgressSoon(t("upload.complete", "Upload complete."));
     } else if (state.uploadCancelRequested) {
       hideUploadProgressSoon(t("upload.canceled", "Upload canceled."));
@@ -7991,6 +8375,7 @@
     const wrap = document.createElement("div");
     wrap.className = "bmwc-modal-backdrop bmwc-user-prefs-backdrop";
     wrap.id = "bmwc-command-modal";
+    applyDetachedModalTheme(wrap);
     wrap.innerHTML = `
       <div class="bmwc-modal bmwc-command-modal">
         <div class="bmwc-modal-head">
@@ -8062,7 +8447,7 @@
       return false;
     }
     const needConfirm = state.commandsRequireConfirm !== false;
-    if (needConfirm && !confirm(fmt("commands.confirm", "Run command: /{command}?", {command}))) return false;
+    if (needConfirm && !confirmPlain(fmt("commands.confirm", "Run command: /{command}?", {command}))) return false;
     try {
       const res = await api("/commands/run", {method: "POST", body: JSON.stringify({token: state.token, command})});
       if (!res.ok) {
@@ -8081,7 +8466,7 @@
     const preset = state.commands.find(p => p && p.id === id);
     if (!preset) return false;
     const needConfirm = state.commandsRequireConfirm !== false || preset.confirm !== false;
-    if (needConfirm && !confirm(fmt("commands.confirm", "Run command: /{command}?", {command: preset.command || preset.label || id}))) return false;
+    if (needConfirm && !confirmPlain(fmt("commands.confirm", "Run command: /{command}?", {command: preset.command || preset.label || id}))) return false;
     try {
       const res = await api("/commands/run", {method: "POST", body: JSON.stringify({token: state.token, id})});
       if (!res.ok) {
@@ -8316,14 +8701,18 @@
     const opener = document.getElementById("bmwc-pinned-open");
     const label = document.getElementById("bmwc-pinned-label");
     const search = document.getElementById("bmwc-search-open");
+    const resizeLock = document.getElementById("bmwc-resize-lock");
     if (!bar || !label) return;
     const count = Array.isArray(state.pins) ? state.pins.length : 0;
     const pinsVisible = canViewPinnedMessages() && state.pinsEnabled !== false && count > 0 && !state.minimized;
     const searchVisible = searchEnabled() && !state.minimized && !guestChatHidden();
+    const resizeLockVisible = !!(state.config && state.config.uiResizable) && !state.minimized && !guestChatHidden();
     bar.classList.toggle("bmwc-hidden", !pinsVisible);
     if (root) root.classList.toggle("bmwc-has-pinned-bar", !!pinsVisible);
     if (opener) opener.classList.toggle("bmwc-hidden", !pinsVisible);
     if (search) search.classList.toggle("bmwc-hidden", !searchVisible);
+    if (resizeLock) resizeLock.classList.toggle("bmwc-hidden", !resizeLockVisible);
+    updateResizeLockButton();
     if (!pinsVisible) {
       if (label) {
         label.textContent = "";
@@ -8355,19 +8744,25 @@
     const msg = Object.assign({}, pin, {id: pin.messageId || pin.pinId});
     const el = renderMessageElement(msg);
     el.classList.add("bmwc-pinned-item");
-    el.querySelectorAll("[data-delete], [data-pin]").forEach(btn => btn.remove());
+    el.querySelectorAll(".bmwc-mini-actions, [data-delete], [data-pin], [data-reply]").forEach(node => node.remove());
+    el.classList.remove("bmwc-has-mini-actions");
     const meta = el.querySelector(".bmwc-meta");
     if (meta) {
       const detail = document.createElement("span");
       detail.className = "bmwc-pinned-detail";
-      detail.textContent = " · " + fmt("pinned.pinnedBy", "pinned by {user}", {user: pin.pinnedBy || "-"});
+      detail.textContent = fmt("pinned.pinnedBy", "pinned by {user}", {user: pin.pinnedBy || "-"});
+      const detailSep = document.createElement("span");
+      detailSep.className = "bmwc-meta-sep";
+      detailSep.setAttribute("aria-hidden", "true");
+      detailSep.textContent = "·";
+      meta.appendChild(detailSep);
       meta.appendChild(detail);
       if (state.moderationActionsVisible && state.pinsCanPin && pin.pinId) {
         const controls = document.createElement("span");
         controls.className = "bmwc-mini-actions bmwc-pinned-actions";
 
         const up = document.createElement("button");
-        up.className = "bmwc-mini-action";
+        up.className = "bmwc-mini-action bmwc-pinned-action bmwc-pinned-move-action";
         up.type = "button";
         up.setAttribute("data-pin-move", pin.pinId);
         up.setAttribute("data-direction", "up");
@@ -8377,7 +8772,7 @@
         controls.appendChild(up);
 
         const down = document.createElement("button");
-        down.className = "bmwc-mini-action";
+        down.className = "bmwc-mini-action bmwc-pinned-action bmwc-pinned-move-action";
         down.type = "button";
         down.setAttribute("data-pin-move", pin.pinId);
         down.setAttribute("data-direction", "down");
@@ -8387,9 +8782,11 @@
         controls.appendChild(down);
 
         const unpin = document.createElement("button");
-        unpin.className = "bmwc-mini-action";
+        unpin.className = "bmwc-mini-action bmwc-pinned-action bmwc-pinned-unpin-action";
         unpin.type = "button";
         unpin.setAttribute("data-unpin", pin.pinId);
+        unpin.title = t("button.unpin", "unpin");
+        unpin.setAttribute("aria-label", t("button.unpin", "unpin"));
         unpin.textContent = t("button.unpin", "unpin");
         controls.appendChild(unpin);
 
@@ -8460,6 +8857,7 @@
     if (old) old.remove();
     const wrap = document.createElement("div");
     wrap.className = "bmwc-modal-backdrop bmwc-pinned-backdrop";
+    applyDetachedModalTheme(wrap);
     wrap.id = "bmwc-pinned-modal";
     wrap.innerHTML = `
       <div class="bmwc-modal bmwc-pinned-modal">
@@ -8502,7 +8900,7 @@
   }
 
   async function deleteMessage(id) {
-    if (!id || !confirm(t("alert.confirmDelete", "Hide this message?"))) return;
+    if (!id || !confirmPlain(t("alert.confirmDelete", "Hide this message?"))) return;
     const res = await adminApi("/admin/delete-message", {
       method: "POST",
       body: JSON.stringify({id})
@@ -8523,12 +8921,14 @@
     const canManageMutes = (!state.config || state.config.moderationEnabled !== false) && (state.role === "ADMIN" || (!state.config || state.config.allowModeratorGuestMute !== false));
     const wrap = document.createElement("div");
     wrap.className = "bmwc-modal-backdrop bmwc-user-prefs-backdrop";
+    applyDetachedModalTheme(wrap);
     wrap.innerHTML = `
       <div class="bmwc-modal bmwc-admin-modal">
         <h3>${t("admin.title", "BlueMap Chat Admin")}</h3>
         <div class="bmwc-tabs">
           <button class="bmwc-button bmwc-tab" data-panel="summary">${t("admin.summary", "Summary")}</button>
           ${canManageMutes ? `<button class="bmwc-button bmwc-tab" data-panel="mutes">${t("admin.mutes", "Mutes")}</button>` : ""}
+          ${state.role === "ADMIN" ? `<button class="bmwc-button bmwc-tab" data-panel="accounts">${t("admin.accounts", "Accounts")}</button>` : ""}
           ${state.role === "ADMIN" ? `<button class="bmwc-button bmwc-tab" data-panel="sessions">${t("admin.sessions", "Sessions")}</button>` : ""}
           ${state.role === "ADMIN" ? `<button class="bmwc-button bmwc-tab" data-panel="emojis">${t("admin.emojis", "Emojis")}</button>` : ""}
         </div>
@@ -8552,6 +8952,7 @@
     try {
       if (panel === "summary") return renderAdminSummary(content);
       if (panel === "mutes") return renderAdminMutes(content);
+      if (panel === "accounts") return renderAdminAccounts(content);
       if (panel === "sessions") return renderAdminSessions(content);
       if (panel === "emojis") return renderAdminEmojis(content);
     } catch (e) {
@@ -8571,7 +8972,7 @@
       </div>
       <h4>${t("admin.onlinePlayers", "Online players")}</h4>
       <div class="bmwc-admin-list">
-        ${(online.players || []).map(p => `<div>${esc(p.name)}</div>`).join("") || `<em>${t("admin.none", "none")}</em>`}
+        ${(online.players || []).map(p => `<div>${directMessageIdentityHtml({displayName: p.displayName || p.name || "", username: p.name || "", uuid: p.uuid || ""}, "bmwc-sender")}</div>`).join("") || `<em>${t("admin.none", "none")}</em>`}
       </div>
       <br>
       <div class="bmwc-row bmwc-admin-actions-row">
@@ -8579,9 +8980,10 @@
         <button class="bmwc-button" id="bmwc-toggle-moderation-actions" type="button" aria-pressed="${state.moderationActionsVisible ? "true" : "false"}">${moderationActionsToggleLabel()}</button>
       </div>
     `;
+    installSenderIdentityToggle(content);
     const clear = content.querySelector("#bmwc-clear-history");
     if (clear) clear.onclick = async () => {
-      if (!confirm(t("alert.confirmClearHistory", "Clear web chat history?"))) return;
+      if (!confirmPlain(t("alert.confirmClearHistory", "Clear web chat history?"))) return;
       const res = await adminApi("/admin/clear-history", {method: "POST", body: "{}"});
       if (!res.ok) alertResponse("alert.failed", "Failed: {error}", res);
     };
@@ -8792,7 +9194,7 @@
 
     const deleteOne = async id => {
       if (!id) return;
-      if (!confirm(t("alert.confirmDeleteEmoji", "Delete this emoji?"))) return;
+      if (!confirmPlain(t("alert.confirmDeleteEmoji", "Delete this emoji?"))) return;
       const res = await adminApi("/admin/emojis/delete", {method: "POST", body: JSON.stringify({type: "item", id})});
       if (!res.ok) return alertResponse("alert.failed", "Failed: {error}", res);
       await loadEmojis({force: true});
@@ -8806,7 +9208,7 @@
       if (next == null) return;
       const name = String(next || "").trim();
       if (!name) return alert(t("alert.emojiRenameNameRequired", "Enter a new name."));
-      if (!confirm(fmt("alert.confirmRenameEmoji", "Rename this emoji to {name}? Existing emoji tokens using the old name will no longer match.", {name}))) return;
+      if (!confirmPlain(fmt("alert.confirmRenameEmoji", "Rename this emoji to {name}? Existing emoji tokens using the old name will no longer match.", {name}))) return;
       const res = await adminApi("/admin/emojis/rename", {method: "POST", body: JSON.stringify({type: "item", id, name})});
       if (!res.ok) return alertResponse("alert.renameFailed", "Rename failed: {error}", res);
       await loadEmojis({force: true});
@@ -8861,7 +9263,7 @@
       deleteSelected.onclick = async () => {
         const ids = Array.from(content.querySelectorAll(".bmwc-admin-emoji-check:checked")).map(el => el.dataset.emojiDeleteId).filter(Boolean);
         if (!ids.length) return alert(t("alert.emojiSelectRequired", "Select emojis to delete."));
-        if (!confirm(fmt("alert.confirmDeleteSelectedEmoji", "Delete {count} selected emojis?", {count: ids.length}))) return;
+        if (!confirmPlain(fmt("alert.confirmDeleteSelectedEmoji", "Delete {count} selected emojis?", {count: ids.length}))) return;
         deleteSelected.disabled = true;
         try {
           for (const id of ids) {
@@ -8884,7 +9286,7 @@
         if (next == null) return;
         const name = String(next || "").trim();
         if (!name) return alert(t("alert.emojiRenameNameRequired", "Enter a new name."));
-        if (!confirm(fmt("alert.confirmRenameEmojiPack", "Rename folder {pack} to {name}? Emoji tokens in this folder will change.", {pack: selectedPackInfo.label || selectedPack, name}))) return;
+        if (!confirmPlain(fmt("alert.confirmRenameEmojiPack", "Rename folder {pack} to {name}? Emoji tokens in this folder will change.", {pack: selectedPackInfo.label || selectedPack, name}))) return;
         const res = await adminApi("/admin/emojis/rename", {method: "POST", body: JSON.stringify({type: "pack", pack: selectedPack, name})});
         if (!res.ok) return alertResponse("alert.renameFailed", "Rename failed: {error}", res);
         state.adminEmojiSelectedPack = res.pack || name;
@@ -8898,7 +9300,7 @@
     const deletePack = content.querySelector("#bmwc-emoji-delete-pack");
     if (deletePack) {
       deletePack.onclick = async () => {
-        if (!confirm(fmt("alert.confirmDeleteEmojiPack", "Delete folder {pack} and all emojis inside?", {pack: selectedPack}))) return;
+        if (!confirmPlain(fmt("alert.confirmDeleteEmojiPack", "Delete folder {pack} and all emojis inside?", {pack: selectedPack}))) return;
         const res = await adminApi("/admin/emojis/delete", {method: "POST", body: JSON.stringify({type: "pack", pack: selectedPack})});
         if (!res.ok) return alertResponse("alert.failed", "Failed: {error}", res);
         state.adminEmojiSelectedPack = "default";
@@ -8910,6 +9312,25 @@
     }
   }
 
+  async function renderAdminAccounts(content) {
+    if (state.role !== "ADMIN") return;
+    const data = await adminApi("/admin/accounts");
+    content.innerHTML = `
+      <h4>${t("admin.accounts", "Accounts")}</h4>
+      <div class="bmwc-admin-list">
+        ${(data.accounts || []).map(a => `
+          <div class="bmwc-admin-item">
+            <div>
+              ${directMessageIdentityHtml({displayName: a.displayName || a.username || "", username: a.username || "", uuid: a.uuid || ""}, "bmwc-sender")} <strong>${esc(a.role || "")}</strong><br>
+              <small>${a.local ? esc(t("account.local", "Local")) : esc(t("account.linked", "Linked"))} / ${t("admin.passwordSet", "password")} ${a.passwordSet ? esc(t("admin.yes", "yes")) : esc(t("admin.no", "no"))} / ${t("admin.lastLogin", "last login")} ${a.lastLogin ? esc(formatMessageTimeFull(a.lastLogin)) : t("admin.never", "never")}</small>
+            </div>
+          </div>
+        `).join("") || `<em>${t("admin.none", "none")}</em>`}
+      </div>
+    `;
+    installSenderIdentityToggle(content);
+  }
+
   async function renderAdminSessions(content) {
     const data = await adminApi("/admin/sessions");
     content.innerHTML = `
@@ -8918,7 +9339,7 @@
         ${(data.sessions || []).map(s => `
           <div class="bmwc-admin-item">
             <div>
-              <strong>${esc(s.username)}</strong> ${esc(s.role)}<br>
+              ${directMessageIdentityHtml({displayName: s.displayName || s.username || "", username: s.username || "", uuid: s.uuid || ""}, "bmwc-sender")} <strong>${esc(s.role)}</strong><br>
               <small>${esc(s.lastIp || "")} / ${t("admin.expires", "expires")} ${s.expiresAt ? esc(formatMessageTimeFull(s.expiresAt)) : t("admin.never", "never")}</small>
             </div>
             <button class="bmwc-button" data-revoke="${esc(s.username)}">${t("button.revoke", "Revoke")}</button>
@@ -8926,9 +9347,10 @@
         `).join("") || `<em>${t("admin.none", "none")}</em>`}
       </div>
     `;
+    installSenderIdentityToggle(content);
     content.querySelectorAll("[data-revoke]").forEach(btn => {
       btn.onclick = async () => {
-        if (!confirm(fmt("admin.revokeConfirm", "Revoke all sessions for {username}?", {username: btn.dataset.revoke}))) return;
+        if (!confirmPlain(fmt("admin.revokeConfirm", "Revoke all sessions for {username}?", {username: btn.dataset.revoke}))) return;
         const res = await adminApi("/admin/revoke", {
           method: "POST",
           body: JSON.stringify({username: btn.dataset.revoke})
@@ -9142,6 +9564,547 @@
   }
 
 
+
+  function notificationApiSupported() {
+    return typeof window !== "undefined" && "Notification" in window;
+  }
+
+  const NOTIFICATION_OPTION_DEFS = [
+    {name: "normalChat", key: "bmwc.notify.normalChat", label: "notifyNormalChat", fallback: () => notificationServerDefault("normalChat")},
+    {name: "dm", key: "bmwc.notify.dm", label: "notifyDm", fallback: () => notificationServerDefault("dm")},
+    {name: "groupChat", key: "bmwc.notify.groupChat", label: "notifyGroupChat", fallback: () => notificationServerDefault("groupChat")},
+    {name: "mentions", key: "bmwc.notify.mentions", label: "notifyMentions", fallback: () => notificationServerDefault("mentions")},
+    {name: "system", key: "bmwc.notify.system", label: "notifySystem", fallback: () => notificationServerDefault("system")},
+    {name: "keywords", key: "bmwc.notify.keywords", label: "notifyKeywords", fallback: () => notificationServerDefault("keywords")},
+    {name: "ownMessages", key: "bmwc.notify.ownMessages", label: "notifyOwnMessages", fallback: () => notificationServerDefault("ownMessages")},
+    {name: "preview", key: "bmwc.notify.preview", label: "notifyPreview", fallback: () => notificationServerDefault("preview")}
+  ];
+
+  function browserNotificationServerAllows(name) {
+    if (name === "normalChat") return state.browserNotificationsNotifyNormalChat !== false;
+    if (name === "dm") return state.browserNotificationsNotifyDm !== false;
+    if (name === "groupChat") return state.browserNotificationsNotifyGroupChat !== false;
+    if (name === "mentions") return state.browserNotificationsNotifyMentions !== false;
+    if (name === "system") return state.browserNotificationsNotifySystem !== false;
+    if (name === "keywords") return state.browserNotificationsNotifyKeywords !== false;
+    if (name === "ownMessages") return state.browserNotificationsNotifyOwnMessages !== false;
+    if (name === "preview") return state.browserNotificationsShowMessagePreview !== false;
+    return true;
+  }
+
+  function webPushServerAllows(name) {
+    if (name === "normalChat") return state.webPushNotifyNormalChat !== false;
+    if (name === "dm") return state.webPushNotifyDm !== false;
+    if (name === "groupChat") return state.webPushNotifyGroupChat !== false;
+    if (name === "mentions") return state.webPushNotifyMentions !== false;
+    if (name === "system") return state.webPushNotifySystem !== false;
+    if (name === "keywords") return state.webPushNotifyKeywords !== false;
+    if (name === "ownMessages") return state.webPushNotifyOwnMessages !== false;
+    if (name === "preview") return state.webPushShowMessagePreview !== false;
+    return true;
+  }
+
+  function notificationServerAllows(name) {
+    return (state.browserNotificationsEnabled && browserNotificationServerAllows(name)) || (state.webPushEnabled && webPushServerAllows(name));
+  }
+
+  function notificationServerDefault(name) {
+    return notificationServerAllows(name);
+  }
+
+  function browserNotificationOption(name) {
+    return browserNotificationServerAllows(name) && notificationOption(name);
+  }
+
+  function readStoredBool(key, fallback) {
+    try {
+      const value = localStorage.getItem(key);
+      if (value === "1") return true;
+      if (value === "0") return false;
+    } catch (_) {}
+    return !!fallback;
+  }
+
+  function writeStoredBool(key, value) {
+    try { localStorage.setItem(key, value ? "1" : "0"); } catch (_) {}
+  }
+
+  function notificationOptionDef(name) {
+    return NOTIFICATION_OPTION_DEFS.find(def => def.name === name) || null;
+  }
+
+  function notificationOption(name) {
+    const def = notificationOptionDef(name);
+    if (!def) return false;
+    if (!notificationServerAllows(name)) return false;
+    return readStoredBool(def.key, def.fallback());
+  }
+
+  function setNotificationOption(name, value) {
+    const def = notificationOptionDef(name);
+    if (!def) return;
+    if (!notificationServerAllows(name)) {
+      writeStoredBool(def.key, false);
+      return;
+    }
+    writeStoredBool(def.key, !!value);
+  }
+
+  function currentNotificationOptions() {
+    const out = {};
+    NOTIFICATION_OPTION_DEFS.forEach(def => { out[def.name] = notificationOption(def.name); });
+    return out;
+  }
+
+  function currentNotificationOptionsAllowed() {
+    const out = {};
+    NOTIFICATION_OPTION_DEFS.forEach(def => { out[def.name] = notificationServerAllows(def.name); });
+    return out;
+  }
+
+  const NOTIFICATION_KEYWORDS_KEY = "bmwc.notify.keywords.list";
+  const LEGACY_NOTIFICATION_KEYWORDS_KEY = "bmwc.notify.keywords.text";
+  const isPollutedNotificationKeywordText = value => /^(?:on|off|true|false|1|0)$/i.test(String(value || "").trim());
+
+  function notificationKeywordsText() {
+    try {
+      const current = localStorage.getItem(NOTIFICATION_KEYWORDS_KEY);
+      if (current !== null) return isPollutedNotificationKeywordText(current) ? "" : current;
+      const legacy = localStorage.getItem(LEGACY_NOTIFICATION_KEYWORDS_KEY);
+      if (legacy !== null && !isPollutedNotificationKeywordText(legacy)) {
+        localStorage.setItem(NOTIFICATION_KEYWORDS_KEY, legacy);
+        return legacy;
+      }
+      if (isPollutedNotificationKeywordText(legacy)) localStorage.removeItem(LEGACY_NOTIFICATION_KEYWORDS_KEY);
+      return "";
+    } catch (_) { return ""; }
+  }
+
+  function setNotificationKeywordsText(value) {
+    const text = isPollutedNotificationKeywordText(value) ? "" : String(value || "");
+    try {
+      localStorage.setItem(NOTIFICATION_KEYWORDS_KEY, text);
+      if (isPollutedNotificationKeywordText(localStorage.getItem(LEGACY_NOTIFICATION_KEYWORDS_KEY))) {
+        localStorage.removeItem(LEGACY_NOTIFICATION_KEYWORDS_KEY);
+      }
+    } catch (_) {}
+  }
+
+  function notificationKeywords() {
+    const seen = new Set();
+    const out = [];
+    String(notificationKeywordsText() || "").split(/[\r\n,]+/).forEach(part => {
+      const keyword = String(part || "").replace(/[\u0000-\u001f]/g, "").trim();
+      if (!keyword) return;
+      const lower = keyword.toLowerCase();
+      if (seen.has(lower)) return;
+      seen.add(lower);
+      out.push(keyword.slice(0, 80));
+    });
+    return out.slice(0, 40);
+  }
+
+  function notificationKeywordMatch(value) {
+    if (!browserNotificationOption("keywords") && !notificationOption("keywords")) return "";
+    const haystack = plainNotificationText(value, 0).toLowerCase();
+    for (const keyword of notificationKeywords()) {
+      if (haystack.includes(String(keyword).toLowerCase())) return keyword;
+    }
+    return "";
+  }
+
+  function keywordNotificationTitle(keyword) {
+    return fmt("preferences.keywordNotificationTitle", "Keyword: {keyword}", {keyword});
+  }
+
+  function configuredNotificationTitle() {
+    const title = String(state.webPushNotificationTitle || (state.config && state.config.webPushNotificationTitle) || "").trim();
+    if (title) return title;
+    const appName = String(state.standaloneWebAppName || (state.config && state.config.standaloneWebAppName) || "").trim();
+    return appName || "Web Chat";
+  }
+
+
+  function notificationOptionsHtml(prefix, labels = {}) {
+    const row = (name, fallback) => {
+      const def = notificationOptionDef(name);
+      const allowed = notificationServerAllows(name);
+      const checked = notificationOption(name) ? " checked" : "";
+      const disabled = allowed ? "" : " disabled";
+      const title = allowed ? "" : ` title="${esc(labels.notifyDisabledByServer || "Disabled by server configuration.")}"`;
+      const text = labels[def && def.label] || fallback;
+      return `<label class="bmwc-notify-option${allowed ? "" : " bmwc-notify-option-disabled"}"${title}><input id="${prefix}-${name}" type="checkbox" data-bmwc-notify-option="${name}"${checked}${disabled}> <span>${esc(text)}</span></label>`;
+    };
+    return `<div class="bmwc-notify-options">
+      ${row("normalChat", "Normal chat")}
+      ${row("dm", "DM")}
+      ${row("groupChat", "Group chat")}
+      ${row("mentions", "Mentions")}
+      ${row("system", "System/server")}
+      ${row("keywords", "Keyword alerts")}
+      ${row("ownMessages", "Own messages")}
+      ${row("preview", "Message preview")}
+    </div>`;
+  }
+
+  function bindNotificationOptionInputs(container, onChange) {
+    if (!container) return;
+    container.querySelectorAll("[data-bmwc-notify-option]").forEach(input => {
+      if (input.disabled) { input.checked = false; return; }
+      input.addEventListener("change", () => {
+        setNotificationOption(input.dataset.bmwcNotifyOption, input.checked);
+        if (typeof onChange === "function") onChange(currentNotificationOptions());
+      });
+    });
+  }
+
+  function prefStatusLabel(labels, key, fallback) {
+    return labels && labels[key] ? String(labels[key]) : t("preferences." + key, fallback);
+  }
+
+  function notificationStatusText(labels = {}) {
+    if (!state.browserNotificationsEnabled) return prefStatusLabel(labels, "notificationsServerDisabled", "Notifications are disabled by server configuration.");
+    if (!notificationApiSupported()) return prefStatusLabel(labels, "notificationsUnsupported", "This browser does not support notifications.");
+    if (Notification.permission === "denied") return prefStatusLabel(labels, "notificationsPermissionDenied", "Notification permission is blocked in this browser.");
+    if (localStorage.getItem("bmwc.notifications.enabled") === "1" && Notification.permission === "granted") return prefStatusLabel(labels, "notificationsEnabledStatus", "Enabled in this browser.");
+    if (Notification.permission === "granted") return prefStatusLabel(labels, "notificationsAllowedDisabledStatus", "Allowed by browser, disabled in chat settings.");
+    return prefStatusLabel(labels, "notificationsNotRequestedStatus", "Permission is not requested yet.");
+  }
+
+  function webPushUnavailableReason(labels = {}) {
+    if (!state.webPushEnabled) return prefStatusLabel(labels, "webPushServerDisabled", "Web Push is disabled by server configuration.");
+    if (!state.webPushAvailable || !state.webPushVapidPublicKey) return prefStatusLabel(labels, "webPushUnsupported", "Web Push is not available in this server configuration.");
+    if (!state.token) return t("error.not_logged_in", "Not logged in.");
+    if (!state.isStandalone) return prefStatusLabel(labels, "webPushStandaloneRequired", "Open the standalone chat page to use mobile/background push.");
+    if (typeof window !== "undefined" && window.isSecureContext === false) return prefStatusLabel(labels, "webPushInsecure", "Web Push requires HTTPS or localhost.");
+    if (!("serviceWorker" in navigator)) return prefStatusLabel(labels, "webPushNoServiceWorker", "This browser does not support Service Worker.");
+    if (!("PushManager" in window)) return prefStatusLabel(labels, "webPushNoPushManager", "This browser does not support Push API.");
+    if (!notificationApiSupported()) return prefStatusLabel(labels, "notificationsUnsupported", "This browser does not support notifications.");
+    if (Notification.permission === "denied") return prefStatusLabel(labels, "notificationsPermissionDenied", "Notification permission is blocked in this browser.");
+    return "";
+  }
+
+  function canUseWebPush() {
+    return !webPushUnavailableReason({});
+  }
+
+  function webPushStatusText(labels = {}) {
+    if (state.webPushLastError) return state.webPushLastError;
+    const reason = webPushUnavailableReason(labels);
+    if (reason) return reason;
+    return localStorage.getItem("bmwc.webPush.enabled") === "1" ? prefStatusLabel(labels, "webPushEnabledStatus", "Enabled in this browser.") : prefStatusLabel(labels, "webPushDisabledStatus", "Disabled in this browser.");
+  }
+
+  async function requestBrowserNotifications() {
+    if (!state.browserNotificationsEnabled || !notificationApiSupported()) return false;
+    if (Notification.permission === "granted") return true;
+    if (Notification.permission === "denied") return false;
+    try {
+      const result = await Notification.requestPermission();
+      return result === "granted";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function attentionNeededForNotification(force = false) {
+    if (force) return true;
+    if (!state.browserNotificationsOnlyWhenHidden) return true;
+    return document.hidden || state.minimized || !document.hasFocus();
+  }
+
+  function showBrowserNotification(title, body, options = {}) {
+    if (!state.browserNotificationsEnabled || localStorage.getItem("bmwc.notifications.enabled") !== "1") return false;
+    if (!attentionNeededForNotification(options.force === true)) return false;
+    const visibleBody = browserNotificationOption("preview") ? String(body || "") : "";
+    if (window.parent && window.parent !== window && !state.isPip) {
+      postFrame("showNotification", {
+        title: title || configuredNotificationTitle(),
+        body: visibleBody,
+        tag: options.tag || "bmwc",
+        force: options.force === true
+      });
+      return true;
+    }
+    if (!notificationApiSupported() || Notification.permission !== "granted") return false;
+    try {
+      const n = new Notification(title || configuredNotificationTitle(), {
+        body: visibleBody,
+        tag: options.tag || "bmwc",
+        renotify: true,
+        silent: false
+      });
+      n.onclick = () => {
+        try { window.focus(); } catch (_) {}
+        try { n.close(); } catch (_) {}
+      };
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function plainNotificationText(value, limit = 180) {
+    let text = String(value || "");
+    text = text.replace(/[§&]x(?:[§&][0-9a-fA-F]){6}/g, "");
+    text = text.replace(/[§&][0-9a-fA-Fk-oK-OrR]/g, "");
+    text = text.replace(/<[^>]+>/g, "");
+    text = text.replace(/\s+/g, " ").trim();
+    if (limit > 0 && text.length > limit) text = text.slice(0, Math.max(0, limit - 1)) + "…";
+    return text;
+  }
+
+  function currentUserMatchesMessage(msg) {
+    if (!msg) return false;
+    const username = String(state.username || "").toLowerCase();
+    const senderUsername = String(msg.senderUsername || msg.realSender || msg.sender || "").toLowerCase();
+    if (username && senderUsername && username === senderUsername) return true;
+    return false;
+  }
+
+  function messageMentionsCurrentUser(text) {
+    const name = String(state.username || "").trim();
+    if (!name) return false;
+    const body = String(text || "").toLowerCase();
+    const lower = name.toLowerCase();
+    return body.includes("@" + lower) || body.includes(lower);
+  }
+
+  function maybeNotifyChatMessage(msg) {
+    if (!msg) return;
+    const own = currentUserMatchesMessage(msg);
+    if (own && !browserNotificationOption("ownMessages")) return;
+    const source = String(msg.source || "").toLowerCase();
+    const system = source === "event" || source === "system" || source === "server";
+    const sender = plainNotificationText(msg.sender || configuredNotificationTitle(), 80);
+    const body = plainNotificationText(msg.message || "", 180);
+    const keyword = notificationKeywordMatch(sender + " " + body);
+    if (keyword && browserNotificationOption("keywords")) {
+      showBrowserNotification(keywordNotificationTitle(keyword), (system ? configuredNotificationTitle() : sender) + (body ? ": " + body : ""), {tag: "bmwc-keyword-" + keyword});
+      return;
+    }
+    const mention = messageMentionsCurrentUser(msg.message || "");
+    if (system) {
+      if (!browserNotificationOption("system")) return;
+    } else if (mention) {
+      if (!browserNotificationOption("mentions")) return;
+    } else if (!browserNotificationOption("normalChat")) {
+      return;
+    }
+    showBrowserNotification(system ? configuredNotificationTitle() : sender, body, {tag: system ? "bmwc-system" : "bmwc-chat"});
+  }
+
+  function maybeNotifyDirectMessage(message, threadId) {
+    if (!message) return;
+    if (currentUserMatchesMessage(message) && !browserNotificationOption("ownMessages")) return;
+    const sender = plainNotificationText(message.senderDisplayName || message.senderUsername || t("dm.title", "Messages"), 80);
+    const body = plainNotificationText(message.body || "", 180);
+    const keyword = notificationKeywordMatch(sender + " " + body);
+    if (keyword && browserNotificationOption("keywords")) {
+      showBrowserNotification(keywordNotificationTitle(keyword), t("dm.title", "Messages") + ": " + sender + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword});
+      return;
+    }
+    if (!browserNotificationOption("dm")) return;
+    showBrowserNotification(t("dm.title", "Messages") + ": " + sender, body, {tag: "bmwc-dm-" + String(threadId || message.threadId || "")});
+  }
+
+  function maybeNotifyDirectThread(thread) {
+    if (!thread) return;
+    const own = state.token && thread.lastSenderUuid && state.config && String(thread.lastSenderUuid || "").toLowerCase() === String(thread.selfUuid || "").toLowerCase();
+    if (own && !browserNotificationOption("ownMessages")) return;
+    if (Number(thread.unread || 0) <= 0 && !browserNotificationOption("ownMessages")) return;
+    const sender = plainNotificationText(thread.otherLabel || thread.otherDisplayName || thread.otherUsername || t("dm.title", "Messages"), 80);
+    const body = plainNotificationText(thread.lastMessage || "", 180);
+    const keyword = notificationKeywordMatch(sender + " " + body);
+    if (keyword && browserNotificationOption("keywords")) {
+      showBrowserNotification(keywordNotificationTitle(keyword), t("dm.title", "Messages") + ": " + sender + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword});
+      return;
+    }
+    if (!browserNotificationOption("dm")) return;
+    showBrowserNotification(t("dm.title", "Messages") + ": " + sender, body, {tag: "bmwc-dm-" + String(thread.id || "")});
+  }
+
+  function maybeNotifyGroupRoom(room) {
+    if (!room) return;
+    if (Number(room.unread || 0) <= 0 && !browserNotificationOption("ownMessages")) return;
+    const roomName = plainNotificationText(room.name || t("group.title", "Group chats"), 80);
+    const body = plainNotificationText(room.lastMessage || "", 180);
+    const keyword = notificationKeywordMatch(roomName + " " + body);
+    if (keyword && browserNotificationOption("keywords")) {
+      showBrowserNotification(keywordNotificationTitle(keyword), roomName + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword});
+      return;
+    }
+    if (!browserNotificationOption("groupChat")) return;
+    showBrowserNotification(roomName, body, {tag: "bmwc-group-" + String(room.id || "")});
+  }
+
+  function maybeNotifyGroupMessage(message, room) {
+    if (!message) return;
+    if (currentUserMatchesMessage(message) && !browserNotificationOption("ownMessages")) return;
+    const roomName = plainNotificationText(room && room.name || t("group.title", "Group chats"), 80);
+    const sender = plainNotificationText(message.senderDisplayName || message.senderUsername || "", 60);
+    const body = plainNotificationText(message.body || "", 180);
+    const keyword = notificationKeywordMatch(roomName + " " + sender + " " + body);
+    if (keyword && browserNotificationOption("keywords")) {
+      showBrowserNotification(keywordNotificationTitle(keyword), roomName + (sender ? " · " + sender : "") + (body ? " · " + body : ""), {tag: "bmwc-keyword-" + keyword});
+      return;
+    }
+    if (!browserNotificationOption("groupChat")) return;
+    showBrowserNotification(roomName + (sender ? " · " + sender : ""), body, {tag: "bmwc-group-" + String(room && room.id || message.roomId || "")});
+  }
+
+  function base64UrlToUint8Array(value) {
+    const padding = "=".repeat((4 - String(value).length % 4) % 4);
+    const base64 = (String(value) + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(base64);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  function webPushScopeUrl() {
+    return apiBase + "/push/";
+  }
+
+  function waitForServiceWorkerActive(reg, timeoutMs = 8000) {
+    if (!reg) return Promise.resolve(reg);
+    if (reg.active) return Promise.resolve(reg);
+    const worker = reg.installing || reg.waiting;
+    if (!worker) return Promise.resolve(reg);
+    return new Promise(resolve => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        try { worker.removeEventListener("statechange", onStateChange); } catch (_) {}
+        resolve(reg);
+      };
+      const onStateChange = () => {
+        if (worker.state === "activated" || worker.state === "redundant") finish();
+      };
+      try { worker.addEventListener("statechange", onStateChange); } catch (_) {}
+      if (worker.state === "activated" || worker.state === "redundant") finish();
+      else setTimeout(finish, Math.max(1000, Math.min(30000, Number(timeoutMs) || 8000)));
+    });
+  }
+
+  async function registerWebPushServiceWorker() {
+    const swUrl = apiBase + "/push/sw.js?v=" + encodeURIComponent(String(state.serverVersion || Date.now()));
+    const scope = webPushScopeUrl();
+    const reg = await navigator.serviceWorker.register(swUrl, {scope, updateViaCache: "none"});
+    try { await reg.update(); } catch (_) {}
+    await waitForServiceWorkerActive(reg);
+    return reg;
+  }
+
+  function webPushErrorText(error) {
+    const message = error && (error.message || error.name) ? String(error.message || error.name) : "";
+    if (error && error.status) return t("preferences.webPushFailedHttp", "Web Push failed: HTTP {status}").replace("{status}", String(error.status));
+    if (/permission/i.test(message)) return t("preferences.notificationsPermissionDenied", "Notification permission is blocked in this browser.");
+    if (/secure|ssl|https/i.test(message)) return t("preferences.webPushInsecure", "Web Push requires HTTPS or localhost.");
+    if (/VAPID|applicationServerKey/i.test(message)) return t("preferences.webPushInvalidVapid", "Web Push failed: invalid VAPID key.");
+    if (/AbortError/i.test(message)) return t("preferences.webPushTimeout", "Web Push failed: request timed out.");
+    return message ? t("preferences.webPushFailedWithMessage", "Web Push failed: {message}").replace("{message}", message) : t("preferences.webPushFailed", "Web Push failed.");
+  }
+
+  async function enableWebPush() {
+    const reason = webPushUnavailableReason({
+      webPushServerDisabled: t("preferences.webPushServerDisabled", "Web Push is disabled by server configuration."),
+      webPushUnsupported: t("preferences.webPushUnsupported", "Web Push is not available in this browser or server configuration."),
+      webPushInsecure: t("preferences.webPushInsecure", "Web Push requires HTTPS or localhost."),
+      webPushNoServiceWorker: t("preferences.webPushNoServiceWorker", "This browser does not support Service Worker."),
+      webPushNoPushManager: t("preferences.webPushNoPushManager", "This browser does not support Push API."),
+      notificationsUnsupported: t("preferences.notificationsUnsupported", "This browser does not support notifications."),
+      notificationsPermissionDenied: t("preferences.notificationsPermissionDenied", "Notification permission is blocked in this browser.")
+    });
+    if (reason) {
+      state.webPushLastError = reason;
+      localStorage.setItem("bmwc.webPush.enabled", "0");
+      return false;
+    }
+    if (state.webPushRegistering) return false;
+    state.webPushRegistering = true;
+    state.webPushLastError = "";
+    try {
+      const ok = await requestBrowserNotifications();
+      if (!ok) {
+        state.webPushLastError = t("preferences.notificationsPermissionDenied", "Notification permission is blocked in this browser.");
+        return false;
+      }
+      localStorage.setItem("bmwc.notifications.enabled", "1");
+      const reg = await registerWebPushServiceWorker();
+      const existing = await reg.pushManager.getSubscription();
+      const sub = existing || await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: base64UrlToUint8Array(state.webPushVapidPublicKey)});
+      const json = sub.toJSON();
+      const opts = currentNotificationOptions();
+      await api("/push/subscribe", {method: "POST", body: JSON.stringify({
+        token: state.token,
+        endpoint: json.endpoint || "",
+        p256dh: json.keys && json.keys.p256dh || "",
+        auth: json.keys && json.keys.auth || "",
+        notifyNormalChat: opts.normalChat === true,
+        notifyDm: opts.dm === true,
+        notifyGroupChat: opts.groupChat === true,
+        notifyMentions: opts.mentions === true,
+        notifySystem: opts.system === true,
+        notifyKeywords: opts.keywords === true,
+        keywords: notificationKeywordsText(),
+        language: selectedLocale(),
+        notifyOwnMessages: opts.ownMessages === true,
+        showMessagePreview: opts.preview === true
+      })});
+      localStorage.setItem("bmwc.webPush.enabled", "1");
+      state.webPushLastError = "";
+      return true;
+    } catch (e) {
+      console.warn("BlueMapWebChat Web Push subscribe failed", e);
+      state.webPushLastError = webPushErrorText(e);
+      localStorage.setItem("bmwc.webPush.enabled", "0");
+      return false;
+    } finally {
+      state.webPushRegistering = false;
+    }
+  }
+
+  async function disableWebPush() {
+    try {
+      if ("serviceWorker" in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration(webPushScopeUrl()).catch(() => null);
+        if (reg && reg.pushManager) {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            const endpoint = sub.endpoint || "";
+            await sub.unsubscribe().catch(() => false);
+            if (state.token && endpoint) await api("/push/unsubscribe", {method: "POST", body: JSON.stringify({token: state.token, endpoint})}).catch(() => {});
+          }
+        }
+      }
+    } catch (_) {
+    } finally {
+      localStorage.setItem("bmwc.webPush.enabled", "0");
+      state.webPushLastError = "";
+    }
+  }
+
+  async function testWebPush() {
+    state.webPushLastError = "";
+    const ok = await enableWebPush();
+    if (!ok) return false;
+    try {
+      const res = await api("/push/test", {method: "POST", body: JSON.stringify({token: state.token})});
+      if (!res || res.ok === false) throw new Error(res && res.error || "push_test_failed");
+      state.webPushLastError = t("preferences.webPushTestSent", "Test push sent. Check this device's notification area.");
+      return true;
+    } catch (e) {
+      state.webPushLastError = webPushErrorText(e);
+      return false;
+    }
+  }
+
+  async function ensurePreferredWebPush() {
+    if (localStorage.getItem("bmwc.webPush.enabled") === "1" && canUseWebPush()) await enableWebPush();
+  }
+
   function buildUserPreferencesPayload() {
     const configured = Array.isArray(state.config && state.config.uiUserFontOptions) ? state.config.uiUserFontOptions : [];
     const options = configured.length ? configured : ["", "system-ui, sans-serif", "Arial, sans-serif", "Verdana, sans-serif", "Georgia, serif", "serif", "monospace"];
@@ -9165,6 +10128,9 @@
         themeDark: t("preferences.themeDark", "Dark"),
         themeLight: t("preferences.themeLight", "Light"),
         themeHighContrast: t("preferences.themeHighContrast", "High contrast"),
+        languageAndTheme: t("preferences.languageAndTheme", "Language and theme"),
+        windowSettings: t("preferences.windowSettings", "Window settings"),
+        fontSettings: t("preferences.fontSettings", "Font settings"),
         themeResetNote: t("preferences.themeResetNote", "Changing the theme resets visual chat settings to the theme defaults."),
         opacity: t("opacity.title", "Opacity"),
         fontSize: t("preferences.fontSize", "Font size"),
@@ -9197,6 +10163,63 @@
         textShadowCustomPlaceholder: t("preferences.textShadowCustomPlaceholder", "0 1px 2px rgba(0, 0, 0, 0.85)"),
         backgroundColor: t("preferences.backgroundColor", "Background color"),
         inputBackgroundColor: t("preferences.inputBackgroundColor", "Input background color"),
+        notifications: t("preferences.notifications", "Notifications"),
+        notificationsPage: t("preferences.notificationsPage", "Browser system notifications"),
+        notificationsPageHelp: t("preferences.notificationsPageHelp", "Shows OS notifications while this page is open."),
+        notificationsEnable: t("preferences.notificationsEnable", "Enable notifications"),
+        notificationsDisable: t("preferences.notificationsDisable", "Disable notifications"),
+        notificationsTest: t("preferences.notificationsTest", "Test notification"),
+        notificationsPermissionDenied: t("preferences.notificationsPermissionDenied", "Notification permission is blocked in this browser."),
+        notificationsUnsupported: t("preferences.notificationsUnsupported", "This browser does not support notifications."),
+        notificationsServerDisabled: t("preferences.notificationsServerDisabled", "Notifications are disabled by server configuration."),
+        notificationsEnabledStatus: t("preferences.notificationsEnabledStatus", "Enabled in this browser."),
+        notificationsAllowedDisabledStatus: t("preferences.notificationsAllowedDisabledStatus", "Allowed by browser, disabled in chat settings."),
+        notificationsNotRequestedStatus: t("preferences.notificationsNotRequestedStatus", "Permission is not requested yet."),
+        webPush: t("preferences.webPush", "Mobile/background push"),
+        webPushHelp: t("preferences.webPushHelp", "Requires HTTPS, service worker support, browser permission, and a supported browser."),
+        webPushEnable: t("preferences.webPushEnable", "Enable mobile push"),
+        webPushDisable: t("preferences.webPushDisable", "Disable mobile push"),
+        webPushTest: t("preferences.webPushTest", "Test mobile push"),
+        webPushTestSent: t("preferences.webPushTestSent", "Test push sent. Check this device's notification area."),
+        webPushHowToTest: t("preferences.webPushHowToTest", "To test mobile push: open the standalone HTTPS page on the mobile browser, log in, enable mobile push, allow notifications, tap Test mobile push, then lock the screen or leave the browser and send a DM/group message from another account."),
+        advancedSettings: t("preferences.advancedSettings", "Advanced settings"),
+        webPushUnsupported: t("preferences.webPushUnsupported", "Web Push is not available in this browser or server configuration."),
+        webPushServerDisabled: t("preferences.webPushServerDisabled", "Web Push is disabled by server configuration."),
+        webPushInsecure: t("preferences.webPushInsecure", "Web Push requires HTTPS or localhost."),
+        webPushNoServiceWorker: t("preferences.webPushNoServiceWorker", "This browser does not support Service Worker."),
+        webPushNoPushManager: t("preferences.webPushNoPushManager", "This browser does not support Push API."),
+        webPushStandaloneRequired: t("preferences.webPushStandaloneRequired", "Open the standalone chat page to use mobile/background push."),
+        webPushEnabledStatus: t("preferences.webPushEnabledStatus", "Enabled on this browser."),
+        webPushDisabledStatus: t("preferences.webPushDisabledStatus", "Disabled on this browser."),
+        notifyTypes: t("preferences.notifyTypes", "Notification types"),
+        notifyNormalChat: t("preferences.notifyNormalChat", "Normal chat"),
+        notifyDm: t("preferences.notifyDm", "DM"),
+        notifyGroupChat: t("preferences.notifyGroupChat", "Group chat"),
+        notifyMentions: t("preferences.notifyMentions", "Mentions"),
+        notifySystem: t("preferences.notifySystem", "System/server"),
+        notifyKeywords: t("preferences.notifyKeywords", "Keyword alerts"),
+        notifyKeywordsList: t("preferences.notifyKeywordsList", "Keyword alert words"),
+        notifyKeywordsHelp: t("preferences.notifyKeywordsHelp", "Comma or line separated. Stored in this browser; mobile/background push syncs them only with this device's push subscription."),
+        notifyKeywordsApply: t("preferences.notifyKeywordsApply", "Apply keywords"),
+        notifyKeywordsSaved: t("preferences.notifyKeywordsSaved", "Keyword alerts saved."),
+        notifyKeywordsNeedsApply: t("preferences.notifyKeywordsNeedsApply", "Keyword list changed. Tap Apply keywords to update push filtering."),
+        notifyDisabledByServer: t("preferences.notifyDisabledByServer", "Disabled by server configuration."),
+        keywordNotificationTitle: t("preferences.keywordNotificationTitle", "Keyword: {keyword}"),
+        notifyOwnMessages: t("preferences.notifyOwnMessages", "Own messages"),
+        notifyPreview: t("preferences.notifyPreview", "Message preview"),
+        presetName: t("preferences.presetName", "Preset name"),
+        presets: t("preferences.presets", "Saved chat settings"),
+        presetSave: t("preferences.presetSave", "Save"),
+        presetLoad: t("preferences.presetLoad", "Load"),
+        presetDelete: t("preferences.presetDelete", "Delete"),
+        presetNamePrompt: t("preferences.presetNamePrompt", "Preset name"),
+        presetEmpty: t("preferences.presetEmpty", "No saved settings."),
+        presetSaved: t("preferences.presetSaved", "Saved."),
+        presetLoaded: t("preferences.presetLoaded", "Loaded."),
+        presetDeleted: t("preferences.presetDeleted", "Deleted."),
+        presetSaveFailed: t("preferences.presetSaveFailed", "Save failed. Browser storage may be blocked."),
+        presetSelectRequired: t("preferences.presetSelectRequired", "Select saved settings first."),
+        presetConfirmDelete: t("preferences.presetConfirmDelete", "Delete saved settings {name}?"),
         language: t("preferences.language", "Language"),
         reset: t("button.reset", "Reset"),
         close: t("button.close", "Close"),
@@ -9217,6 +10240,13 @@
       textShadowCustom: effectiveUserTextShadowCustom(),
       backgroundColor: effectiveUserBackgroundColor(),
       inputBackgroundColor: effectiveUserInputBackgroundColor(),
+      notificationsEnabled: localStorage.getItem("bmwc.notifications.enabled") === "1",
+      webPushEnabledLocal: localStorage.getItem("bmwc.webPush.enabled") === "1",
+      webPushAvailable: canUseWebPush(),
+      webPushNotificationTitle: configuredNotificationTitle(),
+      notificationOptions: currentNotificationOptions(),
+      notificationOptionsAllowed: currentNotificationOptionsAllowed(),
+      notificationKeywords: notificationKeywordsText(),
       fontOptions,
       theme: savedUserTheme(),
       themeOptions: [
@@ -9235,6 +10265,193 @@
     return (items || []).map(item => `<option value="${esc(item.value)}"${String(item.value || "") === String(current || "") ? " selected" : ""}>${esc(item.label)}</option>`).join("");
   }
 
+
+  const CHAT_SETTING_PRESETS_KEY = "bmwc.chatSettingPresets";
+  const CHAT_SETTING_PRESET_STORAGE_KEYS = [
+    "bmwc.userTheme", "bmwc.userOpacity", "bmwc.userFontSize", "bmwc.userFontFamily",
+    "bmwc.userTextColor", "bmwc.userUiTextColor", "bmwc.userTextShadowMode", "bmwc.userTextShadowCustom",
+    "bmwc.userBackgroundColor", "bmwc.userInputBackgroundColor", "bmwc.language",
+    "bmwc.senderIdentityMode", "bmwc.timeDisplayMode", "bmwc.dmConversationFocus",
+    "bmwc.emojiPanelHeightPx", "bmwc.windowWidth", "bmwc.windowHeight",
+    "bmwc.resizeLocked", "bmwc.minimized", "bmwc.notifications.enabled", "bmwc.webPush.enabled",
+    "bmwc.notify.normalChat", "bmwc.notify.dm", "bmwc.notify.groupChat", "bmwc.notify.mentions",
+    "bmwc.notify.system", "bmwc.notify.keywords", "bmwc.notify.keywords.list", "bmwc.notify.ownMessages", "bmwc.notify.preview",
+    "bmwc.parentFramePosition", "bmwc.parentUserPrefsModalPos", "bmwc.localUserPrefsModalPos"
+  ];
+
+  function readLocalStorageValue(key) {
+    try { return localStorage.getItem(key); } catch (_) { return null; }
+  }
+
+  function writeLocalStorageValue(key, value) {
+    try {
+      if (value === null || value === undefined) localStorage.removeItem(key);
+      else localStorage.setItem(key, String(value));
+    } catch (_) {}
+  }
+
+  function collectChatSettingPresetStorage() {
+    const out = {};
+    CHAT_SETTING_PRESET_STORAGE_KEYS.forEach(key => { out[key] = readLocalStorageValue(key); });
+    return out;
+  }
+
+  function applyChatSettingPresetStorage(storage) {
+    if (!storage || typeof storage !== "object") return;
+    CHAT_SETTING_PRESET_STORAGE_KEYS.forEach(key => {
+      if (!Object.prototype.hasOwnProperty.call(storage, key)) return;
+      let value = storage[key];
+      if (key === NOTIFICATION_KEYWORDS_KEY && isPollutedNotificationKeywordText(value)) value = "";
+      writeLocalStorageValue(key, value);
+    });
+    if (Object.prototype.hasOwnProperty.call(storage, LEGACY_NOTIFICATION_KEYWORDS_KEY)
+        && !Object.prototype.hasOwnProperty.call(storage, NOTIFICATION_KEYWORDS_KEY)) {
+      const legacyKeywords = storage[LEGACY_NOTIFICATION_KEYWORDS_KEY];
+      writeLocalStorageValue(NOTIFICATION_KEYWORDS_KEY, isPollutedNotificationKeywordText(legacyKeywords) ? "" : legacyKeywords);
+    }
+    state.resizeLocked = localStorage.getItem("bmwc.resizeLocked") === "1";
+    if (Object.prototype.hasOwnProperty.call(storage, "bmwc.minimized")) {
+      state.minimized = localStorage.getItem("bmwc.minimized") === "1";
+    }
+    state.senderIdentityMode = localStorage.getItem("bmwc.senderIdentityMode") === "real" ? "real" : "display";
+    state.timeDisplayMode = localStorage.getItem("bmwc.timeDisplayMode") === "full" ? "full" : "short";
+    state.dmConversationFocus = localStorage.getItem("bmwc.dmConversationFocus") === "1";
+    const emojiHeight = Number(localStorage.getItem("bmwc.emojiPanelHeightPx") || state.emojiPanelHeightPx || 180);
+    if (Number.isFinite(emojiHeight)) state.emojiPanelHeightPx = Math.max(56, Math.min(420, emojiHeight));
+    applyWindowSizeConfig();
+    updateResizeLockButton();
+    updateFrameSize();
+    if (Object.prototype.hasOwnProperty.call(storage, "bmwc.webPush.enabled")) {
+      if (localStorage.getItem("bmwc.webPush.enabled") === "1") ensurePreferredWebPush().catch(() => {});
+      else disableWebPush().catch(() => {});
+    } else {
+      ensurePreferredWebPush().catch(() => {});
+    }
+  }
+
+  function loadChatSettingPresets() {
+    try {
+      const raw = localStorage.getItem(CHAT_SETTING_PRESETS_KEY) || "[]";
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter(item => item && typeof item === "object" && String(item.name || "").trim()) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveChatSettingPresets(list) {
+    try {
+      localStorage.setItem(CHAT_SETTING_PRESETS_KEY, JSON.stringify(Array.isArray(list) ? list.slice(0, 20) : []));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function currentChatSettingPresetData() {
+    const storage = collectChatSettingPresetStorage();
+    const opts = currentNotificationOptions();
+    Object.keys(opts).forEach(name => {
+      const def = notificationOptionDef(name);
+      if (def) storage[def.key] = opts[name] ? "1" : "0";
+    });
+    return {
+      version: 2,
+      theme: savedUserTheme(),
+      opacity: savedUserOpacity(),
+      fontSize: savedUserFontSize(),
+      fontFamily: savedUserFontFamily(),
+      textColor: savedUserTextColor(),
+      uiTextColor: savedUserUiTextColor(),
+      textShadowMode: savedUserTextShadowMode(),
+      textShadowCustom: savedUserTextShadowCustom(),
+      backgroundColor: savedUserBackgroundColor(),
+      inputBackgroundColor: savedUserInputBackgroundColor(),
+      language: savedUserLanguage(),
+      storage
+    };
+  }
+
+  function applyNullablePreference(value, setter, resetter) {
+    if (value === null || value === undefined || value === "") resetter();
+    else setter(value);
+  }
+
+  function applyChatSettingPresetData(data) {
+    data = data || {};
+    if (data.storage && typeof data.storage === "object") applyChatSettingPresetStorage(data.storage);
+    if (Object.prototype.hasOwnProperty.call(data, "theme")) {
+      const theme = String(data.theme || "");
+      if (theme) localStorage.setItem("bmwc.userTheme", normalizedTheme(theme));
+      else localStorage.removeItem("bmwc.userTheme");
+    }
+    applyNullablePreference(data.opacity, setUserOpacity, resetUserOpacity);
+    applyNullablePreference(data.fontSize, setUserFontSize, resetUserFontSize);
+    applyNullablePreference(data.fontFamily, setUserFontFamily, resetUserFontFamily);
+    applyNullablePreference(data.textColor, setUserTextColor, resetUserTextColor);
+    applyNullablePreference(data.uiTextColor, setUserUiTextColor, resetUserUiTextColor);
+    applyNullablePreference(data.textShadowMode, setUserTextShadowMode, resetUserTextShadowMode);
+    applyNullablePreference(data.textShadowCustom, setUserTextShadowCustom, resetUserTextShadowCustom);
+    applyNullablePreference(data.backgroundColor, setUserBackgroundColor, resetUserBackgroundColor);
+    applyNullablePreference(data.inputBackgroundColor, setUserInputBackgroundColor, resetUserInputBackgroundColor);
+    applyNullablePreference(data.language, setUserLanguage, resetUserLanguage);
+    applyFontSizeConfig();
+    applyThemeConfig();
+    refreshRenderedMessagesForLocale();
+    scheduleVirtualRender({preserveScroll: true, stickToBottom: false, allowDuringMedia: true, deferDuringScroll: false, deferDuringMediaLayout: false});
+  }
+
+  function cleanPresetSaveButtonLabel(value) {
+    const text = String(value || "Save")
+      .replace(/^\s*(?:현재|Current)\s+/i, "")
+      .replace(/\s+(?:현재|current)\s*$/i, "")
+      .trim();
+    return text || "Save";
+  }
+
+  function chatSettingPresetOptionsHtml(selected = "") {
+    const list = loadChatSettingPresets();
+    if (!list.length) return `<option value="">${esc(t("preferences.presetEmpty", "No saved settings."))}</option>`;
+    return list.map(item => {
+      const name = String(item.name || "").trim();
+      return `<option value="${esc(name)}" ${name === selected ? "selected" : ""}>${esc(name)}</option>`;
+    }).join("");
+  }
+
+  const USER_PREF_SECTION_STATE_KEY = "bmwc.userPrefsSectionsOpen";
+
+  function readUserPrefSectionsOpen() {
+    try {
+      const raw = localStorage.getItem(USER_PREF_SECTION_STATE_KEY) || "{}";
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function userPrefSectionOpen(name) {
+    const map = readUserPrefSectionsOpen();
+    return map[String(name || "")] === true;
+  }
+
+  function setUserPrefSectionOpen(name, open) {
+    const key = String(name || "");
+    if (!key) return;
+    const map = readUserPrefSectionsOpen();
+    map[key] = open === true;
+    try { localStorage.setItem(USER_PREF_SECTION_STATE_KEY, JSON.stringify(map)); } catch (_) {}
+  }
+
+  function bindUserPrefSectionPersistence(root) {
+    if (!root) return;
+    root.querySelectorAll("details[data-bmwc-pref-section]").forEach(details => {
+      const name = details.getAttribute("data-bmwc-pref-section") || "";
+      details.open = userPrefSectionOpen(name);
+      details.addEventListener("toggle", () => setUserPrefSectionOpen(name, details.open));
+    });
+  }
+
   function openLocalUserPreferencesModal(payload) {
     const old = document.getElementById("bmwc-user-prefs-modal");
     if (old) old.remove();
@@ -9243,73 +10460,121 @@
     const wrap = document.createElement("div");
     wrap.className = "bmwc-modal-backdrop bmwc-user-prefs-backdrop";
     wrap.id = "bmwc-user-prefs-modal";
+    applyDetachedModalTheme(wrap);
     wrap.innerHTML = `
       <div class="bmwc-modal bmwc-user-prefs-modal">
         <div class="bmwc-modal-head">
           <h3>${esc(labels.title || "Chat settings")}</h3>
-          <button class="bmwc-button" id="bmwc-prefs-close">${esc(labels.close || "Close")}</button>
+          <div class="bmwc-modal-head-actions">
+            <button class="bmwc-button" id="bmwc-prefs-reset">${esc(labels.reset || "Reset")}</button>
+            <button class="bmwc-button" id="bmwc-prefs-close">${esc(labels.close || "Close")}</button>
+          </div>
         </div>
 
-        <label class="bmwc-pref-label"><span>${esc(labels.theme || "Theme")}</span></label>
-        <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-theme">${optionListHtml(payload.themeOptions, payload.theme)}</select>
-        <p class="bmwc-pref-font-help">${esc(labels.themeResetNote || "Changing the theme resets visual chat settings to the theme defaults.")}</p>
+        <div class="bmwc-user-prefs-scroll">
+        <details class="bmwc-pref-section bmwc-pref-collapsible" data-bmwc-pref-section="languageTheme">
+          <summary>${esc(labels.languageAndTheme || "Language and theme")}</summary>
+          <label class="bmwc-pref-label"><span>${esc(labels.language || "Language")}</span></label>
+          <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-language">${optionListHtml(payload.languageOptions, payload.language)}</select>
+          <label class="bmwc-pref-label"><span>${esc(labels.theme || "Theme")}</span></label>
+          <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-theme">${optionListHtml(payload.themeOptions, payload.theme)}</select>
+          <p class="bmwc-pref-font-help">${esc(labels.themeResetNote || "Changing the theme resets visual chat settings to the theme defaults.")}</p>
+        </details>
 
-        <label class="bmwc-pref-label"><span>${esc(labels.opacity || "Opacity")}</span><strong id="bmwc-prefs-opacity-value">${Math.round(payload.opacityPercent || 100)}%</strong></label>
-        <input class="bmwc-pref-range" id="bmwc-prefs-opacity" type="range" min="10" max="100" step="1" value="${Math.round(payload.opacityPercent || 100)}">
-        <div class="bmwc-pref-hints"><span>10%</span><span>100%</span></div>
+        <details class="bmwc-pref-section bmwc-pref-collapsible" data-bmwc-pref-section="window">
+          <summary>${esc(labels.windowSettings || "Window settings")}</summary>
+          <label class="bmwc-pref-label"><span>${esc(labels.opacity || "Opacity")}</span><strong id="bmwc-prefs-opacity-value">${Math.round(payload.opacityPercent || 100)}%</strong></label>
+          <input class="bmwc-pref-range" id="bmwc-prefs-opacity" type="range" min="10" max="100" step="1" value="${Math.round(payload.opacityPercent || 100)}">
+          <div class="bmwc-pref-hints"><span>10%</span><span>100%</span></div>
+          <label class="bmwc-pref-label"><span>${esc(labels.backgroundColor || "Background color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-background-color" type="color" value="${esc(payload.backgroundColor || "#121216")}"></label>
+          <label class="bmwc-pref-label"><span>${esc(labels.inputBackgroundColor || "Input background color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-input-background-color" type="color" value="${esc(payload.inputBackgroundColor || "#000000")}"></label>
+        </details>
 
-        <label class="bmwc-pref-label"><span>${esc(labels.fontSize || "Font size")}</span><strong id="bmwc-prefs-font-size-value">${pxLabel(payload.fontSizePx || 13)}</strong></label>
-        <input class="bmwc-pref-range" id="bmwc-prefs-font-size" type="range" min="8" max="36" step="0.1" value="${formatDecimalNumber(payload.fontSizePx || 13, 2)}">
-        <div class="bmwc-pref-hints"><span>8px</span><span>36px</span></div>
+        <details class="bmwc-pref-section bmwc-pref-collapsible" data-bmwc-pref-section="font">
+          <summary>${esc(labels.fontSettings || "Font settings")}</summary>
+          <label class="bmwc-pref-label"><span>${esc(labels.fontFamily || "Font")}</span></label>
+          <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-font-family">${optionListHtml(payload.fontOptions, payload.fontFamily)}</select>
+          <label class="bmwc-pref-label"><span>${esc(labels.fontCustom || "Custom font")}</span></label>
+          <div class="bmwc-pref-inline-row">
+            <input class="bmwc-input" id="bmwc-prefs-font-family-custom" type="text" value="${esc(payload.fontFamily || "")}" placeholder="${esc(labels.fontCustomPlaceholder || "Installed font name or CSS font-family")}">
+            <button class="bmwc-button" id="bmwc-prefs-font-family-test" type="button">${esc(labels.fontTest || "Test")}</button>
+            <button class="bmwc-button" id="bmwc-prefs-font-family-apply" type="button">${esc(labels.fontApply || "Apply")}</button>
+          </div>
+          <p class="bmwc-pref-font-help">${preferencesFontHelpHtml(labels, esc)}</p>
+          <p class="bmwc-pref-font-status" id="bmwc-prefs-font-family-status" aria-live="polite"></p>
+          <label class="bmwc-pref-label"><span>${esc(labels.fontSize || "Font size")}</span><strong id="bmwc-prefs-font-size-value">${pxLabel(payload.fontSizePx || 13)}</strong></label>
+          <input class="bmwc-pref-range" id="bmwc-prefs-font-size" type="range" min="8" max="36" step="0.1" value="${formatDecimalNumber(payload.fontSizePx || 13, 2)}">
+          <div class="bmwc-pref-hints"><span>8px</span><span>36px</span></div>
+          <label class="bmwc-pref-label"><span>${esc(labels.textColor || "Message text color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-text-color" type="color" value="${esc(payload.textColor || "#ffffff")}"></label>
+          <label class="bmwc-pref-label"><span>${esc(labels.uiTextColor || "UI text color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-ui-text-color" type="color" value="${esc(payload.uiTextColor || "#ffffff")}"></label>
+          <label class="bmwc-pref-label"><span>${esc(labels.textShadow || "Text shadow")}</span></label>
+          <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-text-shadow-mode">
+            <option value="none" ${payload.textShadowMode === "none" ? "selected" : ""}>${esc(labels.textShadowNone || "None")}</option>
+            <option value="auto" ${payload.textShadowMode === "auto" ? "selected" : ""}>${esc(labels.textShadowAuto || "Auto")}</option>
+            <option value="dark" ${payload.textShadowMode === "dark" ? "selected" : ""}>${esc(labels.textShadowDark || "Dark shadow")}</option>
+            <option value="light" ${payload.textShadowMode === "light" ? "selected" : ""}>${esc(labels.textShadowLight || "Light shadow")}</option>
+            <option value="custom" ${payload.textShadowMode === "custom" ? "selected" : ""}>${esc(labels.textShadowCustom || "Custom")}</option>
+          </select>
+          <div class="bmwc-shadow-custom-panel" id="bmwc-prefs-text-shadow-custom-panel">
+            <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomColor || "Shadow color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-text-shadow-color" type="color"></label>
+            <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomX || "X offset")}</span><strong id="bmwc-prefs-text-shadow-x-value">0px</strong></label>
+            <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-x" type="range" min="-12" max="12" step="0.1">
+            <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomY || "Y offset")}</span><strong id="bmwc-prefs-text-shadow-y-value">1px</strong></label>
+            <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-y" type="range" min="-12" max="12" step="0.1">
+            <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomBlur || "Blur")}</span><strong id="bmwc-prefs-text-shadow-blur-value">2px</strong></label>
+            <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-blur" type="range" min="0" max="24" step="0.1">
+            <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomOpacity || "Opacity")}</span><strong id="bmwc-prefs-text-shadow-opacity-value">85%</strong></label>
+            <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-opacity" type="range" min="0" max="100" step="1">
+            <div class="bmwc-shadow-preview" id="bmwc-prefs-text-shadow-preview">${esc(labels.textShadowCustomPreview || "Shadow preview")}</div>
+          </div>
+        </details>
 
-        <label class="bmwc-pref-label"><span>${esc(labels.fontFamily || "Font")}</span></label>
-        <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-font-family">${optionListHtml(payload.fontOptions, payload.fontFamily)}</select>
-        <label class="bmwc-pref-label"><span>${esc(labels.fontCustom || "Custom font")}</span></label>
-        <div class="bmwc-pref-inline-row">
-          <input class="bmwc-input" id="bmwc-prefs-font-family-custom" type="text" value="${esc(payload.fontFamily || "")}" placeholder="${esc(labels.fontCustomPlaceholder || "Installed font name or CSS font-family")}">
-          <button class="bmwc-button" id="bmwc-prefs-font-family-test" type="button">${esc(labels.fontTest || "Test")}</button>
-          <button class="bmwc-button" id="bmwc-prefs-font-family-apply" type="button">${esc(labels.fontApply || "Apply")}</button>
+        <details class="bmwc-pref-section bmwc-pref-collapsible" data-bmwc-pref-section="notifications">
+          <summary>${esc(labels.notifications || "Notifications")}</summary>
+          <p class="bmwc-pref-font-help">${esc(labels.notificationsPageHelp || "Shows OS notifications while this page is open.")}</p>
+          <div class="bmwc-pref-button-row">
+            <button class="bmwc-button" id="bmwc-prefs-notifications-toggle" type="button">${esc(localStorage.getItem("bmwc.notifications.enabled") === "1" ? (labels.notificationsDisable || "Disable notifications") : (labels.notificationsEnable || "Enable notifications"))}</button>
+            <button class="bmwc-button" id="bmwc-prefs-notifications-test" type="button">${esc(labels.notificationsTest || "Test notification")}</button>
+          </div>
+          <p class="bmwc-pref-font-help" id="bmwc-prefs-notifications-status" aria-live="polite">${esc(notificationStatusText(labels))}</p>
+          <p class="bmwc-pref-font-help">${esc(labels.webPushHelp || "Requires HTTPS, service worker support, browser permission, and a supported browser.")}</p>
+          <p class="bmwc-pref-font-help">${esc(labels.webPushHowToTest || "To test mobile push: open the standalone HTTPS page on the mobile browser, log in, enable mobile push, allow notifications, tap Test mobile push, then lock the screen or leave the browser and send a DM/group message from another account.")}</p>
+          <div class="bmwc-pref-button-row">
+            <button class="bmwc-button" id="bmwc-prefs-web-push-toggle" type="button">${esc(localStorage.getItem("bmwc.webPush.enabled") === "1" ? (labels.webPushDisable || "Disable mobile push") : (labels.webPushEnable || "Enable mobile push"))}</button>
+            <button class="bmwc-button" id="bmwc-prefs-web-push-test" type="button">${esc(labels.webPushTest || "Test mobile push")}</button>
+          </div>
+          <p class="bmwc-pref-font-help" id="bmwc-prefs-web-push-status" aria-live="polite">${esc(webPushStatusText(labels))}</p>
+          <label class="bmwc-pref-label"><span>${esc(labels.notifyTypes || "Notification types")}</span></label>
+          ${notificationOptionsHtml("bmwc-prefs-notify", labels)}
+          <label class="bmwc-pref-label"><span>${esc(labels.notifyKeywordsList || "Keyword alert words")}</span></label>
+          <textarea class="bmwc-input bmwc-pref-textarea" id="bmwc-prefs-notify-keywords-list" rows="3" placeholder="keyword1, keyword2">${esc(notificationKeywordsText())}</textarea>
+          <div class="bmwc-pref-button-row bmwc-pref-keyword-actions">
+            <button class="bmwc-button" id="bmwc-prefs-notify-keywords-apply" type="button">${esc(labels.notifyKeywordsApply || "Apply keywords")}</button>
+            <span class="bmwc-pref-inline-status" id="bmwc-prefs-notify-keywords-status" aria-live="polite"></span>
+          </div>
+          <p class="bmwc-pref-font-help">${esc(labels.notifyKeywordsHelp || "Comma or line separated. Stored in this browser; mobile/background push syncs them only with this device's push subscription.")}</p>
+        </details>
+
+        <div class="bmwc-pref-section bmwc-pref-static">
+          <div class="bmwc-pref-section-title">${esc(labels.presets || "Saved chat settings")}</div>
+          <div class="bmwc-preset-row bmwc-preset-row-stacked">
+            <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-preset-select">${chatSettingPresetOptionsHtml("")}</select>
+            <div class="bmwc-preset-actions">
+              <button class="bmwc-button" id="bmwc-prefs-preset-save" type="button">${esc(cleanPresetSaveButtonLabel(labels.presetSave || "Save"))}</button>
+              <button class="bmwc-button" id="bmwc-prefs-preset-load" type="button">${esc(labels.presetLoad || "Load")}</button>
+              <button class="bmwc-button" id="bmwc-prefs-preset-delete" type="button">${esc(labels.presetDelete || "Delete")}</button>
+            </div>
+          </div>
+          <p class="bmwc-pref-font-help" id="bmwc-prefs-preset-status" aria-live="polite"></p>
         </div>
-        <p class="bmwc-pref-font-help">${preferencesFontHelpHtml(labels, esc)}</p>
-        <p class="bmwc-pref-font-status" id="bmwc-prefs-font-family-status" aria-live="polite"></p>
 
-        <label class="bmwc-pref-label"><span>${esc(labels.textColor || "Message text color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-text-color" type="color" value="${esc(payload.textColor || "#ffffff")}"></label>
-        <label class="bmwc-pref-label"><span>${esc(labels.uiTextColor || "UI text color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-ui-text-color" type="color" value="${esc(payload.uiTextColor || "#ffffff")}"></label>
-        <label class="bmwc-pref-label"><span>${esc(labels.backgroundColor || "Background color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-background-color" type="color" value="${esc(payload.backgroundColor || "#121216")}"></label>
-        <label class="bmwc-pref-label"><span>${esc(labels.inputBackgroundColor || "Input background color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-input-background-color" type="color" value="${esc(payload.inputBackgroundColor || "#000000")}"></label>
-
-        <label class="bmwc-pref-label"><span>${esc(labels.textShadow || "Text shadow")}</span></label>
-        <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-text-shadow-mode">
-          <option value="none" ${payload.textShadowMode === "none" ? "selected" : ""}>${esc(labels.textShadowNone || "None")}</option>
-          <option value="auto" ${payload.textShadowMode === "auto" ? "selected" : ""}>${esc(labels.textShadowAuto || "Auto")}</option>
-          <option value="dark" ${payload.textShadowMode === "dark" ? "selected" : ""}>${esc(labels.textShadowDark || "Dark shadow")}</option>
-          <option value="light" ${payload.textShadowMode === "light" ? "selected" : ""}>${esc(labels.textShadowLight || "Light shadow")}</option>
-          <option value="custom" ${payload.textShadowMode === "custom" ? "selected" : ""}>${esc(labels.textShadowCustom || "Custom")}</option>
-        </select>
-        <div class="bmwc-shadow-custom-panel" id="bmwc-prefs-text-shadow-custom-panel">
-          <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomColor || "Shadow color")}</span><input class="bmwc-pref-color-input" id="bmwc-prefs-text-shadow-color" type="color"></label>
-          <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomX || "X offset")}</span><strong id="bmwc-prefs-text-shadow-x-value">0px</strong></label>
-          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-x" type="range" min="-12" max="12" step="0.1">
-          <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomY || "Y offset")}</span><strong id="bmwc-prefs-text-shadow-y-value">1px</strong></label>
-          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-y" type="range" min="-12" max="12" step="0.1">
-          <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomBlur || "Blur")}</span><strong id="bmwc-prefs-text-shadow-blur-value">2px</strong></label>
-          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-blur" type="range" min="0" max="24" step="0.1">
-          <label class="bmwc-pref-label"><span>${esc(labels.textShadowCustomOpacity || "Opacity")}</span><strong id="bmwc-prefs-text-shadow-opacity-value">85%</strong></label>
-          <input class="bmwc-pref-range" id="bmwc-prefs-text-shadow-opacity" type="range" min="0" max="100" step="1">
-          <div class="bmwc-shadow-preview" id="bmwc-prefs-text-shadow-preview">${esc(labels.textShadowCustomPreview || "Shadow preview")}</div>
-        </div>
-
-        <label class="bmwc-pref-label"><span>${esc(labels.language || "Language")}</span></label>
-        <select class="bmwc-input bmwc-pref-select" id="bmwc-prefs-language">${optionListHtml(payload.languageOptions, payload.language)}</select>
-
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-          <button class="bmwc-button" id="bmwc-prefs-reset">${esc(labels.reset || "Reset")}</button>
-        </div>
         <p class="bmwc-opacity-note">${preferencesNoteHtml(labels, includeDragNote, esc)}</p>
+        </div>
       </div>
     `;
     document.body.appendChild(wrap);
     makeModalDraggable(wrap, "bmwc.localUserPrefsModalPos");
+    bindUserPrefSectionPersistence(wrap);
 
     const themeSelect = wrap.querySelector("#bmwc-prefs-theme");
     const opacityInput = wrap.querySelector("#bmwc-prefs-opacity");
@@ -9337,7 +10602,23 @@
     const textShadowPreview = wrap.querySelector("#bmwc-prefs-text-shadow-preview");
     const backgroundColorInput = wrap.querySelector("#bmwc-prefs-background-color");
     const inputBackgroundColorInput = wrap.querySelector("#bmwc-prefs-input-background-color");
+    const notifyKeywordsInput = wrap.querySelector("#bmwc-prefs-notify-keywords-list");
+    const notifyKeywordsApply = wrap.querySelector("#bmwc-prefs-notify-keywords-apply");
+    const notifyKeywordsStatus = wrap.querySelector("#bmwc-prefs-notify-keywords-status");
     const languageSelect = wrap.querySelector("#bmwc-prefs-language");
+    const notificationsToggle = wrap.querySelector("#bmwc-prefs-notifications-toggle");
+    const notificationsTest = wrap.querySelector("#bmwc-prefs-notifications-test");
+    const notificationsStatus = wrap.querySelector("#bmwc-prefs-notifications-status");
+    const webPushToggle = wrap.querySelector("#bmwc-prefs-web-push-toggle");
+    const webPushTest = wrap.querySelector("#bmwc-prefs-web-push-test");
+    const webPushStatus = wrap.querySelector("#bmwc-prefs-web-push-status");
+    const presetSelect = wrap.querySelector("#bmwc-prefs-preset-select");
+    const presetNameInput = null;
+    const presetSave = wrap.querySelector("#bmwc-prefs-preset-save");
+    const presetLoad = wrap.querySelector("#bmwc-prefs-preset-load");
+    const presetDelete = wrap.querySelector("#bmwc-prefs-preset-delete");
+    const presetStatus = wrap.querySelector("#bmwc-prefs-preset-status");
+    const setPresetStatus = message => { if (presetStatus) presetStatus.textContent = message || ""; };
 
     const close = () => { wrap.remove(); state.prefsModalOpen = false; };
     wrap.querySelector("#bmwc-prefs-close").onclick = close;
@@ -9441,6 +10722,139 @@
     inputBackgroundColorInput.addEventListener("input", () => setUserInputBackgroundColor(inputBackgroundColorInput.value));
     languageSelect.addEventListener("change", () => setUserLanguage(languageSelect.value));
 
+    const updateNotificationStatuses = () => {
+      if (notificationsStatus) notificationsStatus.textContent = notificationStatusText(labels);
+      if (webPushStatus) webPushStatus.textContent = webPushStatusText(labels);
+      if (notificationsToggle) notificationsToggle.textContent = localStorage.getItem("bmwc.notifications.enabled") === "1" ? (labels.notificationsDisable || "Disable notifications") : (labels.notificationsEnable || "Enable notifications");
+      if (webPushToggle) {
+        webPushToggle.textContent = localStorage.getItem("bmwc.webPush.enabled") === "1" ? (labels.webPushDisable || "Disable mobile push") : (labels.webPushEnable || "Enable mobile push");
+        webPushToggle.disabled = !canUseWebPush() && localStorage.getItem("bmwc.webPush.enabled") !== "1";
+      }
+    };
+    updateNotificationStatuses();
+    bindNotificationOptionInputs(wrap, () => {
+      if (localStorage.getItem("bmwc.webPush.enabled") === "1") enableWebPush().catch(() => {});
+      updateNotificationStatuses();
+    });
+    const updateNotifyKeywordOptionInputs = () => {
+      wrap.querySelectorAll("[data-bmwc-notify-option]").forEach(input => {
+        const name = input.dataset.bmwcNotifyOption;
+        input.disabled = !notificationServerAllows(name);
+        input.checked = notificationOption(name);
+      });
+    };
+    const applyNotifyKeywords = async () => {
+      if (!notifyKeywordsInput) return;
+      const keywordText = notifyKeywordsInput.value || "";
+      setNotificationKeywordsText(keywordText);
+      const keywordAllowed = notificationServerAllows("keywords");
+      if (keywordText.trim() && keywordAllowed) setNotificationOption("keywords", true);
+      updateNotifyKeywordOptionInputs();
+      if (localStorage.getItem("bmwc.webPush.enabled") === "1") await enableWebPush();
+      updateNotificationStatuses();
+      if (notifyKeywordsStatus) notifyKeywordsStatus.textContent = keywordText.trim() && !keywordAllowed
+        ? (labels.notifyDisabledByServer || "Disabled by server configuration.")
+        : (labels.notifyKeywordsSaved || "Keyword alerts saved.");
+    };
+    if (notifyKeywordsInput) {
+      notifyKeywordsInput.addEventListener("input", () => {
+        setNotificationKeywordsText(notifyKeywordsInput.value || "");
+        if (notifyKeywordsStatus) notifyKeywordsStatus.textContent = labels.notifyKeywordsNeedsApply || "Keyword list changed. Tap Apply keywords to update push filtering.";
+      });
+      notifyKeywordsInput.addEventListener("change", () => setNotificationKeywordsText(notifyKeywordsInput.value || ""));
+      notifyKeywordsInput.addEventListener("blur", () => setNotificationKeywordsText(notifyKeywordsInput.value || ""));
+    }
+    if (notifyKeywordsApply) notifyKeywordsApply.addEventListener("click", () => applyNotifyKeywords().catch(() => {
+      if (notifyKeywordsStatus) notifyKeywordsStatus.textContent = labels.presetSaveFailed || "Save failed. Browser storage may be blocked.";
+    }));
+    if (notificationsToggle) notificationsToggle.addEventListener("click", async () => {
+      if (localStorage.getItem("bmwc.notifications.enabled") === "1") {
+        localStorage.setItem("bmwc.notifications.enabled", "0");
+      } else {
+        const ok = await requestBrowserNotifications();
+        if (ok) localStorage.setItem("bmwc.notifications.enabled", "1");
+      }
+      updateNotificationStatuses();
+    });
+    if (notificationsTest) notificationsTest.addEventListener("click", async () => {
+      const ok = await requestBrowserNotifications();
+      if (ok) localStorage.setItem("bmwc.notifications.enabled", "1");
+      showBrowserNotification(configuredNotificationTitle(), labels.notificationsTest || "Test notification", {tag: "bmwc-test", force: true});
+      updateNotificationStatuses();
+    });
+    if (webPushToggle) webPushToggle.addEventListener("click", async () => {
+      if (localStorage.getItem("bmwc.webPush.enabled") === "1") await disableWebPush();
+      else await enableWebPush();
+      updateNotificationStatuses();
+    });
+    if (webPushTest) webPushTest.addEventListener("click", async () => {
+      await testWebPush();
+      updateNotificationStatuses();
+    });
+
+    const refreshPresetSelect = selected => {
+      if (!presetSelect) return;
+      presetSelect.innerHTML = chatSettingPresetOptionsHtml(selected || "");
+    };
+    if (presetSave) presetSave.addEventListener("click", () => {
+      const suggested = String((presetSelect && presetSelect.value) || "").trim();
+      const name = String(window.prompt(labels.presetNamePrompt || labels.presetName || "Preset name", suggested) || "").trim();
+      if (!name) return;
+      if (themeSelect) {
+        const theme = String(themeSelect.value || "");
+        if (theme) localStorage.setItem("bmwc.userTheme", normalizedTheme(theme));
+        else localStorage.removeItem("bmwc.userTheme");
+      }
+      if (opacityInput) setUserOpacity((Number(opacityInput.value) || payload.defaultOpacityPercent || 100) / 100, true);
+      if (sizeInput) setUserFontSize(Number(sizeInput.value) || payload.defaultFontSizePx || 13, true);
+      if (familyCustomInput) setUserFontFamily(familyCustomInput.value);
+      if (textColorInput) setUserTextColor(textColorInput.value);
+      if (uiTextColorInput) setUserUiTextColor(uiTextColorInput.value);
+      if (textShadowModeInput) setUserTextShadowMode(textShadowModeInput.value);
+      if (textShadowModeInput && textShadowModeInput.value === "custom") setUserTextShadowCustom(buildTextShadowFromParts(readShadowParts()));
+      if (backgroundColorInput) setUserBackgroundColor(backgroundColorInput.value);
+      if (inputBackgroundColorInput) setUserInputBackgroundColor(inputBackgroundColorInput.value);
+      if (languageSelect) setUserLanguage(languageSelect.value);
+      const list = loadChatSettingPresets();
+      const data = currentChatSettingPresetData();
+      const existing = list.findIndex(item => String(item.name || "") === name);
+      const item = {name, savedAt: Date.now(), data};
+      if (existing >= 0) list[existing] = item;
+      else list.unshift(item);
+      if (!saveChatSettingPresets(list)) {
+        setPresetStatus(labels.presetSaveFailed || "Save failed. Browser storage may be blocked.");
+        return;
+      }
+      refreshPresetSelect(name);
+      setPresetStatus((labels.presetSaved || "Saved.") + " " + name);
+    });
+    if (presetLoad) presetLoad.addEventListener("click", () => {
+      const name = String(presetSelect && presetSelect.value || "").trim();
+      if (!name) return alert(labels.presetSelectRequired || "Select saved settings first.");
+      const item = loadChatSettingPresets().find(p => String(p.name || "") === name);
+      if (!item) return alert(labels.presetSelectRequired || "Select saved settings first.");
+      applyChatSettingPresetData(item.data || {});
+      wrap.remove();
+      state.prefsModalOpen = false;
+      openUserPreferencesModal(true);
+      setTimeout(() => {
+        const status = document.querySelector("#bmwc-prefs-preset-status");
+        if (status) status.textContent = (labels.presetLoaded || "Loaded.") + " " + name;
+      }, 0);
+    });
+    if (presetDelete) presetDelete.addEventListener("click", () => {
+      const name = String(presetSelect && presetSelect.value || "").trim();
+      if (!name) return alert(labels.presetSelectRequired || "Select saved settings first.");
+      const message = (labels.presetConfirmDelete || "Delete saved settings {name}?").replace("{name}", name);
+      if (!confirmPlain(message)) return;
+      if (!saveChatSettingPresets(loadChatSettingPresets().filter(p => String(p.name || "") !== name))) {
+        setPresetStatus(labels.presetSaveFailed || "Save failed. Browser storage may be blocked.");
+        return;
+      }
+      refreshPresetSelect("");
+      setPresetStatus((labels.presetDeleted || "Deleted.") + " " + name);
+    });
+
     wrap.querySelector("#bmwc-prefs-reset").onclick = () => {
       resetUserOpacity();
       resetUserFontSize();
@@ -9507,8 +10921,9 @@
     const cs = getComputedStyle(root);
     const vars = [
       "--bmwc-font-size", "--bmwc-message-font-size", "--bmwc-input-font-size", "--bmwc-button-font-size", "--bmwc-badge-font-size",
+      "--bmwc-chat-font-family", "--bmwc-chat-message-font-size", "--bmwc-chat-text-color", "--bmwc-chat-ui-text-color", "--bmwc-chat-background-color", "--bmwc-chat-text-shadow",
       "--bmwc-text-color", "--bmwc-ui-color", "--bmwc-ui-text-color", "--bmwc-muted-color", "--bmwc-border-color", "--bmwc-button-text",
-      "--bmwc-button-bg", "--bmwc-button-hover-bg", "--bmwc-input-bg", "--bmwc-link-color",
+      "--bmwc-button-bg", "--bmwc-button-hover-bg", "--bmwc-input-bg", "--bmwc-compose-input-bg", "--bmwc-link-color",
       "--bmwc-modal-bg-rgb", "--bmwc-panel-bg-rgb", "--bmwc-panel-opacity", "--bmwc-shadow-color",
       "--bmwc-surface-bg", "--bmwc-surface-hover-bg", "--bmwc-text-shadow", "--bmwc-ui-text-shadow",
       "--bmwc-emoji-render-size", "--bmwc-emoji-picker-size", "--bmwc-emoji-panel-height", "--bmwc-emoji-panel-min-height"
@@ -9714,7 +11129,8 @@
     }
 
     const wrap = document.createElement("div");
-    wrap.className = "bmwc-modal-backdrop";
+    wrap.className = "bmwc-modal-backdrop bmwc-user-prefs-backdrop";
+    applyDetachedModalTheme(wrap);
     wrap.innerHTML = `
       <div class="bmwc-modal">
         <h3>${t("login.title", "BlueMap Chat Login")}</h3>
@@ -9854,14 +11270,96 @@
 
   function directMessageRetentionNoticeText() {
     const days = Math.max(0, Math.floor(Number(state.directMessageRetentionDays) || 0));
-    if (days <= 0) return t("dm.retentionUnlimited", "DM retention: no time limit");
-    return fmt("dm.retentionLimited", "DM retention: {days} days", {days: String(days)});
+    const text = days <= 0
+      ? t("dm.retentionUnlimited", "DM retention: no time limit")
+      : fmt("dm.retentionLimited", "DM retention: {days} days", {days: String(days)});
+    return stripWrappingParentheses(text);
+  }
+
+
+  function retentionRemainingText(baseAt, days, scopeKey, expiresAtValue) {
+    const d = Math.max(0, Math.floor(Number(days) || 0));
+    if (d <= 0) return t("admin.retentionUnlimited", "auto-delete: no time limit");
+    let expiresAt = Number(expiresAtValue || 0);
+    if (!Number.isFinite(expiresAt) || expiresAt <= 0) {
+      const base = Number(baseAt || 0);
+      if (!Number.isFinite(base) || base <= 0) return t("admin.retentionUnknown", "auto-delete: unknown");
+      // Retention data is stored in milliseconds. Guard against clearly bogus
+      // future metadata so a reload cannot show thousands of days remaining.
+      const now = Date.now();
+      if (base > now + d * 24 * 60 * 60 * 1000 + 24 * 60 * 60 * 1000) return t("admin.retentionUnknown", "auto-delete: unknown");
+      expiresAt = base + d * 24 * 60 * 60 * 1000;
+    }
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) return t("admin.retentionExpired", "auto-delete: soon");
+    const minutes = Math.ceil(remaining / 60000);
+    const hours = Math.ceil(remaining / 3600000);
+    const daysLeft = Math.ceil(remaining / 86400000);
+    let value;
+    if (minutes < 60) value = fmt("admin.retentionMinutes", "{value} min left", {value: String(minutes)});
+    else if (hours < 48) value = fmt("admin.retentionHours", "{value} h left", {value: String(hours)});
+    else value = fmt("admin.retentionDays", "{value} d left", {value: String(daysLeft)});
+    return fmt("admin.retentionRemaining", "auto-delete: {time}", {time: value});
+  }
+
+  function directMessageAdminIdentityHtml(item) {
+    const a = {displayName: item.userADisplayName || item.userALabel || "", username: item.userAUsername || "", uuid: item.userAUuid || ""};
+    const b = {displayName: item.userBDisplayName || item.userBLabel || "", username: item.userBUsername || "", uuid: item.userBUuid || ""};
+    return `<span class="bmwc-admin-meta-identities">${directMessageIdentityHtml(a, "bmwc-admin-meta-user")} <span class="bmwc-admin-meta-separator">↔</span> ${directMessageIdentityHtml(b, "bmwc-admin-meta-user")}</span>`;
+  }
+
+  async function deleteAdminDmThread(threadId) {
+    threadId = String(threadId || "").trim();
+    if (!threadId || !state.token || !state.privateChatSuperAdmin) return;
+    if (!confirmPlain(t("admin.confirmDeleteDmThread", "Delete this DM session and all of its metadata/messages/uploads? This cannot be undone."))) return;
+    try {
+      await api("/admin/delete-dm-thread", {method: "POST", body: JSON.stringify({token: state.token, threadId})});
+      if (state.dmActiveThreadId === threadId) returnDirectMessageToList();
+      await loadDirectMessageThreads(true);
+      renderDirectMessageThreads();
+    } catch (e) {
+      alertResponse("alert.deleteFailed", "Delete failed: {error}", e.response || {error: e.message || "error"});
+    }
+  }
+
+
+  function cleanupPreviewHtml(preview, scope) {
+    if (!preview || typeof preview !== "object") return "";
+    const days = Number(preview.retentionDays || 0);
+    const expired = Number(preview.expiredMessages || 0);
+    const empty = Number(preview.emptySessions || 0);
+    const locked = Number(preview.lockedSessions || 0);
+    const exempt = Number(preview.retentionExemptSessions || 0);
+    const title = scope === "group" ? t("admin.groupCleanupPreview", "Group cleanup preview") : t("admin.dmCleanupPreview", "DM cleanup preview");
+    const retention = days > 0 ? fmt("admin.cleanupRetentionDays", "retention {days} days", {days: String(days)}) : t("admin.cleanupNoRetention", "no time limit");
+    const body = fmt("admin.cleanupPreviewBody", "{expired} old messages, {empty} empty sessions, {locked} locked, {exempt} excluded", {
+      expired: String(expired), empty: String(empty), locked: String(locked), exempt: String(exempt)
+    });
+    return `<div class="bmwc-admin-cleanup-preview"><strong>${esc(title)}</strong><span>${esc(retention)} · ${esc(body)}</span></div>`;
+  }
+
+  async function setAdminSessionFlag(type, id, patch) {
+    id = String(id || "").trim();
+    if (!id || !state.token || !state.privateChatSuperAdmin) return;
+    try {
+      const body = Object.assign({token: state.token, type, id}, patch || {});
+      await api("/admin/session-flags", {method: "POST", body: JSON.stringify(body)});
+      if (type === "dm") {
+        await loadDirectMessageThreads(true);
+        renderDirectMessageThreads();
+      } else {
+        await loadGroupChatRooms(true);
+        renderGroupChatRooms();
+      }
+    } catch (e) {
+      alertResponse("alert.adminActionFailed", "Admin action failed: {error}", e.response || {error: e.message || "error"});
+    }
   }
 
   function updateDirectMessageButton() {
     const btn = document.getElementById("bmwc-dm");
     const badge = document.getElementById("bmwc-dm-badge");
-    if (btn) btn.classList.toggle("bmwc-hidden", !(state.token && state.directMessageEnabled));
+    if (btn) btn.classList.toggle("bmwc-hidden", !(state.token && state.directMessageEnabled) || state.minimized);
     if (!badge) return;
     const unread = Math.max(0, Number(state.dmUnread || 0));
     badge.textContent = unread > 99 ? "99+" : String(unread);
@@ -9872,7 +11370,17 @@
     if (!state.directMessageEnabled || !state.token) {
       state.dmUnread = 0;
       state.dmThreads = [];
+      state.groupUnread = 0;
+      state.groupRooms = [];
+      state.groupInvites = [];
+      state.groupHiddenRooms = [];
+      state.groupAdminRooms = [];
+      state.dmAdminThreads = [];
+      state.dmCleanupPreview = null;
+      state.groupCleanupPreview = null;
+      state.privateChatSuperAdmin = false;
       updateDirectMessageButton();
+      updateGroupChatButton();
       return null;
     }
     try {
@@ -9880,9 +11388,14 @@
       if (!res || res.enabled === false) {
         state.dmUnread = 0;
         state.dmThreads = [];
+        state.dmAdminThreads = [];
+        state.dmCleanupPreview = null;
       } else {
         state.dmUnread = Number(res.unread || 0);
         state.dmThreads = Array.isArray(res.threads) ? res.threads : [];
+        state.privateChatSuperAdmin = res.privateChatSuperAdmin === true || state.privateChatSuperAdmin === true;
+        state.dmAdminThreads = Array.isArray(res.adminThreads) ? res.adminThreads : [];
+        state.dmCleanupPreview = res.cleanupPreview || null;
       }
       updateDirectMessageButton();
       if (state.dmModalOpen) renderDirectMessageThreads();
@@ -10076,12 +11589,13 @@
     const list = document.getElementById("bmwc-dm-thread-list");
     if (!list) return;
     const threads = Array.isArray(state.dmThreads) ? state.dmThreads : [];
-    if (!threads.length) {
+    const adminThreads = Array.isArray(state.dmAdminThreads) ? state.dmAdminThreads : [];
+    if (!threads.length && !adminThreads.length) {
       list.innerHTML = `<div class="bmwc-dm-empty">${esc(t("dm.noThreads", "No message threads."))}</div>`;
       updateDirectMessageViewMode();
       return;
     }
-    list.innerHTML = threads.map(thread => {
+    const userHtml = threads.map(thread => {
       const active = thread.id === state.dmActiveThreadId ? " bmwc-active" : "";
       const unread = Number(thread.unread || 0);
       const badge = unread > 0 ? `<span class="bmwc-dm-thread-badge">${esc(unread > 99 ? "99+" : String(unread))}</span>` : "";
@@ -10090,6 +11604,19 @@
         <span class="bmwc-dm-thread-preview" title="${esc(plainLegacyText(thread.lastMessage || ""))}">${directMessageBodyHtml(thread.lastMessage || "")}</span>
       </button>`;
     }).join("");
+    const adminHtml = adminThreads.length ? `<div class="bmwc-admin-meta-title">🛡 ${esc(t("admin.privateMetaOnly", "Admin metadata only"))}</div>` + adminThreads.map(item => {
+      const retention = retentionRemainingText(item.retentionBaseAt || item.latestMessageAt || item.updatedAt, item.retentionDays ?? state.directMessageRetentionDays, "dm", item.retentionExpiresAt);
+      const flags = `${item.locked ? esc(t("admin.locked", "locked")) + " · " : ""}${item.retentionExempt ? esc(t("admin.retentionExempt", "auto-delete excluded")) + " · " : ""}`;
+      const meta = `${esc(retention)} · ${flags}${esc(t("admin.messages", "messages"))}: ${esc(item.messageCount || 0)} · ${esc(t("admin.storage", "storage"))}: ${esc(formatBytes(item.storageBytes || 0))}`;
+      const lockLabel = item.locked ? t("admin.unlock", "Unlock") : t("admin.lock", "Lock");
+      const exemptLabel = item.retentionExempt ? t("admin.includeRetention", "Include") : t("admin.excludeRetention", "Exclude");
+      const lockTitle = item.locked ? t("admin.unlockDmThreadHint", "Unlock this DM session so messages can be sent again.") : t("admin.lockDmThreadHint", "Lock this DM session to prevent new messages.");
+      const exemptTitle = item.retentionExempt ? t("admin.includeDmRetentionHint", "Include this DM session in automatic cleanup again.") : t("admin.excludeDmRetentionHint", "Exclude this DM session from automatic cleanup.");
+      const deleteTitle = t("admin.deleteDmThreadHint", "Delete this DM session, including metadata, messages, and uploads.");
+      return `<div class="bmwc-dm-thread bmwc-admin-meta-row"><span class="bmwc-dm-thread-name" title="${esc(t("admin.noContentAccess", "Message contents are not accessible from this view."))}">🛡 ${directMessageAdminIdentityHtml(item)}</span><span class="bmwc-admin-meta-actions"><button type="button" class="bmwc-button" data-dm-admin-lock-thread="${esc(item.id || "")}" data-next-locked="${item.locked ? "false" : "true"}" title="${esc(lockTitle)}" aria-label="${esc(lockTitle)}">${esc(lockLabel)}</button><button type="button" class="bmwc-button" data-dm-admin-retention-thread="${esc(item.id || "")}" data-next-exempt="${item.retentionExempt ? "false" : "true"}" title="${esc(exemptTitle)}" aria-label="${esc(exemptTitle)}">${esc(exemptLabel)}</button><button type="button" class="bmwc-button bmwc-admin-meta-danger" data-dm-admin-delete-thread="${esc(item.id || "")}" title="${esc(deleteTitle)}" aria-label="${esc(deleteTitle)}">${esc(t("admin.deleteThread", "Delete"))}</button></span><span class="bmwc-dm-thread-preview" title="${esc(meta.replace(/<[^>]*>/g, ""))}">${meta}</span></div>`;
+    }).join("") : "";
+    const previewHtml = state.privateChatSuperAdmin ? cleanupPreviewHtml(state.dmCleanupPreview, "dm") : "";
+    list.innerHTML = userHtml + previewHtml + adminHtml;
     list.querySelectorAll("[data-dm-thread]").forEach(btn => {
       btn.addEventListener("click", event => {
         if (event && event.target && event.target.closest && event.target.closest(senderIdentitySelector())) return;
@@ -10098,6 +11625,27 @@
         renderDirectMessageThreads();
         updateDirectMessageViewMode();
         loadDirectMessageMessages(state.dmActiveThreadId);
+      });
+    });
+    list.querySelectorAll("[data-dm-admin-lock-thread]").forEach(btn => {
+      btn.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        setAdminSessionFlag("dm", btn.dataset.dmAdminLockThread || "", {locked: btn.dataset.nextLocked === "true"});
+      });
+    });
+    list.querySelectorAll("[data-dm-admin-retention-thread]").forEach(btn => {
+      btn.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        setAdminSessionFlag("dm", btn.dataset.dmAdminRetentionThread || "", {retentionExempt: btn.dataset.nextExempt === "true"});
+      });
+    });
+    list.querySelectorAll("[data-dm-admin-delete-thread]").forEach(btn => {
+      btn.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteAdminDmThread(btn.dataset.dmAdminDeleteThread || "");
       });
     });
     installSenderIdentityToggle(list);
@@ -10116,12 +11664,58 @@
     updateDirectMessageViewMode();
   }
 
-  function renderDirectMessageMessages(messages) {
+  function privateMessagePageLimit() {
+    return 100;
+  }
+
+  function privateMessageIdValue(msg) {
+    const n = Number(msg && msg.id);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function privateMessageOldestId(messages) {
+    const arr = Array.isArray(messages) ? messages : [];
+    let min = 0;
+    arr.forEach(msg => {
+      const id = privateMessageIdValue(msg);
+      if (id > 0 && (min <= 0 || id < min)) min = id;
+    });
+    return min;
+  }
+
+  function privateMessageNewestId(messages) {
+    const arr = Array.isArray(messages) ? messages : [];
+    let max = 0;
+    arr.forEach(msg => {
+      const id = privateMessageIdValue(msg);
+      if (id > max) max = id;
+    });
+    return max;
+  }
+
+  function mergePrivateMessagePages(older, current) {
+    const seen = new Set();
+    const out = [];
+    (Array.isArray(older) ? older : []).concat(Array.isArray(current) ? current : []).forEach(msg => {
+      const key = String(msg && msg.id || "");
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(msg);
+    });
+    out.sort((a, b) => privateMessageIdValue(a) - privateMessageIdValue(b));
+    return out;
+  }
+
+  function renderDirectMessageMessages(messages, options = {}) {
     const box = document.getElementById("bmwc-dm-messages");
     if (!box) return;
     hideDirectMessageEdgeToast(true);
     const arr = Array.isArray(messages) ? messages : [];
+    const prevTop = Number(options.previousScrollTop != null ? options.previousScrollTop : box.scrollTop || 0);
+    const prevHeight = Number(options.previousScrollHeight != null ? options.previousScrollHeight : box.scrollHeight || 0);
     if (!state.dmActiveThreadId && !state.dmDraftTarget) {
+      state.dmMessages = [];
+      state.dmMessagesHasMore = false;
       box.innerHTML = `<div class="bmwc-dm-empty">${esc(t("dm.selectThread", "Select a thread"))}</div>`;
       renderDirectMessageHeader("");
       return;
@@ -10137,7 +11731,7 @@
         const body = String(msg.body || "");
         const senderIdentity = {senderDisplayName: sender, senderUsername: msg.senderUsername || "", senderUuid: msg.senderUuid || ""};
         return `<div class="bmwc-msg bmwc-dm-message${mine ? " bmwc-mine" : ""}" data-dm-message-id="${messageId}">
-          <div class="bmwc-meta bmwc-dm-message-meta">${directMessageIdentityHtml(senderIdentity, "bmwc-sender")}<span class="bmwc-time" data-time="${esc(msg.time || "")}" title="${esc(timeToggleTitle(msg.time))}" role="button" tabindex="0">${esc(formatMessageTime(msg.time))}</span></div>
+          <div class="bmwc-meta bmwc-dm-message-meta">${directMessageIdentityHtml(senderIdentity, "bmwc-sender")}<span class="bmwc-meta-sep" aria-hidden="true">·</span><span class="bmwc-time" data-time="${esc(msg.time || "")}" title="${esc(timeToggleTitle(msg.time))}" role="button" tabindex="0">${esc(formatMessageTime(msg.time))}</span></div>
           <button type="button" class="bmwc-dm-message-hide" data-dm-hide-message="${messageId}" title="${esc(t("dm.hideMessage", "Hide this message"))}" aria-label="${esc(t("dm.hideMessage", "Hide this message"))}">×</button>
           <div class="bmwc-text bmwc-dm-message-body">${directMessageBodyHtml(body)}</div>
           ${directMessagePreviewHtml(body, rawMessageId)}
@@ -10154,28 +11748,99 @@
         });
       });
     }
-    box.scrollTop = box.scrollHeight;
+    if (options && options.preserveTop) {
+      const delta = Math.max(0, Number(box.scrollHeight || 0) - prevHeight);
+      box.scrollTop = prevTop + delta;
+    } else if (!options || options.stickToBottom !== false) {
+      box.scrollTop = box.scrollHeight;
+    }
   }
 
   async function loadDirectMessageMessages(threadId) {
     if (!state.token || !threadId) return;
+    if (state.dmMessagesLoading) return;
+    state.dmMessagesLoading = true;
     try {
-      const res = await api("/dm/messages?token=" + encodeURIComponent(state.token) + "&threadId=" + encodeURIComponent(threadId));
+      const limit = privateMessagePageLimit();
+      const res = await api("/dm/messages?token=" + encodeURIComponent(state.token) + "&threadId=" + encodeURIComponent(threadId) + "&limit=" + encodeURIComponent(String(limit)));
       const thread = (state.dmThreads || []).find(t => t.id === threadId);
+      const messages = Array.isArray(res.messages) ? res.messages : [];
+      state.dmMessages = messages;
+      state.dmMessagesHasMore = messages.length >= limit;
       renderDirectMessageHeader(thread ? directMessageLabel(thread) : "");
-      renderDirectMessageMessages(res.messages || []);
+      renderDirectMessageMessages(state.dmMessages, {stickToBottom: true});
       state.dmUnread = Number(res.unread || 0);
       updateDirectMessageButton();
       await loadDirectMessageThreads(true);
     } catch (e) {
       alertResponse("alert.dmLoadFailed", "Failed to load messages: {error}", e.response || {error: e.message || "error"});
+    } finally {
+      state.dmMessagesLoading = false;
+    }
+  }
+
+  async function loadOlderDirectMessageMessagesFromEdge(box, reason = "") {
+    if (!state.token || !state.dmActiveThreadId || state.dmMessagesLoading || !state.dmMessagesHasMore) return false;
+    const oldest = privateMessageOldestId(state.dmMessages);
+    if (!(oldest > 0)) {
+      state.dmMessagesHasMore = false;
+      return false;
+    }
+    if (!box) box = document.getElementById("bmwc-dm-messages");
+    const prevTop = box ? Number(box.scrollTop || 0) : 0;
+    const prevHeight = box ? Number(box.scrollHeight || 0) : 0;
+    state.dmMessagesLoading = true;
+    try {
+      const limit = privateMessagePageLimit();
+      const res = await api("/dm/messages?token=" + encodeURIComponent(state.token) + "&threadId=" + encodeURIComponent(state.dmActiveThreadId) + "&before=" + encodeURIComponent(String(oldest)) + "&limit=" + encodeURIComponent(String(limit)), {timeoutMs: 15000});
+      const older = Array.isArray(res.messages) ? res.messages : [];
+      const beforeCount = state.dmMessages.length;
+      state.dmMessages = mergePrivateMessagePages(older, state.dmMessages);
+      const added = Math.max(0, state.dmMessages.length - beforeCount);
+      state.dmMessagesHasMore = older.length >= limit;
+      if (added > 0) renderDirectMessageMessages(state.dmMessages, {preserveTop: true, previousScrollTop: prevTop, previousScrollHeight: prevHeight, stickToBottom: false});
+      else state.dmMessagesHasMore = false;
+      return added > 0;
+    } catch (e) {
+      return false;
+    } finally {
+      state.dmMessagesLoading = false;
+      setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, reason || "dm-older-loaded"), 80);
+    }
+  }
+
+  async function retryDirectMessageLatestFromBottomEdge(box, reason = "") {
+    if (!state.token || !state.dmActiveThreadId || state.dmMessagesLoading || state.dmBottomRetryInFlight) return false;
+    const now = Date.now();
+    if (now - Number(state.dmLastBottomRetryAt || 0) < 1200) return false;
+    state.dmLastBottomRetryAt = now;
+    state.dmBottomRetryInFlight = true;
+    const beforeNewest = privateMessageNewestId(state.dmMessages);
+    try {
+      const limit = privateMessagePageLimit();
+      const res = await api("/dm/messages?token=" + encodeURIComponent(state.token) + "&threadId=" + encodeURIComponent(state.dmActiveThreadId) + "&limit=" + encodeURIComponent(String(limit)), {timeoutMs: 15000});
+      const messages = Array.isArray(res.messages) ? res.messages : [];
+      const afterNewest = privateMessageNewestId(messages);
+      state.dmMessages = messages;
+      state.dmMessagesHasMore = messages.length >= limit;
+      renderDirectMessageMessages(state.dmMessages, {stickToBottom: true});
+      if (Number(res.unread || 0) >= 0) {
+        state.dmUnread = Number(res.unread || 0);
+        updateDirectMessageButton();
+      }
+      return afterNewest > beforeNewest;
+    } catch (_) {
+      return false;
+    } finally {
+      state.dmBottomRetryInFlight = false;
+      setTimeout(() => maybeShowDirectMessageEdgeToastFromUserScroll(box, reason || "dm-bottom-retried"), 100);
     }
   }
 
   async function hideDirectMessageForMe(messageId) {
     messageId = String(messageId || "").trim();
     if (!messageId || !state.token) return;
-    if (state.directMessageConfirmHide && !confirm(t("dm.confirmHideMessage", "Hide this message from your view?"))) return;
+    if (state.directMessageConfirmHide && !confirmPlain(t("dm.confirmHideMessage", "Hide this message from your view?"))) return;
     try {
       const res = await api("/dm/hide-message", {method: "POST", body: JSON.stringify({token: state.token, messageId})});
       state.dmUnread = Number(res.unread || 0);
@@ -10438,14 +12103,25 @@
     const topIntent = Number(state.dmEdgePendingTopUntil || 0) > now;
     const bottomIntent = Number(state.dmEdgePendingBottomUntil || 0) > now;
     if (atTop && topIntent) {
-      showDirectMessageEdgeToast("top");
+      if (state.dmMessagesHasMore) {
+        loadOlderDirectMessageMessagesFromEdge(box, reason || "dm-top-edge");
+        return;
+      }
+      if (!state.dmMessagesLoading) showDirectMessageEdgeToast("top");
       return;
     }
     // Match the normal chat bottom-edge behavior: do not show the toast just
     // because the conversation is already at the latest message.  Require
-    // repeated extra downward scroll input at the bottom.
+    // repeated extra downward scroll input at the bottom, and run one latest
+    // refresh probe first so the toast only appears after the retry path has
+    // also concluded that nothing newer is available.
     if (atBottom && bottomIntent && Number(state.dmEdgeBottomExtraScrollCount || 0) >= 10) {
-      showDirectMessageEdgeToast("bottom");
+      const retriedRecently = Date.now() - Number(state.dmLastBottomRetryAt || 0) < 1200;
+      if (!retriedRecently && !state.dmBottomRetryInFlight) {
+        retryDirectMessageLatestFromBottomEdge(box, reason || "dm-bottom-edge");
+        return;
+      }
+      if (!state.dmMessagesLoading && !state.dmBottomRetryInFlight) showDirectMessageEdgeToast("bottom");
     }
   }
 
@@ -10463,7 +12139,7 @@
       state.dmEdgeBottomExtraScrollCount = 0;
       return;
     }
-    if (/^(wheel|key|touch|scrollbar|scroll)-bottom/.test(String(reason || ""))) {
+    if (/^(wheel|key|touch|scrollbar)-bottom$/.test(String(reason || ""))) {
       state.dmEdgeBottomExtraScrollCount = Math.max(0, Number(state.dmEdgeBottomExtraScrollCount || 0)) + 1;
     }
     state.dmEdgePendingBottomUntil = Date.now() + 6000;
@@ -10565,6 +12241,237 @@
       maybeShowDirectMessageEdgeToastFromUserScroll(box, "scroll");
     }, {passive: true});
   }
+
+
+  function hasGroupChatConversationOpen() {
+    return !!(state.groupModalOpen && state.groupActiveRoomId);
+  }
+
+  function groupChatEdgeToastThresholdPx(box) {
+    return Math.max(2, Math.min(8, Math.floor(Number(box && box.clientHeight || 0) * 0.01)));
+  }
+
+  function groupChatEdgeAtTop(box) {
+    return !!box && Number(box.scrollTop || 0) <= groupChatEdgeToastThresholdPx(box);
+  }
+
+  function groupChatEdgeAtBottom(box) {
+    return !!box && bottomGapPx(box) <= groupChatEdgeToastThresholdPx(box);
+  }
+
+  function groupChatEdgeToastEligible(box, position = "top") {
+    if (!state.groupModalOpen || !hasGroupChatConversationOpen()) return false;
+    if (!box || !box.querySelector || !box.querySelector(".bmwc-group-message")) return false;
+    return position === "bottom" ? groupChatEdgeAtBottom(box) : groupChatEdgeAtTop(box);
+  }
+
+  function hideGroupChatEdgeToast(clearPending = false) {
+    if (state.groupEdgeToastTimer) {
+      clearTimeout(state.groupEdgeToastTimer);
+      state.groupEdgeToastTimer = null;
+    }
+    state.groupEdgeToastVisible = false;
+    state.groupEdgeToastVisibleUntil = 0;
+    if (clearPending) {
+      state.groupEdgePendingTopUntil = 0;
+      state.groupEdgePendingBottomUntil = 0;
+      state.groupEdgeBottomExtraScrollCount = 0;
+    }
+    const toast = document.getElementById("bmwc-group-edge-toast");
+    if (toast) toast.classList.add("bmwc-hidden");
+  }
+
+  function showGroupChatEdgeToast(position = "top") {
+    const box = document.getElementById("bmwc-group-messages");
+    const pos = position === "bottom" ? "bottom" : "top";
+    if (!groupChatEdgeToastEligible(box, pos)) return;
+
+    const conv = document.querySelector(".bmwc-group-modal .bmwc-dm-conversation");
+    if (!conv) return;
+    let toast = document.getElementById("bmwc-group-edge-toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "bmwc-group-edge-toast";
+      toast.className = "bmwc-dm-edge-toast bmwc-hidden";
+      conv.appendChild(toast);
+    }
+
+    const now = Date.now();
+    if (state.groupEdgeToastVisible && now < Number(state.groupEdgeToastVisibleUntil || 0)) return;
+    if (now - Number(state.groupEdgeToastLastShownAt || 0) < 250) return;
+
+    toast.textContent = t("history.end", "No more messages to display.");
+    toast.classList.toggle("bmwc-dm-edge-bottom", pos === "bottom");
+    toast.classList.toggle("bmwc-dm-edge-top", pos !== "bottom");
+    toast.classList.remove("bmwc-hidden");
+
+    state.groupEdgeToastVisible = true;
+    state.groupEdgeToastVisibleUntil = now + 2500;
+    state.groupEdgeToastLastShownAt = now;
+    if (pos === "bottom") {
+      state.groupEdgePendingBottomUntil = 0;
+      state.groupEdgeBottomExtraScrollCount = 0;
+    } else {
+      state.groupEdgePendingTopUntil = 0;
+    }
+    clearTimeout(state.groupEdgeToastTimer);
+    state.groupEdgeToastTimer = setTimeout(() => {
+      if (Date.now() >= Number(state.groupEdgeToastVisibleUntil || 0)) hideGroupChatEdgeToast(false);
+    }, 2550);
+  }
+
+  function maybeShowGroupChatEdgeToastFromUserScroll(box, reason = "") {
+    if (!box) box = document.getElementById("bmwc-group-messages");
+    if (!box) return;
+    const now = Date.now();
+    const atTop = groupChatEdgeAtTop(box);
+    const atBottom = groupChatEdgeAtBottom(box);
+    if (!atBottom) state.groupEdgeBottomExtraScrollCount = 0;
+    if (!atTop && !atBottom) {
+      hideGroupChatEdgeToast(false);
+      return;
+    }
+
+    const topIntent = Number(state.groupEdgePendingTopUntil || 0) > now;
+    const bottomIntent = Number(state.groupEdgePendingBottomUntil || 0) > now;
+    if (atTop && topIntent) {
+      if (state.groupMessagesHasMore) {
+        loadOlderGroupChatMessagesFromEdge(box, reason || "group-top-edge");
+        return;
+      }
+      if (!state.groupMessagesLoading) showGroupChatEdgeToast("top");
+      return;
+    }
+    // Keep the group chat edge toast behavior identical to the normal chat/DM
+    // edge flow: require repeated bottom input and run one latest refresh probe
+    // before declaring that there are no newer messages.
+    if (atBottom && bottomIntent && Number(state.groupEdgeBottomExtraScrollCount || 0) >= 10) {
+      const retriedRecently = Date.now() - Number(state.groupLastBottomRetryAt || 0) < 1200;
+      if (!retriedRecently && !state.groupBottomRetryInFlight) {
+        retryGroupChatLatestFromBottomEdge(box, reason || "group-bottom-edge");
+        return;
+      }
+      if (!state.groupMessagesLoading && !state.groupBottomRetryInFlight) showGroupChatEdgeToast("bottom");
+    }
+  }
+
+  function markGroupChatTopEdgeIntent(box, reason = "") {
+    if (!box || !groupChatEdgeAtTop(box)) return;
+    state.groupEdgePendingTopUntil = Date.now() + 6000;
+    setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, reason || "group-top"), 0);
+    setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, reason || "group-top"), 80);
+    setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, reason || "group-top"), 220);
+  }
+
+  function markGroupChatBottomEdgeIntent(box, reason = "") {
+    if (!box) return;
+    if (!groupChatEdgeAtBottom(box)) {
+      state.groupEdgeBottomExtraScrollCount = 0;
+      return;
+    }
+    if (/^(wheel|key|touch|scrollbar)-bottom$/.test(String(reason || ""))) {
+      state.groupEdgeBottomExtraScrollCount = Math.max(0, Number(state.groupEdgeBottomExtraScrollCount || 0)) + 1;
+    }
+    state.groupEdgePendingBottomUntil = Date.now() + 6000;
+    setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, reason || "group-bottom"), 0);
+    setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, reason || "group-bottom"), 80);
+    setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, reason || "group-bottom"), 220);
+  }
+
+  function installGroupChatEdgeToasts(wrap) {
+    const box = document.getElementById("bmwc-group-messages");
+    if (!wrap || !box || box.dataset.bmwcGroupEdgeInstalled === "1") return;
+    box.dataset.bmwcGroupEdgeInstalled = "1";
+
+    const interactiveTarget = target => {
+      try {
+        return !!(target && target.closest && target.closest(
+          "button, input, textarea, select, a, .bmwc-media-card, .bmwc-youtube-card, .bmwc-social-card, .bmwc-social-embed"
+        ));
+      } catch (_) {
+        return false;
+      }
+    };
+
+    box.addEventListener("wheel", event => {
+      if (interactiveTarget(event.target)) return;
+      const deltaY = Number(event.deltaY || 0);
+      if (deltaY < 0) markGroupChatTopEdgeIntent(box, "wheel-top");
+      else if (deltaY > 0) markGroupChatBottomEdgeIntent(box, "wheel-bottom");
+      setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, "wheel"), 0);
+    }, {passive: true});
+
+    box.addEventListener("keydown", event => {
+      if (!["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) return;
+      if (["ArrowUp", "PageUp", "Home"].includes(event.key)) markGroupChatTopEdgeIntent(box, "key-top");
+      if (["ArrowDown", "PageDown", "End", " "].includes(event.key)) markGroupChatBottomEdgeIntent(box, "key-bottom");
+      setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, "key"), 0);
+    }, {passive: true});
+
+    let touchStartY = null;
+    box.addEventListener("touchstart", event => {
+      if (interactiveTarget(event.target)) return;
+      touchStartY = event.touches && event.touches[0] ? event.touches[0].clientY : null;
+    }, {passive: true});
+    box.addEventListener("touchmove", event => {
+      if (interactiveTarget(event.target)) return;
+      const y = event.touches && event.touches[0] ? event.touches[0].clientY : null;
+      if (touchStartY != null && y != null && y - touchStartY > 18) markGroupChatTopEdgeIntent(box, "touch-top");
+      else if (touchStartY != null && y != null && touchStartY - y > 18) markGroupChatBottomEdgeIntent(box, "touch-bottom");
+      setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, "touch"), 0);
+    }, {passive: true});
+    box.addEventListener("touchend", () => { touchStartY = null; }, {passive: true});
+    box.addEventListener("touchcancel", () => { touchStartY = null; }, {passive: true});
+
+    box.addEventListener("pointerdown", event => {
+      if (interactiveTarget(event.target)) return;
+      const rect = box.getBoundingClientRect();
+      const nearVerticalScrollbar = event.clientX >= rect.right - 18;
+      const nearHorizontalScrollbar = event.clientY >= rect.bottom - 18;
+      if (nearVerticalScrollbar || nearHorizontalScrollbar) {
+        state.groupScrollbarDragActive = true;
+        state.groupScrollbarDragLastX = event.clientX;
+        state.groupScrollbarDragLastY = event.clientY;
+      }
+    }, {passive: true});
+    window.addEventListener("pointermove", event => {
+      if (!state.groupScrollbarDragActive) return;
+      const lastY = Number.isFinite(Number(state.groupScrollbarDragLastY)) ? Number(state.groupScrollbarDragLastY) : event.clientY;
+      const dy = event.clientY - lastY;
+      state.groupScrollbarDragLastX = event.clientX;
+      state.groupScrollbarDragLastY = event.clientY;
+      if (dy < -2) markGroupChatTopEdgeIntent(box, "scrollbar-top");
+      else if (dy > 2) markGroupChatBottomEdgeIntent(box, "scrollbar-bottom");
+    }, {capture: true, passive: true});
+    window.addEventListener("pointerup", () => {
+      if (!state.groupScrollbarDragActive) return;
+      state.groupScrollbarDragActive = false;
+      state.groupScrollbarDragLastX = null;
+      state.groupScrollbarDragLastY = null;
+      setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, "scrollbar"), 0);
+    }, {capture: true, passive: true});
+    window.addEventListener("pointercancel", () => {
+      if (!state.groupScrollbarDragActive) return;
+      state.groupScrollbarDragActive = false;
+      state.groupScrollbarDragLastX = null;
+      state.groupScrollbarDragLastY = null;
+      hideGroupChatEdgeToast(false);
+    }, {capture: true, passive: true});
+    window.addEventListener("blur", () => {
+      if (!state.groupScrollbarDragActive) return;
+      state.groupScrollbarDragActive = false;
+      state.groupScrollbarDragLastX = null;
+      state.groupScrollbarDragLastY = null;
+      hideGroupChatEdgeToast(false);
+    });
+
+    box.addEventListener("scroll", () => {
+      if (!state.groupModalOpen || !hasGroupChatConversationOpen()) return;
+      if (!groupChatEdgeAtTop(box) && !groupChatEdgeAtBottom(box)) hideGroupChatEdgeToast(false);
+      maybeShowGroupChatEdgeToastFromUserScroll(box, "scroll");
+    }, {passive: true});
+  }
+
 
   function installDirectMessageWindowDrag(wrap) {
     if (!wrap || wrap.dataset.bmwcDmWindowDragInstalled === "1") return;
@@ -10711,7 +12618,8 @@
       return;
     }
     try {
-      const res = await api("/dm/players?token=" + encodeURIComponent(state.token) + "&q=" + encodeURIComponent(query) + "&limit=20");
+      const cleanQuery = directMessagePlainLabel(stripMinecraftColorCodes(query));
+      const res = await api("/dm/players?token=" + encodeURIComponent(state.token) + "&q=" + encodeURIComponent(cleanQuery) + "&limit=20");
       renderDirectMessagePlayers(res.players || []);
     } catch (_) {}
   }
@@ -10798,6 +12706,1011 @@
     }
   }
 
+
+  function updateGroupChatButton() {
+    const btn = document.getElementById("bmwc-group");
+    const badge = document.getElementById("bmwc-group-badge");
+    if (btn) btn.classList.toggle("bmwc-hidden", !(state.token && state.groupChatEnabled) || state.minimized);
+    if (!badge) return;
+    const unread = Math.max(0, Number(state.groupUnread || 0));
+    badge.textContent = unread > 99 ? "99+" : String(unread);
+    badge.classList.toggle("bmwc-hidden", !(state.token && state.groupChatEnabled && unread > 0));
+  }
+
+  function reconcileActiveGroupRoomAfterRoomLoad() {
+    if (!state.groupActiveRoomId) return false;
+    const active = (state.groupRooms || []).find(r => String(r.id || "") === String(state.groupActiveRoomId));
+    if (active && active.member !== false) {
+      state.groupActiveRoom = active;
+      return false;
+    }
+    state.groupActiveRoomId = "";
+    state.groupActiveRoom = null;
+    renderGroupChatMessages([]);
+    renderGroupChatHeader();
+    return true;
+  }
+
+  async function loadGroupChatRooms(silent = false) {
+    if (!state.token || !state.groupChatEnabled) return;
+    try {
+      const res = await api("/group/rooms?token=" + encodeURIComponent(state.token) + "&limit=200");
+      state.groupRooms = Array.isArray(res.rooms) ? res.rooms : [];
+      state.groupInvites = Array.isArray(res.invites) ? res.invites : [];
+      state.groupHiddenRooms = Array.isArray(res.hiddenRooms) ? res.hiddenRooms : [];
+      state.groupAdminRooms = Array.isArray(res.adminRooms) ? res.adminRooms : [];
+      state.groupCleanupPreview = res.cleanupPreview || null;
+      state.privateChatSuperAdmin = res.privateChatSuperAdmin === true || state.privateChatSuperAdmin === true;
+      state.groupUnread = Number(res.unread || 0);
+      const activeCleared = reconcileActiveGroupRoomAfterRoomLoad();
+      updateGroupChatButton();
+      if (state.groupModalOpen) {
+        renderGroupChatRooms();
+        if (activeCleared) renderGroupChatHeader();
+      }
+      return res;
+    } catch (e) {
+      if (!silent) alertResponse("alert.groupLoadFailed", "Failed to load group chats: {error}", e.response || {error: e.message || "error"});
+    }
+  }
+
+  function groupRoomLabel(room) {
+    return String(room && room.name || t("group.untitled", "Untitled room"));
+  }
+
+  function stripWrappingParentheses(value) {
+    let text = String(value || "").trim();
+    if ((text.startsWith("(") && text.endsWith(")")) || (text.startsWith("（") && text.endsWith("）"))) {
+      text = text.slice(1, -1).trim();
+    }
+    return text;
+  }
+
+  function groupRoomRetentionText() {
+    const days = Math.max(0, Number(state.groupChatRetentionDays || 0));
+    const text = days > 0 ? fmt("group.retentionLimited", "Retention: {days} days", {days}) : t("group.retentionUnlimited", "Retention: no time limit");
+    return stripWrappingParentheses(text);
+  }
+
+  function renderGroupChatRooms() {
+    const list = document.getElementById("bmwc-group-room-list");
+    const invites = document.getElementById("bmwc-group-invites");
+    if (!list) return;
+    const rooms = Array.isArray(state.groupRooms) ? state.groupRooms : [];
+    const hiddenRooms = Array.isArray(state.groupHiddenRooms) ? state.groupHiddenRooms : [];
+    const adminRooms = Array.isArray(state.groupAdminRooms) ? state.groupAdminRooms : [];
+    if (invites) {
+      const arr = Array.isArray(state.groupInvites) ? state.groupInvites : [];
+      invites.innerHTML = arr.length ? `<div class="bmwc-group-invite-title">${esc(t("group.invites", "Invites"))}</div>` + arr.map(inv => `<div class="bmwc-group-invite"><span>${esc(inv.roomName || "")}</span><button class="bmwc-button" data-group-accept="${esc(inv.id)}">${esc(t("button.accept", "Accept"))}</button><button class="bmwc-button" data-group-decline="${esc(inv.id)}">${esc(t("button.decline", "Decline"))}</button></div>`).join("") : "";
+      invites.querySelectorAll("[data-group-accept]").forEach(btn => btn.addEventListener("click", () => respondGroupInvite(btn.dataset.groupAccept, true)));
+      invites.querySelectorAll("[data-group-decline]").forEach(btn => btn.addEventListener("click", () => respondGroupInvite(btn.dataset.groupDecline, false)));
+    }
+    if (!rooms.length && !hiddenRooms.length && !adminRooms.length) {
+      list.innerHTML = `<div class="bmwc-dm-empty">${esc(t("group.noRooms", "No group chats."))}</div>`;
+      return;
+    }
+    const roomHtml = rooms.map(room => {
+      const active = room.id === state.groupActiveRoomId ? " bmwc-active" : "";
+      const unread = Number(room.unread || 0);
+      const badge = unread > 0 ? `<span class="bmwc-dm-thread-badge">${esc(unread > 99 ? "99+" : String(unread))}</span>` : "";
+      const visibility = room.visibility === "public" ? t("group.public", "public") : t("group.private", "private");
+      const privacyIcon = room.visibility === "public" ? "🌐" : "🔒";
+      const passwordIcon = room.passwordProtected ? " 🔑" : "";
+      const join = room.member ? "" : ` <span class="bmwc-group-join-hint">${esc(t("group.join", "join"))}</span>`;
+      return `<button type="button" class="bmwc-dm-thread bmwc-group-room${active}" data-group-room="${esc(room.id)}"><span class="bmwc-dm-thread-name"><span class="bmwc-group-room-icon" aria-hidden="true">${privacyIcon}</span> ${esc(groupRoomLabel(room))}${passwordIcon}</span>${badge}<span class="bmwc-dm-thread-preview">${esc(visibility)} · ${esc(room.memberCount || 0)} ${esc(t("group.membersShort", "members"))}${join}</span></button>`;
+    }).join("");
+    const hiddenHtml = hiddenRooms.length ? `<div class="bmwc-admin-meta-title">${esc(t("group.hiddenRooms", "Hidden rooms"))}</div>` + hiddenRooms.map(room => {
+      const privacyIcon = room.visibility === "public" ? "🌐" : "🔒";
+      const passwordIcon = room.passwordProtected ? " 🔑" : "";
+      return `<div class="bmwc-dm-thread bmwc-group-hidden-row"><span class="bmwc-dm-thread-name"><span class="bmwc-group-room-icon" aria-hidden="true">${privacyIcon}</span> ${esc(groupRoomLabel(room))}${passwordIcon}</span><span class="bmwc-admin-meta-actions"><button type="button" class="bmwc-button" data-group-unhide-room="${esc(room.id || "")}">${esc(t("group.showRoom", "Show"))}</button></span><span class="bmwc-dm-thread-preview">${esc(t("group.hiddenRoomHint", "Hidden from your list"))}</span></div>`;
+    }).join("") : "";
+    const adminHtml = adminRooms.length ? `<div class="bmwc-admin-meta-title">🛡 ${esc(t("admin.groupMetaOnly", "Admin room metadata"))}</div>` + adminRooms.map(room => {
+      const privacyIcon = room.visibility === "public" ? "🌐" : "🔒";
+      const passwordIcon = room.passwordProtected ? " 🔑" : "";
+      const archived = room.archived ? ` · ${esc(t("admin.archived", "archived"))}` : "";
+      const retention = retentionRemainingText(room.retentionBaseAt || room.latestMessageAt || room.updatedAt, room.retentionDays ?? state.groupChatRetentionDays, "group", room.retentionExpiresAt);
+      const flags = `${room.locked ? esc(t("admin.locked", "locked")) + " · " : ""}${room.retentionExempt ? esc(t("admin.retentionExempt", "auto-delete excluded")) + " · " : ""}`;
+      const meta = `${esc(retention)} · ${flags}${esc(t("admin.messages", "messages"))}: ${esc(room.messageCount || 0)} · ${esc(t("admin.storage", "storage"))}: ${esc(formatBytes(room.storageBytes || 0))} · ${esc(room.memberCount || 0)} ${esc(t("group.membersShort", "members"))}${archived}`;
+      const lockLabel = room.locked ? t("admin.unlock", "Unlock") : t("admin.lock", "Lock");
+      const exemptLabel = room.retentionExempt ? t("admin.includeRetention", "Include") : t("admin.excludeRetention", "Exclude");
+      const lockTitle = room.locked ? t("admin.unlockGroupRoomHint", "Unlock this group room so messages can be sent again.") : t("admin.lockGroupRoomHint", "Lock this group room to prevent new messages.");
+      const exemptTitle = room.retentionExempt ? t("admin.includeGroupRetentionHint", "Include this group room in automatic cleanup again.") : t("admin.excludeGroupRetentionHint", "Exclude this group room from automatic cleanup.");
+      const deleteTitle = t("admin.deleteGroupRoomHint", "Delete this group room, including metadata, messages, and uploads.");
+      return `<div class="bmwc-dm-thread bmwc-admin-meta-row"><span class="bmwc-dm-thread-name" title="${esc(t("admin.noContentAccess", "Message contents are not accessible from this view."))}">🛡 ${privacyIcon} ${esc(room.name || t("group.untitled", "Untitled room"))}${passwordIcon}</span><span class="bmwc-admin-meta-actions"><button type="button" class="bmwc-button" data-group-admin-lock-room="${esc(room.id || "")}" data-next-locked="${room.locked ? "false" : "true"}" title="${esc(lockTitle)}" aria-label="${esc(lockTitle)}">${esc(lockLabel)}</button><button type="button" class="bmwc-button" data-group-admin-retention-room="${esc(room.id || "")}" data-next-exempt="${room.retentionExempt ? "false" : "true"}" title="${esc(exemptTitle)}" aria-label="${esc(exemptTitle)}">${esc(exemptLabel)}</button><button type="button" class="bmwc-button bmwc-admin-meta-danger" data-group-admin-delete-room="${esc(room.id || "")}" title="${esc(deleteTitle)}" aria-label="${esc(deleteTitle)}">${esc(t("admin.deleteRoom", "Delete"))}</button></span><span class="bmwc-dm-thread-preview" title="${esc(meta.replace(/<[^>]*>/g, ""))}">${meta}</span></div>`;
+    }).join("") : "";
+    const previewHtml = state.privateChatSuperAdmin ? cleanupPreviewHtml(state.groupCleanupPreview, "group") : "";
+    list.innerHTML = roomHtml + hiddenHtml + previewHtml + adminHtml;
+    list.querySelectorAll("[data-group-admin-lock-room]").forEach(btn => {
+      btn.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        setAdminSessionFlag("group", btn.dataset.groupAdminLockRoom || "", {locked: btn.dataset.nextLocked === "true"});
+      });
+    });
+    list.querySelectorAll("[data-group-admin-retention-room]").forEach(btn => {
+      btn.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        setAdminSessionFlag("group", btn.dataset.groupAdminRetentionRoom || "", {retentionExempt: btn.dataset.nextExempt === "true"});
+      });
+    });
+    list.querySelectorAll("[data-group-admin-delete-room]").forEach(btn => {
+      btn.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteAdminGroupRoom(btn.dataset.groupAdminDeleteRoom || "");
+      });
+    });
+  }
+
+  function handleGroupRoomListClick(event) {
+    const raw = event && event.target;
+    const unhide = raw && raw.closest ? raw.closest("[data-group-unhide-room]") : null;
+    if (unhide) {
+      event.preventDefault();
+      event.stopPropagation();
+      unhideGroupRoomForMe(unhide.dataset.groupUnhideRoom || "");
+      return;
+    }
+    const btn = raw && raw.closest ? raw.closest("[data-group-room]") : null;
+    if (!btn) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const roomId = String(btn.dataset.groupRoom || "").trim();
+    if (!roomId) return;
+    openGroupRoom(roomId);
+  }
+
+  async function unhideGroupRoomForMe(roomId) {
+    roomId = String(roomId || "").trim();
+    if (!roomId || !state.token) return;
+    try {
+      await api("/group/unhide-room", {method: "POST", body: JSON.stringify({token: state.token, roomId})});
+      await loadGroupChatRooms(true);
+      renderGroupChatRooms();
+    } catch (e) {
+      alertResponse("alert.groupActionFailed", "Group action failed: {error}", e.response || {error: e.message || "error"});
+    }
+  }
+
+  async function deleteAdminGroupRoom(roomId) {
+    roomId = String(roomId || "").trim();
+    if (!roomId || !state.token || !state.privateChatSuperAdmin) return;
+    if (!confirmPlain(t("admin.confirmDeleteGroupRoom", "Delete this group chat session and all of its metadata/messages/uploads? This cannot be undone."))) return;
+    try {
+      await api("/admin/delete-group-room", {method: "POST", body: JSON.stringify({token: state.token, roomId})});
+      if (state.groupActiveRoomId === roomId) {
+        state.groupActiveRoomId = "";
+        state.groupActiveRoom = null;
+        renderGroupChatMessages([]);
+        renderGroupChatHeader();
+      }
+      await loadGroupChatRooms(true);
+      renderGroupChatRooms();
+    } catch (e) {
+      alertResponse("alert.deleteFailed", "Delete failed: {error}", e.response || {error: e.message || "error"});
+    }
+  }
+
+  async function openGroupRoom(roomId) {
+    roomId = String(roomId || "").trim();
+    if (!roomId) return;
+    let room = (state.groupRooms || []).find(r => r.id === roomId);
+    if (!room) {
+      await loadGroupChatRooms(true);
+      room = (state.groupRooms || []).find(r => r.id === roomId);
+      if (!room) return;
+    }
+
+    const previousRoomId = state.groupActiveRoomId;
+    const previousRoom = state.groupActiveRoom;
+
+    state.groupActiveRoomId = roomId;
+    state.groupActiveRoom = room;
+    renderGroupChatRooms();
+    renderGroupChatHeader();
+    renderGroupChatMessages([]);
+
+    if (!room.member) {
+      let password = "";
+      if (room.passwordProtected) password = prompt(t("group.passwordPrompt", "Room password")) || "";
+      try {
+        const res = await api("/group/join", {method: "POST", body: JSON.stringify({token: state.token, roomId, password})});
+        if (res.room) state.groupActiveRoom = res.room;
+        await loadGroupChatRooms(true);
+        const refreshed = (state.groupRooms || []).find(r => r.id === roomId);
+        if (refreshed) state.groupActiveRoom = refreshed;
+      } catch (e) {
+        state.groupActiveRoomId = previousRoomId || "";
+        state.groupActiveRoom = previousRoom || null;
+        renderGroupChatRooms();
+        renderGroupChatHeader();
+        renderGroupChatMessages([]);
+        alertResponse("alert.groupJoinFailed", "Failed to join room: {error}", e.response || {error: e.message || "error"});
+        return;
+      }
+    }
+
+    state.groupActiveRoomId = roomId;
+    state.groupActiveRoom = (state.groupRooms || []).find(r => r.id === roomId) || state.groupActiveRoom || room;
+    renderGroupChatRooms();
+    renderGroupChatHeader();
+    await loadGroupChatMessages(roomId);
+  }
+
+  function renderGroupChatHeader() {
+    const title = document.getElementById("bmwc-group-title");
+    if (!title) return;
+    const modal = title.closest(".bmwc-group-modal");
+    const room = state.groupActiveRoom || (state.groupRooms || []).find(r => r.id === state.groupActiveRoomId);
+    if (modal) modal.classList.toggle("bmwc-dm-thread-mode", !!room);
+    if (!room) {
+      title.textContent = t("group.selectRoom", "Select a room");
+      title.classList.remove("bmwc-dm-title-back");
+      title.title = "";
+      title.removeAttribute("aria-label");
+      title.removeAttribute("role");
+      title.tabIndex = -1;
+      title.onclick = null;
+      title.onkeydown = null;
+      return;
+    }
+    const manage = room.role === "owner" || room.role === "admin";
+    const privacyLabel = room.visibility === "public" ? t("group.public", "public") : t("group.private", "private");
+    const privacyIcon = room.visibility === "public" ? "🌐" : "🔒";
+    const passwordText = room.passwordProtected ? ` · 🔑 ${esc(t("group.passwordProtected", "password"))}` : "";
+    const backLabel = t("group.backToList", "Back to group chat list");
+    title.classList.add("bmwc-dm-title-back");
+    title.title = backLabel;
+    title.setAttribute("aria-label", backLabel);
+    title.setAttribute("role", "button");
+    title.tabIndex = 0;
+    const memberCount = Math.max(0, Number(room.memberCount || 0));
+    const onlineCount = Math.max(0, Number(room.onlineMemberCount || 0));
+    const countText = fmt("group.memberOnlineCount", "{online}/{total} online", {online: onlineCount, total: memberCount});
+    title.innerHTML = `<span class="bmwc-group-title-main"><span class="bmwc-group-title-name">${privacyIcon} ${esc(groupRoomLabel(room))}</span><span class="bmwc-group-member-counts" id="bmwc-group-member-counts" role="button" tabindex="0" title="${esc(t("group.members", "Members"))}" aria-label="${esc(t("group.members", "Members"))}">${esc(countText)}</span></span><small>${esc(privacyLabel)}${passwordText}</small><span class="bmwc-group-actions">${manage ? `<button class="bmwc-button" id="bmwc-group-invite">${esc(t("group.invite", "Invite"))}</button>` : ""}<button class="bmwc-button" id="bmwc-group-hide-room">${esc(t("button.hide", "Hide"))}</button><button class="bmwc-button" id="bmwc-group-leave">${esc(t("group.leave", "Leave"))}</button></span>`;
+    title.onclick = event => {
+      if (event && event.target && event.target.closest && event.target.closest(".bmwc-group-actions")) return;
+      if (event && event.target && event.target.closest && event.target.closest(".bmwc-group-member-counts")) return;
+      returnGroupChatToList();
+    };
+    title.onkeydown = event => {
+      if (!event || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      returnGroupChatToList();
+    };
+    const invite = document.getElementById("bmwc-group-invite");
+    if (invite) invite.onclick = event => { event.preventDefault(); event.stopPropagation(); inviteToGroupRoom(); };
+    const memberCounts = document.getElementById("bmwc-group-member-counts");
+    if (memberCounts) {
+      memberCounts.onclick = event => { event.preventDefault(); event.stopPropagation(); openGroupManagePanel(); };
+      memberCounts.onkeydown = event => {
+        if (!event || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openGroupManagePanel();
+      };
+    }
+    const hideRoom = document.getElementById("bmwc-group-hide-room");
+    if (hideRoom) hideRoom.onclick = event => { event.preventDefault(); event.stopPropagation(); hideGroupRoomForMe(); };
+    const leave = document.getElementById("bmwc-group-leave");
+    if (leave) leave.onclick = event => { event.preventDefault(); event.stopPropagation(); leaveGroupRoom(); };
+    updateGroupChatComposeControls();
+  }
+
+
+  async function hideGroupRoomForMe() {
+    const roomId = state.groupActiveRoomId;
+    if (!roomId || !state.token) return;
+    if (!confirmPlain(t("group.confirmHideRoom", "Hide this room from your group chat list?"))) return;
+    try {
+      await api("/group/hide-room", {method: "POST", body: JSON.stringify({token: state.token, roomId})});
+      state.groupActiveRoomId = "";
+      state.groupActiveRoom = null;
+      await loadGroupChatRooms(true);
+      renderGroupChatRooms();
+      renderGroupChatMessages([]);
+      renderGroupChatHeader();
+    } catch (e) {
+      alertResponse("alert.groupActionFailed", "Group action failed: {error}", e.response || {error: e.message || "error"});
+    }
+  }
+
+  async function openGroupManagePanel() {
+    const room = state.groupActiveRoom;
+    const roomId = state.groupActiveRoomId;
+    if (!room || !roomId || !state.token) return;
+    try {
+      const res = await api("/group/members?token=" + encodeURIComponent(state.token) + "&roomId=" + encodeURIComponent(roomId));
+      const members = Array.isArray(res.members) ? res.members : [];
+      const bans = Array.isArray(res.bans) ? res.bans : [];
+      const wrap = document.createElement("div");
+      wrap.className = "bmwc-modal-backdrop bmwc-user-prefs-backdrop";
+      applyDetachedModalTheme(wrap);
+      const canManage = room.role === "owner" || room.role === "admin";
+      const canTransfer = room.role === "owner";
+      const memberRows = members.map(m => {
+        const online = m.online === true;
+        const onlineText = online ? t("group.online", "Online") : t("group.offline", "Offline");
+        const actions = canManage ? `${m.role !== "owner" ? `<button class="bmwc-button" data-group-kick="${esc(m.uuid)}">${esc(t("group.kick", "Kick"))}</button><button class="bmwc-button" data-group-ban="${esc(m.uuid)}">${esc(t("group.ban", "Ban"))}</button>` : ""}${canTransfer && m.role !== "owner" ? `<button class="bmwc-button" data-group-transfer="${esc(m.uuid)}">${esc(t("group.transferOwner", "Transfer owner"))}</button>` : ""}` : "";
+        return `<div class="bmwc-group-member-row"><span>${directMessageIdentityHtml({displayName: m.displayName || m.label || m.username || "", username: m.username || "", uuid: m.uuid || ""}, "bmwc-sender")}<small>${esc(m.role || "member")} · <span class="bmwc-group-online-state"><span class="bmwc-group-online-dot${online ? "" : " bmwc-offline"}"></span>${esc(onlineText)}</span></small></span><span class="bmwc-group-member-actions">${actions}</span></div>`;
+      }).join("") || `<div class="bmwc-dm-empty">${esc(t("group.noMembers", "No members."))}</div>`;
+      const banRows = bans.map(b => `<div class="bmwc-group-member-row"><span>${directMessageIdentityHtml({displayName: b.displayName || b.label || b.username || "", username: b.username || "", uuid: b.uuid || ""}, "bmwc-sender")}<small>${esc(t("group.banned", "Banned"))}${b.bannedByLabel ? " · " + esc(b.bannedByLabel) : ""}</small></span><span class="bmwc-group-member-actions"><button class="bmwc-button" data-group-unban="${esc(b.uuid)}">${esc(t("group.unban", "Unban"))}</button></span></div>`).join("") || `<div class="bmwc-dm-empty">${esc(t("group.noBans", "No banned users."))}</div>`;
+      const manageNote = canManage ? t("group.manageNote", "Room managers can kick, ban, or transfer ownership. Message contents are not shown here.") : t("group.memberListNote", "Members can view the participant list. Management actions are only shown to room managers.");
+      const bansSection = canManage ? `<h4>${esc(t("group.bannedUsers", "Banned users"))}</h4><div class="bmwc-group-member-list">${banRows}</div>` : "";
+      wrap.innerHTML = `<div class="bmwc-modal bmwc-group-manage-modal"><h3>${esc(t("group.manage", "Manage"))} · ${esc(groupRoomLabel(room))}</h3><p class="bmwc-admin-meta-note">${esc(manageNote)}</p><h4>${esc(t("group.members", "Members"))}</h4><div class="bmwc-group-member-list">${memberRows}</div>${bansSection}<div class="bmwc-row"><button class="bmwc-button" id="bmwc-group-manage-close">${esc(t("button.close", "Close"))}</button></div></div>`;
+      document.body.appendChild(wrap);
+      installSenderIdentityToggle(wrap);
+      const close = () => wrap.remove();
+      wrap.addEventListener("click", e => { if (e.target === wrap) close(); });
+      wrap.querySelector("#bmwc-group-manage-close").onclick = close;
+      const labelForTarget = targetUuid => {
+        const found = (members.find(m => m.uuid === targetUuid) || bans.find(b => b.uuid === targetUuid) || {});
+        return found.label || found.displayName || found.username || targetUuid;
+      };
+      const act = async (endpoint, targetUuid, confirmKey, fallback) => {
+        if (!targetUuid) return;
+        const label = labelForTarget(targetUuid);
+        if (!confirmPlain(fmt(confirmKey, fallback, {player: label}))) return;
+        try {
+          await api(endpoint, {method: "POST", body: JSON.stringify({token: state.token, roomId, targetUuid})});
+          close();
+          await loadGroupChatRooms(true);
+          const refreshed = (state.groupRooms || []).find(r => r.id === roomId);
+          if (refreshed) state.groupActiveRoom = refreshed;
+          renderGroupChatRooms();
+          renderGroupChatHeader();
+        } catch (e) {
+          alertResponse("alert.groupActionFailed", "Group action failed: {error}", e.response || {error: e.message || "error"});
+        }
+      };
+      wrap.querySelectorAll("[data-group-kick]").forEach(btn => btn.onclick = () => act("/group/kick", btn.dataset.groupKick, "group.confirmKick", "Kick {player} from this room?"));
+      wrap.querySelectorAll("[data-group-ban]").forEach(btn => btn.onclick = () => act("/group/ban", btn.dataset.groupBan, "group.confirmBan", "Ban {player} from this room?"));
+      wrap.querySelectorAll("[data-group-unban]").forEach(btn => btn.onclick = () => act("/group/unban", btn.dataset.groupUnban, "group.confirmUnban", "Unban {player} from this room?"));
+      wrap.querySelectorAll("[data-group-transfer]").forEach(btn => btn.onclick = () => act("/group/transfer-owner", btn.dataset.groupTransfer, "group.confirmTransferOwner", "Transfer room ownership to {player}?"));
+    } catch (e) {
+      alertResponse("alert.groupActionFailed", "Group action failed: {error}", e.response || {error: e.message || "error"});
+    }
+  }
+
+  function returnGroupChatToList() {
+    state.groupActiveRoomId = "";
+    state.groupActiveRoom = null;
+    renderGroupChatRooms();
+    renderGroupChatMessages([]);
+    renderGroupChatHeader();
+  }
+
+  function syncGroupPlayerSearchPanelSize() {
+    const panel = document.getElementById("bmwc-group-search-panel");
+    const modal = panel && panel.closest ? panel.closest(".bmwc-group-modal") : null;
+    if (!panel || !modal) return;
+    const sideGap = (Number(modal.getBoundingClientRect().width || 0) <= 360) ? 6 : 10;
+    panel.style.setProperty("left", sideGap + "px", "important");
+    panel.style.setProperty("right", sideGap + "px", "important");
+    panel.style.setProperty("width", "auto", "important");
+    panel.style.setProperty("max-width", "none", "important");
+    panel.style.setProperty("box-sizing", "border-box", "important");
+  }
+
+  function resetGroupPlayerSearchPanelSize() {
+    const panel = document.getElementById("bmwc-group-search-panel");
+    if (!panel) return;
+    ["left", "right", "width", "max-width", "box-sizing"].forEach(name => panel.style.removeProperty(name));
+  }
+
+  function closeGroupPlayerSearch() {
+    state.groupSearchPanelOpen = false;
+    const panel = document.getElementById("bmwc-group-search-panel");
+    if (panel) panel.classList.add("bmwc-hidden");
+    resetGroupPlayerSearchPanelSize();
+  }
+
+  function openGroupPlayerSearch() {
+    if (!state.groupActiveRoomId) return;
+    state.groupSearchPanelOpen = true;
+    const panel = document.getElementById("bmwc-group-search-panel");
+    const input = document.getElementById("bmwc-group-search");
+    if (panel) {
+      panel.classList.remove("bmwc-hidden");
+      syncGroupPlayerSearchPanelSize();
+    }
+    if (input) {
+      input.value = "";
+      setTimeout(() => input.focus(), 0);
+    }
+    renderGroupPlayers([]);
+  }
+
+  function renderGroupPlayers(players) {
+    const box = document.getElementById("bmwc-group-player-results");
+    if (!box) return;
+    const arr = Array.isArray(players) ? players : [];
+    if (!arr.length) {
+      box.innerHTML = "";
+      return;
+    }
+    box.innerHTML = arr.map(player => {
+      const label = player.label || player.displayName || player.username || player.uuid;
+      return `<button type="button" class="bmwc-dm-player" data-group-player="${esc(player.uuid)}" data-group-player-label="${esc(label)}" title="${esc(directMessagePlainLabel(label))}">${directMessageLabelHtml(label)}</button>`;
+    }).join("");
+    box.querySelectorAll("[data-group-player]").forEach(btn => {
+      btn.addEventListener("click", async event => {
+        event.preventDefault();
+        event.stopPropagation();
+        await invitePlayerToGroupRoom(btn.dataset.groupPlayer || "", btn.dataset.groupPlayerLabel || "");
+      });
+    });
+  }
+
+  async function searchGroupPlayers(query) {
+    if (!state.token || !state.groupChatEnabled) return;
+    if (!String(query || "").trim()) {
+      renderGroupPlayers([]);
+      return;
+    }
+    try {
+      const cleanQuery = directMessagePlainLabel(stripMinecraftColorCodes(query));
+      const res = await api("/group/players?token=" + encodeURIComponent(state.token) + "&q=" + encodeURIComponent(cleanQuery) + "&limit=20");
+      renderGroupPlayers(res.players || []);
+    } catch (_) {}
+  }
+
+  function closeGroupChatEmojiPanel() {
+    state.groupEmojiPanelOpen = false;
+    const panel = document.getElementById("bmwc-group-emoji-panel");
+    if (panel) {
+      panel.classList.add("bmwc-hidden");
+      panel.hidden = true;
+      panel.style.display = "none";
+      panel.style.height = "0px";
+      panel.style.minHeight = "0px";
+      panel.style.maxHeight = "0px";
+    }
+    updateGroupChatEmojiResizeHandleVisibility();
+  }
+
+  function toggleGroupChatEmojiPanel() {
+    if (!canUseCustomEmoji()) return;
+    setActiveComposeInput("bmwc-group-input");
+    state.groupEmojiPanelOpen = !state.groupEmojiPanelOpen;
+    renderGroupChatEmojiPanel();
+  }
+
+  function setGroupChatEmojiPanelHeight(panel, px = null, persist = false, options = {}) {
+    if (!panel) return 0;
+    const minHeight = emojiPanelMinHeightPx(panel);
+    const maxHeight = emojiPanelMaxHeightPx();
+    let height = Math.round(Number(px == null ? emojiPanelHeightPx() : px) || emojiPanelHeightPx());
+    height = Math.max(minHeight, Math.min(maxHeight, height));
+    if (!options || options.snap !== false) height = snapEmojiPanelHeightPx(height, panel);
+    state.emojiPanelHeightPx = height;
+    if (persist) {
+      try { localStorage.setItem("bmwc.emojiPanelHeightPx", String(height)); } catch (_) {}
+    }
+    const root = document.getElementById("bmwc-root");
+    if (root) {
+      root.style.setProperty("--bmwc-emoji-panel-height", height + "px");
+      root.style.setProperty("--bmwc-emoji-panel-min-height", minHeight + "px");
+    }
+    const wrap = document.querySelector(".bmwc-group-modal-backdrop");
+    if (wrap) {
+      wrap.style.setProperty("--bmwc-emoji-panel-height", height + "px");
+      wrap.style.setProperty("--bmwc-emoji-panel-min-height", minHeight + "px");
+    }
+    panel.hidden = false;
+    panel.style.display = "flex";
+    panel.style.height = height + "px";
+    panel.style.maxHeight = height + "px";
+    panel.style.minHeight = minHeight + "px";
+    if (!options || options.snapScroll !== false) snapEmojiPanelScrollTop(panel);
+    updateGroupChatEmojiResizeHandleVisibility();
+    return height;
+  }
+
+  function updateGroupChatEmojiResizeHandleVisibility() {
+    const handle = document.getElementById("bmwc-group-emoji-resize");
+    if (!handle) return;
+    const visible = !!(state.groupModalOpen && state.groupEmojiPanelOpen && canUseCustomEmoji());
+    handle.classList.toggle("bmwc-hidden", !visible);
+    handle.hidden = !visible;
+  }
+
+  function installGroupChatEmojiPanelResize(wrap) {
+    const handle = document.getElementById("bmwc-group-emoji-resize");
+    const panel = document.getElementById("bmwc-group-emoji-panel");
+    if (!wrap || !handle || !panel || handle.dataset.bmwcInstalled === "1") return;
+    handle.dataset.bmwcInstalled = "1";
+    const pointY = event => {
+      const src = event.touches && event.touches.length ? event.touches[0] :
+                  event.changedTouches && event.changedTouches.length ? event.changedTouches[0] :
+                  event;
+      return Number(src.clientY) || 0;
+    };
+    const begin = event => {
+      if (!state.groupEmojiPanelOpen || !canUseCustomEmoji()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      markNonScrollUiAction();
+      state.emojiPanelResizeStart = {
+        group: true,
+        y: pointY(event),
+        height: Number(panel.getBoundingClientRect().height || emojiPanelHeightPx()),
+        currentHeight: Number(panel.getBoundingClientRect().height || emojiPanelHeightPx())
+      };
+      document.body.classList.add("bmwc-emoji-resizing");
+      try { handle.setPointerCapture && event.pointerId != null && handle.setPointerCapture(event.pointerId); } catch (_) {}
+    };
+    const move = event => {
+      const start = state.emojiPanelResizeStart;
+      if (!start || !start.group) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const delta = start.y - pointY(event);
+      start.currentHeight = setGroupChatEmojiPanelHeight(panel, start.height + delta, false, {snap: false, snapScroll: false});
+    };
+    const end = event => {
+      const start = state.emojiPanelResizeStart;
+      if (!start || !start.group) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setGroupChatEmojiPanelHeight(panel, start.currentHeight || emojiPanelHeightPx(), true, {snap: false, snapScroll: true});
+      state.emojiPanelResizeStart = null;
+      document.body.classList.remove("bmwc-emoji-resizing");
+    };
+    handle.addEventListener("pointerdown", begin, {passive: false});
+    document.addEventListener("pointermove", move, {passive: false});
+    document.addEventListener("pointerup", end, {passive: false});
+    document.addEventListener("pointercancel", end, {passive: false});
+    handle.addEventListener("touchstart", begin, {passive: false});
+    document.addEventListener("touchmove", move, {passive: false});
+    document.addEventListener("touchend", end, {passive: false});
+    document.addEventListener("touchcancel", end, {passive: false});
+    updateGroupChatEmojiResizeHandleVisibility();
+  }
+
+  function renderGroupChatEmojiPanel() {
+    const panel = document.getElementById("bmwc-group-emoji-panel");
+    if (!panel) return;
+    if (!state.groupEmojiPanelOpen || !canUseCustomEmoji()) {
+      closeGroupChatEmojiPanel();
+      return;
+    }
+    const packs = Array.isArray(state.emojiPacks) ? state.emojiPacks : [];
+    const items = Array.isArray(state.emojiItems) ? state.emojiItems : [];
+    if (!items.length) {
+      panel.innerHTML = `<div class="bmwc-emoji-scroll"><div class="bmwc-emoji-empty">${esc(t("emoji.empty", "No emojis configured."))}</div></div>`;
+      panel.classList.remove("bmwc-hidden");
+      setGroupChatEmojiPanelHeight(panel);
+      installEmojiPanelWheelStep(panel);
+      return;
+    }
+    let selectedPack = String(state.groupEmojiSelectedPack || "");
+    if (!selectedPack || (packs.length && !packs.some(pack => String(pack.id || "") === selectedPack))) selectedPack = packs[0] && packs[0].id ? String(packs[0].id) : "";
+    state.groupEmojiSelectedPack = selectedPack;
+    const packTabs = packs.length > 1 ? `<div class="bmwc-emoji-tabs">${packs.map(pack => {
+      const id = String(pack.id || "");
+      return `<button type="button" class="bmwc-emoji-tab${id === selectedPack ? " bmwc-active" : ""}" data-emoji-pack="${esc(id)}">${esc(pack.label || id)} <span>${esc(pack.count || "")}</span></button>`;
+    }).join("")}</div>` : "";
+    const shown = selectedPack ? items.filter(item => String(item.pack || "") === selectedPack) : items;
+    panel.innerHTML = packTabs + `<div class="bmwc-emoji-scroll"><div class="bmwc-emoji-grid">${shown.map(emojiButtonHtml).join("")}</div></div>`;
+    panel.classList.remove("bmwc-hidden");
+    setGroupChatEmojiPanelHeight(panel);
+    installEmojiPanelWheelStep(panel);
+    panel.querySelectorAll("[data-emoji-pack]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const pack = btn.dataset.emojiPack || "";
+        state.groupEmojiSelectedPack = pack;
+        panel.querySelectorAll(".bmwc-emoji-tab").forEach(tab => tab.classList.toggle("bmwc-active", tab === btn));
+        const grid = panel.querySelector(".bmwc-emoji-grid");
+        if (grid) grid.innerHTML = items.filter(item => String(item.pack || "") === pack).map(emojiButtonHtml).join("");
+        const scroll = emojiScrollElement(panel);
+        if (scroll) scroll.scrollTop = 0;
+        setGroupChatEmojiPanelHeight(panel);
+        installEmojiItemHandlers(panel);
+      });
+    });
+    installEmojiItemHandlers(panel);
+  }
+
+  function installGroupChatDragAndDropUpload(wrap) {
+    if (!wrap || wrap.dataset.groupDropInstalled === "1") return;
+    wrap.dataset.groupDropInstalled = "1";
+    const modal = wrap.querySelector(".bmwc-group-modal") || wrap;
+    const setOver = visible => {
+      try { modal.classList.toggle("bmwc-dm-drag-over", !!visible); } catch (_) {}
+    };
+    const allowed = () => !state.uploadActive && canUpload();
+    ["dragenter", "dragover"].forEach(type => {
+      wrap.addEventListener(type, event => {
+        if (!isFileDragEvent(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = allowed() ? "copy" : "none";
+        setOver(true);
+      }, {capture: true});
+    });
+    wrap.addEventListener("dragleave", event => {
+      if (!isFileDragEvent(event)) return;
+      const next = event.relatedTarget;
+      if (next && wrap.contains(next)) return;
+      setOver(false);
+    }, {capture: true});
+    wrap.addEventListener("drop", async event => {
+      if (!isFileDragEvent(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOver(false);
+      const files = dropEventFiles(event);
+      if (!files.length) return;
+      setActiveComposeInput("bmwc-group-input");
+      if (state.uploadActive) {
+        alert(t("upload.dropBusy", "Upload is already in progress."));
+        return;
+      }
+      if (!canUpload()) {
+        alert(t("upload.dropDenied", "File upload is not allowed."));
+        return;
+      }
+      await uploadFiles(files, "drop");
+    }, {capture: true});
+    document.addEventListener("dragend", () => setOver(false), {capture: true});
+  }
+
+  function renderGroupChatMessages(messages, options = {}) {
+    const box = document.getElementById("bmwc-group-messages");
+    if (!box) return;
+    hideGroupChatEdgeToast(true);
+    const arr = Array.isArray(messages) ? messages : [];
+    const prevTop = Number(options.previousScrollTop != null ? options.previousScrollTop : box.scrollTop || 0);
+    const prevHeight = Number(options.previousScrollHeight != null ? options.previousScrollHeight : box.scrollHeight || 0);
+    if (!state.groupActiveRoomId) {
+      state.groupMessages = [];
+      state.groupMessagesHasMore = false;
+      box.innerHTML = `<div class="bmwc-dm-empty">${esc(t("group.selectRoom", "Select a room"))}</div>`;
+      return;
+    }
+    if (!arr.length) box.innerHTML = `<div class="bmwc-dm-empty">${esc(t("group.emptyRoom", "No messages yet."))}</div>`;
+    else {
+      box.innerHTML = arr.map(msg => {
+        const senderIdentity = {senderDisplayName: msg.senderDisplayName || msg.senderUsername || msg.senderUuid || "", senderUsername: msg.senderUsername || "", senderUuid: msg.senderUuid || ""};
+        const mine = state.username && msg.senderUsername && String(msg.senderUsername).toLowerCase() === String(state.username).toLowerCase();
+        const rawMessageId = msg.id || "";
+        const body = String(msg.body || "");
+        return `<div class="bmwc-msg bmwc-dm-message bmwc-group-message${mine ? " bmwc-mine" : ""}" data-group-message-id="${esc(rawMessageId)}"><div class="bmwc-meta bmwc-dm-message-meta">${directMessageIdentityHtml(senderIdentity, "bmwc-sender")}<span class="bmwc-meta-sep" aria-hidden="true">·</span><span class="bmwc-time" data-time="${esc(msg.time || "")}" title="${esc(timeToggleTitle(msg.time))}" role="button" tabindex="0">${esc(formatMessageTime(msg.time))}</span></div><button type="button" class="bmwc-dm-message-hide" data-group-hide-message="${esc(rawMessageId)}" title="${esc(t("dm.hideMessage", "Hide this message"))}">×</button><div class="bmwc-text bmwc-dm-message-body">${directMessageBodyHtml(body)}</div>${directMessagePreviewHtml(body, rawMessageId)}</div>`;
+      }).join("");
+      hydrateDirectMessageRenderedContent(box);
+      installSenderIdentityToggle(box);
+      installTimeToggle(box);
+      box.querySelectorAll("[data-group-hide-message]").forEach(btn => btn.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); hideGroupMessage(btn.dataset.groupHideMessage || ""); }));
+    }
+    if (options && options.preserveTop) {
+      const delta = Math.max(0, Number(box.scrollHeight || 0) - prevHeight);
+      box.scrollTop = prevTop + delta;
+    } else if (!options || options.stickToBottom !== false) {
+      box.scrollTop = box.scrollHeight;
+    }
+    updateGroupChatComposeControls();
+  }
+
+  async function loadGroupChatMessages(roomId) {
+    roomId = String(roomId || "").trim();
+    if (!state.token || !roomId) return;
+    if (state.groupMessagesLoading) return;
+    state.groupMessagesLoading = true;
+    try {
+      const limit = privateMessagePageLimit();
+      const res = await api("/group/messages?token=" + encodeURIComponent(state.token) + "&roomId=" + encodeURIComponent(roomId) + "&limit=" + encodeURIComponent(String(limit)));
+      state.groupActiveRoomId = roomId;
+      state.groupMessages = Array.isArray(res.messages) ? res.messages : [];
+      state.groupMessagesHasMore = state.groupMessages.length >= limit;
+      renderGroupChatMessages(state.groupMessages, {stickToBottom: true});
+      state.groupUnread = Number(res.unread || 0);
+      updateGroupChatButton();
+      await api("/group/read", {method: "POST", body: JSON.stringify({token: state.token, roomId})}).catch(() => {});
+      await loadGroupChatRooms(true);
+      const refreshed = (state.groupRooms || []).find(r => r.id === roomId);
+      if (refreshed) state.groupActiveRoom = refreshed;
+      renderGroupChatRooms();
+      renderGroupChatHeader();
+    } catch (e) {
+      alertResponse("alert.groupLoadFailed", "Failed to load group chats: {error}", e.response || {error: e.message || "error"});
+    } finally {
+      state.groupMessagesLoading = false;
+    }
+  }
+
+  async function loadOlderGroupChatMessagesFromEdge(box, reason = "") {
+    if (!state.token || !state.groupActiveRoomId || state.groupMessagesLoading || !state.groupMessagesHasMore) return false;
+    const oldest = privateMessageOldestId(state.groupMessages);
+    if (!(oldest > 0)) {
+      state.groupMessagesHasMore = false;
+      return false;
+    }
+    if (!box) box = document.getElementById("bmwc-group-messages");
+    const prevTop = box ? Number(box.scrollTop || 0) : 0;
+    const prevHeight = box ? Number(box.scrollHeight || 0) : 0;
+    state.groupMessagesLoading = true;
+    try {
+      const limit = privateMessagePageLimit();
+      const res = await api("/group/messages?token=" + encodeURIComponent(state.token) + "&roomId=" + encodeURIComponent(state.groupActiveRoomId) + "&before=" + encodeURIComponent(String(oldest)) + "&limit=" + encodeURIComponent(String(limit)), {timeoutMs: 15000});
+      const older = Array.isArray(res.messages) ? res.messages : [];
+      const beforeCount = state.groupMessages.length;
+      state.groupMessages = mergePrivateMessagePages(older, state.groupMessages);
+      const added = Math.max(0, state.groupMessages.length - beforeCount);
+      state.groupMessagesHasMore = older.length >= limit;
+      if (added > 0) renderGroupChatMessages(state.groupMessages, {preserveTop: true, previousScrollTop: prevTop, previousScrollHeight: prevHeight, stickToBottom: false});
+      else state.groupMessagesHasMore = false;
+      return added > 0;
+    } catch (_) {
+      return false;
+    } finally {
+      state.groupMessagesLoading = false;
+      setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, reason || "group-older-loaded"), 80);
+    }
+  }
+
+  async function retryGroupChatLatestFromBottomEdge(box, reason = "") {
+    if (!state.token || !state.groupActiveRoomId || state.groupMessagesLoading || state.groupBottomRetryInFlight) return false;
+    const now = Date.now();
+    if (now - Number(state.groupLastBottomRetryAt || 0) < 1200) return false;
+    state.groupLastBottomRetryAt = now;
+    state.groupBottomRetryInFlight = true;
+    const beforeNewest = privateMessageNewestId(state.groupMessages);
+    try {
+      const limit = privateMessagePageLimit();
+      const res = await api("/group/messages?token=" + encodeURIComponent(state.token) + "&roomId=" + encodeURIComponent(state.groupActiveRoomId) + "&limit=" + encodeURIComponent(String(limit)), {timeoutMs: 15000});
+      const messages = Array.isArray(res.messages) ? res.messages : [];
+      const afterNewest = privateMessageNewestId(messages);
+      state.groupMessages = messages;
+      state.groupMessagesHasMore = messages.length >= limit;
+      renderGroupChatMessages(state.groupMessages, {stickToBottom: true});
+      if (Number(res.unread || 0) >= 0) {
+        state.groupUnread = Number(res.unread || 0);
+        updateGroupChatButton();
+      }
+      return afterNewest > beforeNewest;
+    } catch (_) {
+      return false;
+    } finally {
+      state.groupBottomRetryInFlight = false;
+      setTimeout(() => maybeShowGroupChatEdgeToastFromUserScroll(box, reason || "group-bottom-retried"), 100);
+    }
+  }
+
+  async function sendGroupChatMessage() {
+    if (!state.token || !state.groupChatEnabled || !state.groupChatAllowWebSend || !state.groupActiveRoomId) return;
+    const input = document.getElementById("bmwc-group-input");
+    if (!input) return;
+    let message = String(input.value || "").trim();
+    if (!message) return;
+    if (state.groupChatMaxMessageLength > 0 && message.length > state.groupChatMaxMessageLength) message = message.slice(0, state.groupChatMaxMessageLength);
+    input.disabled = true;
+    try {
+      closeGroupChatEmojiPanel();
+      const res = await api("/group/send", {method: "POST", body: JSON.stringify({token: state.token, roomId: state.groupActiveRoomId, message})});
+      input.value = "";
+      if (res.room) state.groupActiveRoom = res.room;
+      await loadGroupChatRooms(true);
+      await loadGroupChatMessages(state.groupActiveRoomId);
+    } catch (e) { alertResponse("alert.groupSendFailed", "Failed to send group message: {error}", e.response || {error: e.message || "error"}); }
+    finally { input.disabled = false; input.focus(); }
+  }
+
+  function groupVisibilityOptionsHtml(current = "private") {
+    const cur = String(current || "private").toLowerCase() === "public" ? "public" : "private";
+    if (!state.groupChatAllowPublicRooms) {
+      return `<select class="bmwc-input" id="bmwc-group-form-visibility" disabled><option value="private" selected>${esc(t("group.private", "private"))}</option></select>`;
+    }
+    return `<select class="bmwc-input" id="bmwc-group-form-visibility"><option value="private"${cur === "private" ? " selected" : ""}>${esc(t("group.private", "private"))}</option><option value="public"${cur === "public" ? " selected" : ""}>${esc(t("group.public", "public"))}</option></select>`;
+  }
+
+  function openGroupRoomForm(options = {}) {
+    return new Promise(resolve => {
+      const room = options.room || {};
+      const isSettings = options.mode === "settings";
+      const wrap = document.createElement("div");
+      wrap.className = "bmwc-modal-backdrop bmwc-dm-modal-backdrop bmwc-group-form-backdrop";
+      applyDetachedModalTheme(wrap);
+      const title = isSettings ? t("group.settings", "Settings") : t("group.newRoom", "New room");
+      const currentName = isSettings ? groupRoomLabel(room) : "";
+      const passwordBlock = state.groupChatAllowRoomPasswords ? `<label class="bmwc-group-form-field"><span>${esc(isSettings ? t("group.passwordSettingsLabel", "Password (blank removes it)") : t("group.passwordOptionalLabel", "Password (optional)"))}</span><input class="bmwc-input" id="bmwc-group-form-password" type="password" autocomplete="new-password"></label>` : "";
+      wrap.innerHTML = `<div class="bmwc-modal bmwc-group-form-modal"><div class="bmwc-group-form-head"><h3>${esc(title)}</h3></div><div class="bmwc-group-form-grid"><label class="bmwc-group-form-field"><span>${esc(t("group.roomName", "Room name"))}</span><input class="bmwc-input" id="bmwc-group-form-name" value="${esc(currentName)}" maxlength="80"></label><label class="bmwc-group-form-field"><span>${esc(t("group.visibility", "Visibility"))}</span>${groupVisibilityOptionsHtml(room.visibility || "private")}</label>${passwordBlock}</div><div class="bmwc-row bmwc-group-form-actions"><button type="button" class="bmwc-button" id="bmwc-group-form-save">${esc(t("button.save", "Save"))}</button><button type="button" class="bmwc-button" id="bmwc-group-form-cancel">${esc(t("button.cancel", "Cancel"))}</button></div></div>`;
+      document.body.appendChild(wrap);
+      const close = value => { wrap.remove(); resolve(value); };
+      wrap.addEventListener("click", event => { if (event.target === wrap) close(null); });
+      const nameInput = wrap.querySelector("#bmwc-group-form-name");
+      const visibilityInput = wrap.querySelector("#bmwc-group-form-visibility");
+      const passwordInput = wrap.querySelector("#bmwc-group-form-password");
+      const submit = () => {
+        const name = String(nameInput && nameInput.value || "").trim();
+        if (!name) { if (nameInput) nameInput.focus(); return; }
+        const visibility = state.groupChatAllowPublicRooms ? String(visibilityInput && visibilityInput.value || "private").toLowerCase() : "private";
+        const out = {name, visibility: visibility === "public" ? "public" : "private"};
+        if (state.groupChatAllowRoomPasswords && passwordInput) out.password = String(passwordInput.value || "");
+        close(out);
+      };
+      wrap.querySelector("#bmwc-group-form-save").addEventListener("click", submit);
+      wrap.querySelector("#bmwc-group-form-cancel").addEventListener("click", () => close(null));
+      wrap.addEventListener("keydown", event => {
+        if (event.key === "Escape") { event.preventDefault(); close(null); }
+        if (event.key === "Enter" && event.target && event.target.tagName !== "SELECT") { event.preventDefault(); submit(); }
+      });
+      if (nameInput) { setTimeout(() => nameInput.focus(), 0); }
+    });
+  }
+
+  async function createGroupRoom() {
+    const form = await openGroupRoomForm({mode: "create"});
+    if (!form) return;
+    try {
+      const res = await api("/group/create", {method: "POST", body: JSON.stringify({token: state.token, name: form.name, visibility: form.visibility, password: form.password || ""})});
+      if (res.room) { state.groupActiveRoomId = String(res.room.id || ""); state.groupActiveRoom = res.room; }
+      await loadGroupChatRooms(true);
+      const refreshed = (state.groupRooms || []).find(r => r.id === state.groupActiveRoomId);
+      if (refreshed) state.groupActiveRoom = refreshed;
+      renderGroupChatRooms();
+      renderGroupChatHeader();
+      if (state.groupActiveRoomId) await loadGroupChatMessages(state.groupActiveRoomId);
+    } catch (e) { alertResponse("alert.groupCreateFailed", "Failed to create room: {error}", e.response || {error: e.message || "error"}); }
+  }
+
+  async function invitePlayerToGroupRoom(targetUuid, label = "") {
+    if (!state.groupActiveRoomId) return;
+    targetUuid = String(targetUuid || "").trim();
+    if (!targetUuid) return;
+    const plainLabel = directMessagePlainLabel(label) || targetUuid;
+    if (!confirmPlain(fmt("group.confirmInvite", "Invite {player} to this group chat?", {player: plainLabel}))) return;
+    try {
+      await api("/group/invite", {method: "POST", body: JSON.stringify({token: state.token, roomId: state.groupActiveRoomId, targetUuid})});
+      closeGroupPlayerSearch();
+      alert(label ? fmt("group.inviteSentTo", "Invitation sent to {player}.", {player: plainLabel}) : t("group.inviteSent", "Invitation sent."));
+      await loadGroupChatRooms(true);
+    } catch (e) {
+      alertResponse("alert.groupInviteFailed", "Failed to invite player: {error}", e.response || {error: e.message || "error"});
+    }
+  }
+
+  async function inviteToGroupRoom() {
+    openGroupPlayerSearch();
+  }
+
+  async function leaveGroupRoom() {
+    if (!state.groupActiveRoomId) return;
+    if (state.groupChatConfirmLeave && !confirmPlain(t("group.confirmLeave", "Leave this group chat?"))) return;
+    const roomId = state.groupActiveRoomId;
+    try { await api("/group/leave", {method: "POST", body: JSON.stringify({token: state.token, roomId})}); state.groupActiveRoomId = ""; state.groupActiveRoom = null; renderGroupChatMessages([]); renderGroupChatHeader(); await loadGroupChatRooms(true); }
+    catch (e) { alertResponse("alert.groupLeaveFailed", "Failed to leave room: {error}", e.response || {error: e.message || "error"}); }
+  }
+
+  async function updateGroupRoomSettings() {
+    const room = state.groupActiveRoom || (state.groupRooms || []).find(r => r.id === state.groupActiveRoomId);
+    if (!room) return;
+    const form = await openGroupRoomForm({mode: "settings", room});
+    if (!form) return;
+    const body = {token: state.token, roomId: state.groupActiveRoomId, name: form.name, visibility: form.visibility};
+    if (state.groupChatAllowRoomPasswords) body.password = form.password || "";
+    try {
+      const res = await api("/group/settings", {method: "POST", body: JSON.stringify(body)});
+      if (res.room) { state.groupActiveRoom = res.room; state.groupActiveRoomId = String(res.room.id || state.groupActiveRoomId || ""); }
+      await loadGroupChatRooms(true);
+      const refreshed = (state.groupRooms || []).find(r => r.id === state.groupActiveRoomId);
+      if (refreshed) state.groupActiveRoom = refreshed;
+      renderGroupChatRooms();
+      renderGroupChatHeader();
+    }
+    catch (e) { alertResponse("alert.groupSettingsFailed", "Failed to update room: {error}", e.response || {error: e.message || "error"}); }
+  }
+
+  async function respondGroupInvite(inviteId, accept) {
+    try { const res = await api("/group/invite/respond", {method: "POST", body: JSON.stringify({token: state.token, inviteId, accept})}); if (accept && res.room) { state.groupActiveRoomId = res.room.id; state.groupActiveRoom = res.room; } await loadGroupChatRooms(true); if (state.groupActiveRoomId) await loadGroupChatMessages(state.groupActiveRoomId); }
+    catch (e) { alertResponse("alert.groupInviteFailed", "Failed to update invitation: {error}", e.response || {error: e.message || "error"}); }
+  }
+
+  async function hideGroupMessage(messageId) {
+    messageId = String(messageId || "").trim();
+    if (!messageId || !state.token) return;
+    if (state.groupChatConfirmHide && !confirmPlain(t("group.confirmHideMessage", "Hide this message from your view?"))) return;
+    try { await api("/group/hide-message", {method: "POST", body: JSON.stringify({token: state.token, messageId})}); if (state.groupActiveRoomId) await loadGroupChatMessages(state.groupActiveRoomId); await loadGroupChatRooms(true); }
+    catch (e) { alertResponse("alert.groupHideFailed", "Failed to hide message: {error}", e.response || {error: e.message || "error"}); }
+  }
+
+  async function openGroupChatModal() {
+    if (!state.token) { openLoginModal(); return; }
+    if (!state.groupChatEnabled) return;
+    if (state.groupModalOpen) return;
+    state.groupModalOpen = true;
+    state.groupActiveRoomId = "";
+    state.groupActiveRoom = null;
+    const wrap = document.createElement("div");
+    wrap.className = "bmwc-modal-backdrop bmwc-dm-modal-backdrop bmwc-group-modal-backdrop";
+    applyDetachedModalTheme(wrap);
+    wrap.style.setProperty("--bmwc-emoji-render-size", emojiRenderSizePx() + "px");
+    wrap.style.setProperty("--bmwc-emoji-picker-size", emojiPickerSizePx() + "px");
+    wrap.style.setProperty("--bmwc-emoji-panel-height", emojiPanelHeightPx() + "px");
+    wrap.style.setProperty("--bmwc-emoji-panel-min-height", emojiPanelMinHeightPx() + "px");
+    wrap.innerHTML = `<div class="bmwc-modal bmwc-dm-modal bmwc-group-modal"><div class="bmwc-dm-head"><h3 class="bmwc-dm-main-title"><span>${esc(t("group.title", "Group chats"))}</span><span class="bmwc-dm-retention" title="${esc(groupRoomRetentionText())}">${esc(groupRoomRetentionText())}</span></h3><button class="bmwc-button" id="bmwc-group-close">${esc(t("button.close", "Close"))}</button></div><div class="bmwc-dm-layout"><aside class="bmwc-dm-sidebar"><button type="button" class="bmwc-button bmwc-dm-new" id="bmwc-group-create">${esc(t("group.newRoom", "New room"))}</button><div class="bmwc-group-invites" id="bmwc-group-invites"></div><div class="bmwc-dm-thread-list" id="bmwc-group-room-list"></div></aside><section class="bmwc-dm-conversation"><div class="bmwc-dm-title bmwc-group-title" id="bmwc-group-title">${esc(t("group.selectRoom", "Select a room"))}</div><div class="bmwc-dm-messages" id="bmwc-group-messages"></div><div class="bmwc-emoji-resize-handle bmwc-dm-emoji-resize bmwc-hidden" id="bmwc-group-emoji-resize" title="${esc(t("button.resizeEmojiPanel", "Drag to resize emoji picker"))}" aria-label="${esc(t("button.resizeEmojiPanel", "Drag to resize emoji picker"))}"></div><div class="bmwc-dm-compose bmwc-row"><input class="bmwc-input" id="bmwc-group-input" placeholder="${esc(t("placeholder.message", "message"))}" ${state.groupChatMaxMessageLength > 0 ? `maxlength="${state.groupChatMaxMessageLength}"` : ""}><button class="bmwc-button bmwc-dm-emoji-button bmwc-hidden" id="bmwc-group-emoji" title="${esc(t("button.emoji", "Emoji"))}">☺</button><button class="bmwc-button bmwc-dm-upload bmwc-hidden" id="bmwc-group-upload" title="${esc(t("button.upload", "Attach"))}">&#128206;</button><button class="bmwc-button bmwc-dm-send" id="bmwc-group-send">${esc(t("button.send", "Send"))}</button><input type="file" id="bmwc-group-file" class="bmwc-file-input" multiple hidden style="display:none !important;"></div><div class="bmwc-emoji-panel bmwc-dm-emoji-panel bmwc-group-emoji-panel bmwc-hidden" id="bmwc-group-emoji-panel" aria-live="polite"></div>${uploadProgressHtml("bmwc-group-upload-progress")}</section></div><div class="bmwc-dm-search-panel bmwc-hidden" id="bmwc-group-search-panel"><div class="bmwc-dm-search-head"><strong>${esc(t("group.searchPlayer", "Search player to invite"))}</strong><button class="bmwc-button" id="bmwc-group-search-close" type="button">${esc(t("button.close", "Close"))}</button></div><input class="bmwc-input" id="bmwc-group-search" placeholder="${esc(t("group.searchPlayer", "Search player to invite"))}"><div class="bmwc-dm-player-results" id="bmwc-group-player-results"></div></div></div>`;
+    document.body.appendChild(wrap);
+    installDirectMessageIdentityToggleGuard(wrap);
+    const close = () => {
+      hideEmojiAutocomplete();
+      closeGroupChatEmojiPanel();
+      closeGroupPlayerSearch();
+      hideGroupChatEdgeToast(true);
+      wrap.remove();
+      state.groupModalOpen = false;
+      state.groupActiveRoomId = "";
+      state.groupActiveRoom = null;
+      if (state.activeComposeInputId === "bmwc-group-input") state.activeComposeInputId = "bmwc-message";
+    };
+    wrap.querySelector("#bmwc-group-close").onclick = close;
+    wrap.addEventListener("click", e => { if (e.target === wrap) close(); });
+    wrap.addEventListener("click", e => {
+      if (!state.groupSearchPanelOpen) return;
+      const panel = wrap.querySelector("#bmwc-group-search-panel");
+      const inviteButton = wrap.querySelector("#bmwc-group-invite");
+      const target = e.target;
+      if (panel && panel.contains(target)) return;
+      if (inviteButton && inviteButton.contains(target)) return;
+      closeGroupPlayerSearch();
+    });
+    wrap.querySelector("#bmwc-group-create").onclick = createGroupRoom;
+    wrap.querySelector("#bmwc-group-send").onclick = sendGroupChatMessage;
+    const roomList = wrap.querySelector("#bmwc-group-room-list");
+    if (roomList) roomList.addEventListener("click", handleGroupRoomListClick);
+    const searchClose = wrap.querySelector("#bmwc-group-search-close");
+    if (searchClose) searchClose.addEventListener("click", closeGroupPlayerSearch);
+    const search = wrap.querySelector("#bmwc-group-search");
+    if (search) search.addEventListener("input", () => {
+      clearTimeout(state.groupSearchTimer);
+      state.groupSearchTimer = setTimeout(() => searchGroupPlayers(search.value), 180);
+    });
+    window.addEventListener("resize", () => {
+      if (state.groupModalOpen && state.groupSearchPanelOpen) syncGroupPlayerSearchPanelSize();
+    }, {passive: true});
+    const groupEmoji = wrap.querySelector("#bmwc-group-emoji");
+    if (groupEmoji) groupEmoji.addEventListener("click", () => toggleGroupChatEmojiPanel());
+    const groupUpload = wrap.querySelector("#bmwc-group-upload");
+    const groupFile = wrap.querySelector("#bmwc-group-file");
+    if (groupUpload) {
+      groupUpload.addEventListener("click", () => {
+        setActiveComposeInput("bmwc-group-input");
+        if (groupFile) groupFile.click();
+      });
+    }
+    if (groupFile) {
+      groupFile.accept = uploadAcceptList();
+      groupFile.addEventListener("change", async e => {
+        setActiveComposeInput("bmwc-group-input");
+        await uploadSelectedFiles(e);
+      });
+    }
+    const groupUploadCancel = wrap.querySelector("#bmwc-group-upload-progress-cancel");
+    if (groupUploadCancel) groupUploadCancel.addEventListener("click", cancelCurrentUpload);
+    const input = wrap.querySelector("#bmwc-group-input");
+    input.addEventListener("focus", () => setActiveComposeInput(input));
+    input.addEventListener("paste", async e => {
+      setActiveComposeInput(input);
+      await handlePasteUpload(e);
+    });
+    input.addEventListener("keydown", e => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      closeGroupChatEmojiPanel();
+      sendGroupChatMessage();
+    });
+    installDirectMessageWindowDrag(wrap);
+    installGroupChatDragAndDropUpload(wrap);
+    installGroupChatEmojiPanelResize(wrap);
+    installGroupChatEdgeToasts(wrap);
+    updateGroupChatComposeControls();
+    await loadGroupChatRooms(true);
+    renderGroupChatRooms();
+    renderGroupChatHeader();
+    renderGroupChatMessages([]);
+    updateGroupChatComposeControls();
+  }
+
   async function openDirectMessageModal() {
     if (!state.token) {
       openLoginModal();
@@ -10835,7 +13748,6 @@
             <div class="bmwc-dm-title" id="bmwc-dm-title">${t("dm.selectThread", "Select a thread")}</div>
             <div class="bmwc-dm-messages" id="bmwc-dm-messages"></div>
             <div class="bmwc-emoji-resize-handle bmwc-dm-emoji-resize bmwc-hidden" id="bmwc-dm-emoji-resize" title="${t("button.resizeEmojiPanel", "Drag to resize emoji picker")}" aria-label="${t("button.resizeEmojiPanel", "Drag to resize emoji picker")}"></div>
-            <div class="bmwc-emoji-panel bmwc-dm-emoji-panel bmwc-hidden" id="bmwc-dm-emoji-panel" aria-live="polite"></div>
             <div class="bmwc-dm-compose bmwc-row">
               <input class="bmwc-input" id="bmwc-dm-input" placeholder="${t("placeholder.message", "message")}" ${state.directMessageMaxMessageLength > 0 ? `maxlength="${state.directMessageMaxMessageLength}"` : ""}>
               <button class="bmwc-button bmwc-dm-emoji-button bmwc-hidden" id="bmwc-dm-emoji" title="${t("button.emoji", "Emoji")}">☺</button>
@@ -10843,6 +13755,8 @@
               <button class="bmwc-button bmwc-dm-send" id="bmwc-dm-send">${t("button.send", "Send")}</button>
               <input type="file" id="bmwc-dm-file" class="bmwc-file-input" multiple hidden style="display:none !important;">
             </div>
+            <div class="bmwc-emoji-panel bmwc-dm-emoji-panel bmwc-hidden" id="bmwc-dm-emoji-panel" aria-live="polite"></div>
+            ${uploadProgressHtml("bmwc-dm-upload-progress")}
           </section>
         </div>
         <div class="bmwc-dm-search-panel bmwc-hidden" id="bmwc-dm-search-panel">
@@ -10915,6 +13829,8 @@
         await uploadSelectedFiles(e);
       });
     }
+    const dmUploadCancel = wrap.querySelector("#bmwc-dm-upload-progress-cancel");
+    if (dmUploadCancel) dmUploadCancel.addEventListener("click", cancelCurrentUpload);
     const dmInput = wrap.querySelector("#bmwc-dm-input");
     dmInput.addEventListener("focus", () => setActiveComposeInput(dmInput));
     dmInput.addEventListener("paste", async e => {
@@ -10940,7 +13856,8 @@
 
   function openSetPasswordModal() {
     const wrap = document.createElement("div");
-    wrap.className = "bmwc-modal-backdrop";
+    wrap.className = "bmwc-modal-backdrop bmwc-user-prefs-backdrop";
+    applyDetachedModalTheme(wrap);
     wrap.innerHTML = `
       <div class="bmwc-modal">
         <h3>${t("password.title", "Set password")}</h3>
@@ -10966,15 +13883,18 @@
 
   function openAccountModal() {
     const wrap = document.createElement("div");
-    wrap.className = "bmwc-modal-backdrop";
+    wrap.className = "bmwc-modal-backdrop bmwc-user-prefs-backdrop";
+    applyDetachedModalTheme(wrap);
     wrap.innerHTML = `
-      <div class="bmwc-modal">
+      <div class="bmwc-modal bmwc-account-modal">
         <h3>${esc(state.username)}</h3>
         <p>${t("account.role", "Role")}: ${esc(state.role)}</p>
-        ${(!state.config || state.config.uiUserPreferencesControl !== false) ? `<button class="bmwc-button" id="bmwc-user-prefs">${t("preferences.title", "Chat settings")}</button>` : ""}
-        <button class="bmwc-button" id="bmwc-set-pw">${t("button.setPassword", "Set password")}</button>
-        <button class="bmwc-button" id="bmwc-logout">${t("button.logout", "Logout")}</button>
-        <button class="bmwc-button" id="bmwc-close">${t("button.close", "Close")}</button>
+        <div class="bmwc-account-actions">
+          ${(!state.config || state.config.uiUserPreferencesControl !== false) ? `<button class="bmwc-button" id="bmwc-user-prefs">${t("preferences.title", "Chat settings")}</button>` : ""}
+          <button class="bmwc-button" id="bmwc-set-pw">${t("button.setPassword", "Set password")}</button>
+          <button class="bmwc-button" id="bmwc-logout">${t("button.logout", "Logout")}</button>
+          <button class="bmwc-button" id="bmwc-close">${t("button.close", "Close")}</button>
+        </div>
       </div>
     `;
     document.body.appendChild(wrap);
@@ -10993,11 +13913,22 @@
       localStorage.removeItem("bmwc.token");
       localStorage.removeItem("bmwc.username");
       localStorage.removeItem("bmwc.role");
+      setLoginRequiredUntilLogin(true);
       updateLoginState();
       await loadPins();
       state.dmUnread = 0;
       state.dmThreads = [];
+      state.groupUnread = 0;
+      state.groupRooms = [];
+      state.groupInvites = [];
+      state.groupHiddenRooms = [];
+      state.groupAdminRooms = [];
+      state.dmAdminThreads = [];
+      state.dmCleanupPreview = null;
+      state.groupCleanupPreview = null;
+      state.privateChatSuperAdmin = false;
       updateDirectMessageButton();
+      updateGroupChatButton();
       await loadCommands();
       await refreshCaptcha();
       connectStream({refreshAfterOpen: true, reason: "logout"});
@@ -11012,12 +13943,14 @@
     localStorage.setItem("bmwc.token", state.token);
     localStorage.setItem("bmwc.username", state.username);
     localStorage.setItem("bmwc.role", state.role);
+    setLoginRequiredUntilLogin(false);
     updateLoginState();
     updateGuestVisibility();
     refreshCaptcha();
     loadPins();
     loadCommands();
     loadDirectMessageThreads(true);
+    loadGroupChatRooms(true);
     connectStream({refreshAfterOpen: true, reason: "login"});
   }
 
@@ -11030,6 +13963,7 @@
         localStorage.removeItem("bmwc.token");
         localStorage.removeItem("bmwc.username");
         localStorage.removeItem("bmwc.role");
+        setLoginRequiredUntilLogin(true);
       } else {
         state.username = res.username;
         state.role = res.role;
@@ -11040,6 +13974,7 @@
     await loadPins();
     await loadCommands();
     await loadDirectMessageThreads(true);
+    await loadGroupChatRooms(true);
     if (state.token) connectStream({refreshAfterOpen: true, reason: "token-verify"});
   }
 
@@ -11049,6 +13984,7 @@
     installParentResizeBridge();
     installResumeRefreshHandlers();
     await loadConfig();
+    await ensurePreferredWebPush();
     await loadLang();
     makeRoot();
     await loadEmojis();
@@ -11060,6 +13996,7 @@
     await loadPins();
     await loadCommands();
     await loadDirectMessageThreads(true);
+    await loadGroupChatRooms(true);
     await loadHistory();
     connectStream();
   }

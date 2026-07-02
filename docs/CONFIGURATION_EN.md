@@ -163,7 +163,7 @@ Both `game-preview.format` and `game-prefix.text` support Minecraft legacy color
 
 ```yaml
 discordsrv:
-  append-web-emoji-links: false
+  append-web-emoji-links: true
   game-to-discord: false
   append-game-emoji-links: true
   max-emoji-links-per-message: 4
@@ -284,6 +284,13 @@ TikTok uses the official `player/v1` iframe with `description=0` and `music_info
 
 Set `youtube-click-to-load` or `media-click-to-load` to `false` to render those previews immediately. Autoplay is still controlled by browser policy.
 
+
+## Browser notifications and Web Push
+
+`browser-notifications` controls OS-level browser notifications while the web page is open. Users still need to allow notification permission in their browser. The `notify-*` values are server-side allow limits: leave them `true` to let each browser/user choose in the chat settings, or set one to `false` to block that notification type even if a user enables it. `notify-keywords` controls user-defined keyword alerts; keyword lists are stored per browser/device and are synced only to that device's Web Push subscription for background matching.
+
+`web-push` It can send background/mobile push notifications through Service Worker + Push API when HTTPS or localhost, browser permission, and push support are available. Ordinary iOS/iPadOS browser tabs do not support Web Push; only try it from the standalone page added to the Home Screen, and treat unsupported behavior as a platform limitation. Its `notify-*` values are also server-side allow limits for push delivery. If VAPID keys are left empty while `web-push.enabled: true`, the plugin creates persistent keys in `web-push-vapid.properties`. Set `web-push.subject` to real VAPID contact information such as `mailto:admin@example.com` or `https://map.example.com`; arbitrary text is not recommended and may be rejected or distrusted by push services. Browser or OS warnings such as “may be spam” are controlled by the device/browser and cannot be disabled by the plugin. A stable HTTPS domain, meaningful notification title/body, conservative notification filters, and avoiding repeated test notifications can reduce the chance of that warning.
+
 ## PIP
 
 ```yaml
@@ -356,3 +363,15 @@ emoji:
 ```
 
 GIF/JPG/JPEG/WEBP emoji originals automatically get same-folder PNG sidecars for compatibility with game-side emoji plugins that only read PNG files. The web UI keeps using the original file, so GIF animation is preserved.
+
+## Group chat
+
+`group-chat.enabled` enables the web group-chat system. It supports public/private rooms, optional hashed room passwords, invitations, leave room, room hide/restore, room settings, unread tracking, per-user message hiding, member kick/ban/unban, and owner transfer. Group messages are stored in `group-chat.sqlite-file` (default `group-messages.db`). `group-chat.retention-days: 0` disables age-based cleanup; positive values physically delete older group messages.
+
+
+## Private chat metadata super admins
+
+`private-chat-super-admins: []` lists exact UUIDs or Minecraft names allowed to see DM/group-chat metadata for moderation/accounting. This view shows participants/titles, message counts, approximate storage size, retention status, and management actions such as metadata-session deletion. Message bodies are never exposed in this view.
+
+
+`standalone-web.app-name` and `standalone-web.app-short-name` control the standalone page/PWA name. Reinstall the Home Screen web app after changing them on mobile devices. `web-push.notification-title` controls the default title used for test/system/background push notifications; if it is empty, the plugin uses `standalone-web.app-name`.

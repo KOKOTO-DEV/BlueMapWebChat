@@ -11,6 +11,9 @@ import java.util.Locale;
 
 public class ConfigValues {
     public boolean pluginEnabled;
+    public List<String> privateChatSuperAdmins;
+    public boolean auditEnabled;
+    public String auditDirectory;
     public String httpHost;
     public int httpPort;
     public String pathPrefix;
@@ -24,6 +27,8 @@ public class ConfigValues {
     public boolean standaloneWebEnabled;
     public String standaloneWebPath;
     public String standaloneWebApiBaseUrl;
+    public String standaloneWebAppName;
+    public String standaloneWebAppShortName;
 
     public boolean webAutoInstall;
     public boolean webAutoPatch;
@@ -55,6 +60,21 @@ public class ConfigValues {
     public String directMessageStorage;
     public String directMessageJsonlFile;
     public String directMessageSqliteFile;
+
+    public boolean groupChatEnabled;
+    public boolean groupChatAllowWebSend;
+    public boolean groupChatAllowPublicRooms;
+    public boolean groupChatAllowRoomPasswords;
+    public boolean groupChatConfirmLeave;
+    public boolean groupChatConfirmHide;
+    public int groupChatRetentionDays;
+    public int groupChatMaxMessagesPerRoom;
+    public int groupChatMaxMessageLength;
+    public int groupChatMaxRoomsPerUser;
+    public int groupChatMaxMembersPerRoom;
+    public int groupChatMaxRoomNameLength;
+    public int groupChatInviteExpireHours;
+    public String groupChatSqliteFile;
     public int maxMessageLength;
     public int maxUrlMessageLength;
     public String webUserToGameFormat;
@@ -136,6 +156,34 @@ public class ConfigValues {
     public List<String> uiUserFontOptions;
     public String uiFontFamily;
     public boolean uiPictureInPictureEnabled;
+
+    public boolean browserNotificationsEnabled;
+    public boolean browserNotificationsOnlyWhenHidden;
+    public boolean browserNotificationsNotifyNormalChat;
+    public boolean browserNotificationsNotifyDm;
+    public boolean browserNotificationsNotifyGroupChat;
+    public boolean browserNotificationsNotifyMentions;
+    public boolean browserNotificationsNotifySystem;
+    public boolean browserNotificationsNotifyKeywords;
+    public boolean browserNotificationsNotifyOwnMessages;
+    public boolean browserNotificationsShowMessagePreview;
+
+    public boolean webPushEnabled;
+    public String webPushVapidPublicKey;
+    public String webPushVapidPrivateKey;
+    public String webPushSubject;
+    public String webPushNotificationTitle;
+    public String webPushSubscriptionsFile;
+    public int webPushTtlSeconds;
+    public boolean webPushNotifyNormalChat;
+    public boolean webPushNotifyDm;
+    public boolean webPushNotifyGroupChat;
+    public boolean webPushNotifyMentions;
+    public boolean webPushNotifySystem;
+    public boolean webPushNotifyKeywords;
+    public boolean webPushNotifyOwnMessages;
+    public boolean webPushShowMessagePreview;
+
     public String playerNameMode;
     public boolean playerNameStripColors;
     public boolean webFontsEnabled;
@@ -313,6 +361,9 @@ public class ConfigValues {
         ConfigValues v = new ConfigValues();
         // New generated configs default enabled:false, but old configs without this key remain enabled.
         v.pluginEnabled = c.isSet("enabled") ? c.getBoolean("enabled", false) : true;
+        v.privateChatSuperAdmins = c.getStringList("private-chat-super-admins");
+        v.auditEnabled = c.getBoolean("audit.enabled", true);
+        v.auditDirectory = c.getString("audit.directory", "audit");
 
         v.httpHost = c.getString("http.host", "0.0.0.0");
         v.httpPort = c.getInt("http.port", 8899);
@@ -325,6 +376,10 @@ public class ConfigValues {
         v.standaloneWebPath = normalizePrefix(c.getString("standalone-web.path", "/chat"));
         if ("/".equals(v.standaloneWebPath)) v.standaloneWebPath = "/chat";
         v.standaloneWebApiBaseUrl = c.getString("standalone-web.api-base-url", "");
+        v.standaloneWebAppName = c.getString("standalone-web.app-name", "Web Chat");
+        if (v.standaloneWebAppName == null || v.standaloneWebAppName.isBlank()) v.standaloneWebAppName = "Web Chat";
+        v.standaloneWebAppShortName = c.getString("standalone-web.app-short-name", "BM WebChat");
+        if (v.standaloneWebAppShortName == null || v.standaloneWebAppShortName.isBlank()) v.standaloneWebAppShortName = v.standaloneWebAppName;
 
         v.webAutoInstall = c.getBoolean("web-addon.auto-install", true);
         v.webAutoPatch = c.getBoolean("web-addon.auto-patch-webapp-conf", true);
@@ -371,6 +426,21 @@ public class ConfigValues {
         v.directMessageStorage = configuredDirectMessageStorage;
         v.directMessageJsonlFile = c.getString("direct-message.jsonl-file", "direct-messages.jsonl");
         v.directMessageSqliteFile = c.getString("direct-message.sqlite-file", "direct-messages.db");
+
+        v.groupChatEnabled = c.getBoolean("group-chat.enabled", false);
+        v.groupChatAllowWebSend = c.getBoolean("group-chat.allow-web-send", true);
+        v.groupChatAllowPublicRooms = c.getBoolean("group-chat.allow-public-rooms", true);
+        v.groupChatAllowRoomPasswords = c.getBoolean("group-chat.allow-room-passwords", true);
+        v.groupChatConfirmLeave = c.getBoolean("group-chat.confirm-leave", true);
+        v.groupChatConfirmHide = c.getBoolean("group-chat.confirm-hide", true);
+        v.groupChatRetentionDays = Math.max(0, c.getInt("group-chat.retention-days", 30));
+        v.groupChatMaxMessagesPerRoom = Math.max(0, c.getInt("group-chat.max-messages-per-room", 1000));
+        v.groupChatMaxMessageLength = Math.max(0, c.getInt("group-chat.max-message-length", 500));
+        v.groupChatMaxRoomsPerUser = Math.max(0, c.getInt("group-chat.max-rooms-per-user", 20));
+        v.groupChatMaxMembersPerRoom = Math.max(0, c.getInt("group-chat.max-members-per-room", 50));
+        v.groupChatMaxRoomNameLength = Math.max(1, c.getInt("group-chat.max-room-name-length", 32));
+        v.groupChatInviteExpireHours = Math.max(1, c.getInt("group-chat.invite-expire-hours", 72));
+        v.groupChatSqliteFile = c.getString("group-chat.sqlite-file", "group-messages.db");
         v.maxMessageLength = Math.max(0, c.getInt("chat.max-message-length", 120));
         v.maxUrlMessageLength = Math.max(0, c.getInt("chat.max-url-message-length", 2048));
         if (v.maxMessageLength > 0 && v.maxUrlMessageLength > 0 && v.maxUrlMessageLength < v.maxMessageLength) v.maxUrlMessageLength = v.maxMessageLength;
@@ -488,6 +558,36 @@ public class ConfigValues {
         }
         v.uiFontFamily = c.getString("ui.font-family", "");
         v.uiPictureInPictureEnabled = c.getBoolean("ui.picture-in-picture.enabled", false);
+
+        v.browserNotificationsEnabled = c.getBoolean("browser-notifications.enabled", true);
+        v.browserNotificationsOnlyWhenHidden = c.getBoolean("browser-notifications.only-when-hidden", true);
+        v.browserNotificationsNotifyNormalChat = c.getBoolean("browser-notifications.notify-normal-chat", true);
+        v.browserNotificationsNotifyDm = c.getBoolean("browser-notifications.notify-dm", true);
+        v.browserNotificationsNotifyGroupChat = c.getBoolean("browser-notifications.notify-group-chat", true);
+        v.browserNotificationsNotifyMentions = c.getBoolean("browser-notifications.notify-mentions", true);
+        v.browserNotificationsNotifySystem = c.getBoolean("browser-notifications.notify-system", true);
+        v.browserNotificationsNotifyKeywords = c.getBoolean("browser-notifications.notify-keywords", true);
+        v.browserNotificationsNotifyOwnMessages = c.getBoolean("browser-notifications.notify-own-messages", true);
+        v.browserNotificationsShowMessagePreview = c.getBoolean("browser-notifications.show-message-preview", true);
+
+        v.webPushEnabled = c.getBoolean("web-push.enabled", true);
+        v.webPushVapidPublicKey = c.getString("web-push.vapid-public-key", "");
+        v.webPushVapidPrivateKey = c.getString("web-push.vapid-private-key", "");
+        v.webPushSubject = c.getString("web-push.subject", "mailto:admin@example.com");
+        v.webPushNotificationTitle = c.getString("web-push.notification-title", "");
+        if (v.webPushNotificationTitle == null || v.webPushNotificationTitle.isBlank()) v.webPushNotificationTitle = v.standaloneWebAppName;
+        if (v.webPushNotificationTitle == null || v.webPushNotificationTitle.isBlank()) v.webPushNotificationTitle = "Web Chat";
+        v.webPushSubscriptionsFile = c.getString("web-push.subscriptions-file", "web-push-subscriptions.jsonl");
+        v.webPushTtlSeconds = Math.max(30, Math.min(86400, c.getInt("web-push.ttl-seconds", 300)));
+        v.webPushNotifyNormalChat = c.getBoolean("web-push.notify-normal-chat", true);
+        v.webPushNotifyDm = c.getBoolean("web-push.notify-dm", true);
+        v.webPushNotifyGroupChat = c.getBoolean("web-push.notify-group-chat", true);
+        v.webPushNotifyMentions = c.getBoolean("web-push.notify-mentions", true);
+        v.webPushNotifySystem = c.getBoolean("web-push.notify-system", true);
+        v.webPushNotifyKeywords = c.getBoolean("web-push.notify-keywords", true);
+        v.webPushNotifyOwnMessages = c.getBoolean("web-push.notify-own-messages", true);
+        v.webPushShowMessagePreview = c.getBoolean("web-push.show-message-preview", true);
+
         v.playerNameMode = c.getString("player-display.mode", "name");
         if (v.playerNameMode == null) v.playerNameMode = "name";
         v.playerNameMode = v.playerNameMode.toLowerCase(Locale.ROOT).replace('_', '-').trim();
@@ -547,14 +647,14 @@ public class ConfigValues {
         v.discordSuppressGameEchoSeconds = c.getInt("discordsrv.suppress-game-echo-seconds", 5);
         v.discordWebToDiscordFormat = c.getString("discordsrv.web-to-discord-format", "[Web] {sender}: {message}");
         v.discordGameToDiscord = c.getBoolean("discordsrv.game-to-discord", false);
-        v.discordGameToDiscordFormat = c.getString("discordsrv.game-to-discord-format", "[Game] {sender}: {message}");
+        v.discordGameToDiscordFormat = c.getString("discordsrv.game-to-discord-format", "{sender}: {message}");
         v.discordAppendGameEmojiLinks = c.getBoolean("discordsrv.append-game-emoji-links", true);
         v.discordToWebSenderFormat = c.getString("discordsrv.discord-to-web-sender-format", "Discord:{sender}");
         v.discordToWebMessageFormat = c.getString("discordsrv.discord-to-web-message-format", "{message}");
         v.discordSendWebUser = c.getBoolean("discordsrv.send-web-user-chat-to-discord", true);
         v.discordSendWebGuest = c.getBoolean("discordsrv.send-web-guest-chat-to-discord", false);
         v.discordSendWebAdmin = c.getBoolean("discordsrv.send-web-admin-chat-to-discord", true);
-        v.discordAppendWebEmojiLinks = c.getBoolean("discordsrv.append-web-emoji-links", false);
+        v.discordAppendWebEmojiLinks = c.getBoolean("discordsrv.append-web-emoji-links", true);
         v.discordMaxEmojiLinksPerMessage = Math.max(0, c.getInt("discordsrv.max-emoji-links-per-message", 4));
         // Discord reply relay is intentionally separate from reply.game-preview.
         // The game preview can be useful in Minecraft chat, but duplicating the replied

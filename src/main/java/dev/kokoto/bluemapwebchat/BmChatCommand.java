@@ -15,6 +15,7 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
     private final BlueMapWebChatPlugin plugin;
     private final Map<String, DmReadCursor> dmReadCursors = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<String, DmListCursor> dmListCursors = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, GroupReadCursor> groupReadCursors = new java.util.concurrent.ConcurrentHashMap<>();
 
     private static class DmListCursor {
         int page = 1;
@@ -27,6 +28,12 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
         String otherDisplayName;
         String inputName;
         int page = 1;
+        int pageSize = 20;
+    }
+
+    private static class GroupReadCursor {
+        String roomId;
+        String roomName;
         int pageSize = 20;
     }
 
@@ -64,6 +71,9 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
                 return guest(sender, args);
             case "dm":
                 return dm(sender, args);
+            case "group":
+            case "gc":
+                return group(sender, args);
             case "sessions":
                 return sessions(sender);
             case "revoke":
@@ -118,6 +128,7 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(red(msg("noPermission", "You do not have permission.")));
             return true;
         }
+        AuditLogger.log(plugin, "command.reload", sender.getName(), Map.of());
         plugin.reloadPlugin();
         sender.sendMessage(green(msg("configReloaded", "BlueMapWebChat configuration reloaded.")));
         return true;
@@ -170,6 +181,7 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
             }
             String reason = args.length >= 6 ? String.join(" ", java.util.Arrays.copyOfRange(args, 5, args.length)) : "";
             plugin.moderationManager().mute(type, value, minutes, reason, sender.getName());
+            AuditLogger.log(plugin, "command.guest-mute", sender.getName(), Map.of("type", type, "value", value, "minutes", minutes, "reason", reason));
             sender.sendMessage(green(msg("guestMuteAdded", "Mute added: {type}:{value} ({minutes} min)",
                     "type", type,
                     "value", value,
@@ -183,6 +195,7 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             boolean ok = plugin.moderationManager().unmute(args[2], args[3]);
+            if (ok) AuditLogger.log(plugin, "command.guest-unmute", sender.getName(), Map.of("type", args[2], "value", args[3]));
             sender.sendMessage(ok ? green(msg("guestMuteRemoved", "Mute removed.")) : red(msg("guestMuteNotFound", "Mute not found.")));
             return true;
         }
@@ -280,10 +293,211 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         WebChatServer server = plugin.webServer();
-        if (server != null) server.publishDirectMessageUpdate(senderUuid, target.uuid, result.thread == null ? "" : result.thread.id);
+        if (server != null) {
+            server.publishDirectMessageUpdate(senderUuid, target.uuid, result.thread == null ? "" : result.thread.id);
+            server.dispatchWebPushDirectMessage(senderUuid, plugin.displayPlayerName(player), target.uuid, target.label(), message);
+        }
         notifyOnlineRecipient(player, target, message);
         sender.sendMessage(sentEchoLineForGame(player, target.label(), message));
         return true;
+    }
+
+
+    private boolean group(CommandSender sender, String[] args) {
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.groupChatEnabled || plugin.groupChats() == null || !plugin.groupChats().available()) {
+            sender.sendMessage(red(msg("groupDisabled", "Group chats are disabled.")));
+            return true;
+        }
+        if (!(sender instanceof Player)) {
+            sender.sendMessage(red(msg("onlyPlayers", "This command can only be used by players.")));
+            return true;
+        }
+        if (!sender.hasPermission("bluemapwebchat.group")) {
+            sender.sendMessage(red(msg("noPermission", "You do not have permission.")));
+            return true;
+        }
+        Player player = (Player) sender;
+        String senderUuid = player.getUniqueId().toString();
+        plugin.storage().updateLastDisplayName(senderUuid, player.getName(), plugin.displayPlayerName(player));
+        String playerInputCommand = directMessageCommandFromPlayerInput(player, args);
+        if (playerInputCommand == null) {
+            sender.sendMessage(red(msg("groupDirectInputRequired", "Group messages must be typed directly by the player.")));
+            return true;
+        }
+
+        if (args.length < 2 || "list".equalsIgnoreCase(args[1]) || "rooms".equalsIgnoreCase(args[1])) {
+            return groupListShow(sender, senderUuid);
+        }
+        if ("read".equalsIgnoreCase(args[1]) || "view".equalsIgnoreCase(args[1])) {
+            return groupRead(sender, senderUuid, args);
+        }
+        if ("next".equalsIgnoreCase(args[1]) || "prev".equalsIgnoreCase(args[1]) || "previous".equalsIgnoreCase(args[1])) {
+            return groupReadMove(sender, senderUuid, args[1].toLowerCase(java.util.Locale.ROOT).startsWith("p") ? -1 : 1);
+        }
+        if ("send".equalsIgnoreCase(args[1])) {
+            if (args.length < 4) {
+                sender.sendMessage(yellow("/bmchat group send <room> <message>"));
+                return true;
+            }
+            GroupRoom room = findGroupRoomForCommand(senderUuid, args[2]);
+            if (room == null || room.id == null || room.id.isBlank()) {
+                sender.sendMessage(red(msg("groupRoomNotFound", "Group chat room not found or you are not a member.")));
+                return true;
+            }
+            return groupSend(sender, player, senderUuid, room, groupMessageBodyFromOriginalCommand(playerInputCommand, args, 3));
+        }
+
+        if (args.length < 3) {
+            sender.sendMessage(yellow("/bmchat group <room> <message>"));
+            sender.sendMessage(yellow("/bmchat group list"));
+            sender.sendMessage(yellow("/bmchat group read <room> [pageSize]"));
+            return true;
+        }
+        GroupRoom room = findGroupRoomForCommand(senderUuid, args[1]);
+        if (room == null || room.id == null || room.id.isBlank()) {
+            sender.sendMessage(red(msg("groupRoomNotFound", "Group chat room not found or you are not a member.")));
+            return true;
+        }
+        return groupSend(sender, player, senderUuid, room, groupMessageBodyFromOriginalCommand(playerInputCommand, args, 2));
+    }
+
+    private boolean groupSend(CommandSender sender, Player player, String senderUuid, GroupRoom room, String message) {
+        ConfigValues config = plugin.configValues();
+        if (message == null) {
+            sender.sendMessage(red(msg("groupDirectInputRequired", "Group messages must be typed directly by the player.")));
+            return true;
+        }
+        message = stripForDm(message, config == null ? 500 : config.groupChatMaxMessageLength);
+        if (message.isBlank()) {
+            sender.sendMessage(red(msg("groupEmpty", "Message is empty.")));
+            return true;
+        }
+        GroupChatStore.SendResult result = plugin.groupChats().send(senderUuid, room.id, message);
+        if (!result.ok) {
+            sender.sendMessage(red(msg("groupFailed", "Group chat failed: {error}", "error", result.error)));
+            return true;
+        }
+        WebChatServer server = plugin.webServer();
+        if (server != null) {
+            server.publishGroupChatUpdate(room.id);
+            server.dispatchWebPushGroupMessage(senderUuid, plugin.displayPlayerName(player), room, result.message, room.id);
+        }
+        sender.sendMessage(ChatColor.GRAY + transformForCommandDisplay(player, msg("groupSentEcho", "to group {room}: {message}",
+                "room", ChatColor.RESET + room.name + ChatColor.GRAY,
+                "message", ChatColor.RESET + message), 0));
+        notifyOnlineGroupMembers(player, room.id, room.name, message);
+        return true;
+    }
+
+    private boolean groupListShow(CommandSender sender, String senderUuid) {
+        List<GroupRoom> rooms = plugin.groupChats().listRooms(senderUuid, 100);
+        List<GroupRoom> joined = new ArrayList<>();
+        for (GroupRoom room : rooms) if (room != null && room.member) joined.add(room);
+        sender.sendMessage(ChatColor.AQUA + msg("groupTitle", "Group chats: {count}", "count", Integer.toString(joined.size())));
+        if (joined.isEmpty()) {
+            sender.sendMessage(yellow(msg("groupNoRooms", "No joined group chats.")));
+            return true;
+        }
+        for (GroupRoom room : joined) {
+            String unreadText = room.unread > 0 ? " (" + room.unread + ")" : "";
+            String last = transformForCommandDisplay((sender instanceof Player) ? (Player) sender : null, room.lastMessage, 60);
+            sender.sendMessage(ChatColor.DARK_GRAY + "- " + ChatColor.RESET + room.name + ChatColor.GRAY + unreadText
+                    + ChatColor.DARK_GRAY + " [" + shortRoomId(room.id) + "]: " + ChatColor.RESET + last);
+        }
+        sender.sendMessage(yellow("/bmchat group <room|id> <message>"));
+        sender.sendMessage(yellow("/bmchat group read <room|id> [pageSize]"));
+        return true;
+    }
+
+    private boolean groupRead(CommandSender sender, String senderUuid, String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage(yellow("/bmchat group read <room> [pageSize]"));
+            return true;
+        }
+        GroupRoom room = findGroupRoomForCommand(senderUuid, args[2]);
+        if (room == null || room.id == null || room.id.isBlank()) {
+            sender.sendMessage(red(msg("groupRoomNotFound", "Group chat room not found or you are not a member.")));
+            return true;
+        }
+        GroupReadCursor cursor = new GroupReadCursor();
+        cursor.roomId = room.id;
+        cursor.roomName = room.name;
+        cursor.pageSize = 20;
+        if (args.length >= 4) {
+            try { cursor.pageSize = Integer.parseInt(args[3]); } catch (NumberFormatException ignored) {}
+        }
+        cursor.pageSize = Math.max(1, Math.min(100, cursor.pageSize));
+        groupReadCursors.put(senderUuid.toLowerCase(java.util.Locale.ROOT), cursor);
+        return groupReadShow(sender, senderUuid, cursor, 0L);
+    }
+
+    private boolean groupReadMove(CommandSender sender, String senderUuid, int direction) {
+        GroupReadCursor cursor = groupReadCursors.get(senderUuid.toLowerCase(java.util.Locale.ROOT));
+        if (cursor == null || cursor.roomId == null || cursor.roomId.isBlank()) {
+            sender.sendMessage(yellow(msg("groupReadNoCursor", "Open a group chat first: /bmchat group read <room>")));
+            return true;
+        }
+        return groupReadShow(sender, senderUuid, cursor, direction);
+    }
+
+    private boolean groupReadShow(CommandSender sender, String senderUuid, GroupReadCursor cursor, long direction) {
+        int pageSize = Math.max(1, Math.min(100, cursor.pageSize <= 0 ? 20 : cursor.pageSize));
+        List<GroupMessage> messages = plugin.groupChats().listMessages(senderUuid, cursor.roomId, 0L, pageSize);
+        sender.sendMessage(ChatColor.AQUA + msg("groupReadTitle", "Group chat {room}:",
+                "room", ChatColor.RESET + cursor.roomName + ChatColor.AQUA));
+        if (messages.isEmpty()) {
+            sender.sendMessage(yellow(msg("groupNoMessages", "No messages in this group chat.")));
+            return true;
+        }
+        for (GroupMessage message : messages) {
+            String senderName = message.senderUuid != null && message.senderUuid.equalsIgnoreCase(senderUuid)
+                    ? msg("dmMe", "me")
+                    : formatCommandPlayer(message.senderDisplayName, message.senderUsername, message.senderUuid);
+            String body = transformForCommandDisplay((sender instanceof Player) ? (Player) sender : null, message.body, 0);
+            sender.sendMessage(ChatColor.DARK_GRAY + "#" + message.id + " "
+                    + ChatColor.RESET + senderName
+                    + ChatColor.DARK_GRAY + ": "
+                    + ChatColor.RESET + body);
+        }
+        sender.sendMessage(ChatColor.GRAY + msg("groupReadHint", "Send: /bmchat group {room} <message>", "room", cursor.roomName));
+        return true;
+    }
+
+    private GroupRoom findGroupRoomForCommand(String userUuid, String input) {
+        String needle = String.valueOf(input == null ? "" : input).trim();
+        if (needle.isBlank()) return null;
+        List<GroupRoom> rooms = plugin.groupChats().listRooms(userUuid, 200);
+        for (GroupRoom room : rooms) {
+            if (room != null && room.member && room.id != null && room.id.equalsIgnoreCase(needle)) return room;
+        }
+        for (GroupRoom room : rooms) {
+            if (room != null && room.member && room.id != null && shortRoomId(room.id).equalsIgnoreCase(needle)) return room;
+        }
+        for (GroupRoom room : rooms) {
+            if (room != null && room.member && room.name != null && room.name.equalsIgnoreCase(needle)) return room;
+        }
+        return null;
+    }
+
+    private String groupMessageBodyFromOriginalCommand(String original, String[] args, int firstMessageArgIndex) {
+        if (original == null || original.isBlank()) return null;
+        String text = original.trim();
+        if (text.startsWith("/")) text = text.substring(1);
+        String[] parts = text.split("\\s+", firstMessageArgIndex + 2);
+        if (parts.length < firstMessageArgIndex + 2) return null;
+        String root = parts[0].toLowerCase(java.util.Locale.ROOT);
+        String sub = parts[1].toLowerCase(java.util.Locale.ROOT);
+        if (!isBmChatCommandRoot(root) || !("group".equals(sub) || "gc".equals(sub))) return null;
+        for (int i = 1; i < firstMessageArgIndex; i++) {
+            if (i + 1 >= parts.length || i >= args.length || !parts[i + 1].equalsIgnoreCase(args[i])) return null;
+        }
+        return parts[firstMessageArgIndex + 1];
+    }
+
+    private String shortRoomId(String roomId) {
+        String id = String.valueOf(roomId == null ? "" : roomId).trim();
+        return id.length() <= 8 ? id : id.substring(0, 8);
     }
 
     private String directMessageCommandFromPlayerInput(Player player, String[] args) {
@@ -295,21 +509,28 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
 
     private boolean matchesCurrentDirectMessageCommand(String original, String[] args) {
         if (original == null || original.isBlank() || args == null || args.length < 1) return false;
-        if (!"dm".equalsIgnoreCase(args[0])) return false;
+        String wanted = args[0].toLowerCase(java.util.Locale.ROOT);
+        if (!("dm".equals(wanted) || "group".equals(wanted) || "gc".equals(wanted))) return false;
         String text = original.trim();
         if (text.startsWith("/")) text = text.substring(1);
         String[] parts = text.split("\\s+", 4);
         if (parts.length < 2) return false;
         String root = parts[0].toLowerCase(java.util.Locale.ROOT);
         String sub = parts[1].toLowerCase(java.util.Locale.ROOT);
-        if (!isBmChatCommandRoot(root) || !"dm".equals(sub)) return false;
-        if (args.length == 1) return parts.length == 2;
-        if (parts.length < 3 || !parts[2].equalsIgnoreCase(args[1])) return false;
+        if (!isBmChatCommandRoot(root)) return false;
+        if ("dm".equals(wanted)) {
+            if (!"dm".equals(sub)) return false;
+            if (args.length == 1) return parts.length == 2;
+            if (parts.length < 3 || !parts[2].equalsIgnoreCase(args[1])) return false;
 
-        String actionOrTarget = args[1].toLowerCase(java.util.Locale.ROOT);
-        if (!isDmReservedSubcommand(actionOrTarget)) {
-            if (args.length == 2) return parts.length == 3;
-            return args.length >= 3 && parts.length >= 4;
+            String actionOrTarget = args[1].toLowerCase(java.util.Locale.ROOT);
+            if (!isDmReservedSubcommand(actionOrTarget)) {
+                if (args.length == 2) return parts.length == 3;
+                return args.length >= 3 && parts.length >= 4;
+            }
+        } else {
+            if (!("group".equals(sub) || "gc".equals(sub))) return false;
+            return matchesCurrentGroupCommandFromOriginal(text, args);
         }
 
         String[] tokens = text.split("\\s+");
@@ -318,6 +539,58 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
             if (!tokens[i + 1].equalsIgnoreCase(args[i])) return false;
         }
         return true;
+    }
+
+    private boolean matchesCurrentGroupCommandFromOriginal(String text, String[] args) {
+        if (text == null || text.isBlank() || args == null || args.length < 1) return false;
+        if (!("group".equalsIgnoreCase(args[0]) || "gc".equalsIgnoreCase(args[0]))) return false;
+        String normalized = text.trim();
+        if (normalized.startsWith("/")) normalized = normalized.substring(1);
+        String[] head = normalized.split("\\s+", 4);
+        if (head.length < 2) return false;
+        if (!isBmChatCommandRoot(head[0].toLowerCase(java.util.Locale.ROOT))) return false;
+        if (!("group".equalsIgnoreCase(head[1]) || "gc".equalsIgnoreCase(head[1]))) return false;
+        if (args.length == 1) return head.length == 2;
+
+        String actionOrRoom = args[1];
+        String action = actionOrRoom == null ? "" : actionOrRoom.toLowerCase(java.util.Locale.ROOT);
+        if ("send".equals(action)) {
+            String[] parts = normalized.split("\\s+", 5);
+            if (parts.length < 3 || !"send".equalsIgnoreCase(parts[2])) return false;
+            if (args.length < 3) return parts.length == 3;
+            if (parts.length < 4 || !parts[3].equalsIgnoreCase(args[2])) return false;
+            if (args.length < 4) return parts.length == 4;
+            // Do not compare the message tokens themselves. Emoji plugins may replace
+            // :pack/name: tokens after PlayerCommandPreprocessEvent, while we still
+            // want to store the original player-typed message body.
+            return parts.length >= 5;
+        }
+
+        if ("list".equals(action) || "rooms".equals(action)
+                || "next".equals(action) || "prev".equals(action) || "previous".equals(action)) {
+            String[] tokens = normalized.split("\\s+");
+            if (tokens.length < args.length + 1) return false;
+            for (int i = 0; i < args.length; i++) {
+                if (!tokens[i + 1].equalsIgnoreCase(args[i])) return false;
+            }
+            return true;
+        }
+
+        if ("read".equals(action) || "view".equals(action)) {
+            String[] parts = normalized.split("\\s+", 5);
+            if (parts.length < 3 || !parts[2].equalsIgnoreCase(args[1])) return false;
+            if (args.length < 3) return parts.length == 3;
+            if (parts.length < 4 || !parts[3].equalsIgnoreCase(args[2])) return false;
+            if (args.length < 4) return true;
+            return parts.length >= 5 && parts[4].equalsIgnoreCase(args[3]);
+        }
+
+        String[] parts = normalized.split("\\s+", 4);
+        if (parts.length < 3 || !parts[2].equalsIgnoreCase(args[1])) return false;
+        if (args.length < 3) return parts.length == 3;
+        // Room-send form: /bmchat group <room> <message>. Keep only the room
+        // prefix strict and allow the original body to differ from Bukkit args.
+        return parts.length >= 4;
     }
 
     private String directMessageBodyFromOriginalCommand(String original, String[] args) {
@@ -583,6 +856,25 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    private void notifyOnlineGroupMembers(Player sender, String roomId, String roomName, String message) {
+        if (plugin.groupChats() == null) return;
+        String senderUuid = sender.getUniqueId().toString();
+        String senderName = plugin.displayPlayerName(sender);
+        String body = colorizeForGame(trim(message, 100));
+        String line = ChatColor.AQUA + msg("groupIncoming", "Group {room} from {player}: {message}",
+                "room", ChatColor.RESET + String.valueOf(roomName == null ? "" : roomName) + ChatColor.AQUA,
+                "player", ChatColor.RESET + senderName + ChatColor.AQUA,
+                "message", ChatColor.RESET + body);
+        for (String memberUuid : plugin.groupChats().memberUuids(roomId)) {
+            if (memberUuid == null || memberUuid.equalsIgnoreCase(senderUuid)) continue;
+            try {
+                Player recipient = plugin.getServer().getPlayer(UUID.fromString(memberUuid));
+                if (recipient != null && recipient.isOnline()) recipient.sendMessage(line);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+    }
+
     private String stripForDm(String raw, int maxLength) {
         String out = String.valueOf(raw == null ? "" : raw);
         // Preserve Minecraft legacy color codes and :pack/name: emoji tokens. Only
@@ -625,6 +917,7 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         int removed = plugin.storage().revokeSessionsForUsername(args[1]);
+        AuditLogger.log(plugin, "command.revoke-sessions", sender.getName(), Map.of("username", args[1], "removed", removed));
         sender.sendMessage(green(msg("revokeDone", "Revoked {count} session(s) for {username}.",
                 "count", Integer.toString(removed),
                 "username", args[1])));
@@ -654,6 +947,7 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             Account a = plugin.storage().createLocalAccount(args[2], Role.ADMIN);
+            AuditLogger.log(plugin, "command.admin-create", sender.getName(), Map.of("username", a.safeUsername()));
             sender.sendMessage(green(msg("adminCreated", "Created local admin account: {username}", "username", a.safeUsername())));
             sender.sendMessage(yellow(msg("adminSetPasswordHint", "Set password: /bmchat admin password {username} <password>", "username", a.safeUsername())));
             return true;
@@ -670,6 +964,7 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             plugin.storage().setPassword(a, args[3]);
+            AuditLogger.log(plugin, "command.admin-password", sender.getName(), Map.of("username", a.safeUsername()));
             sender.sendMessage(green(msg("adminPasswordSetFor", "Password has been set for: {username}", "username", a.safeUsername())));
             return true;
         }
@@ -690,6 +985,7 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             plugin.storage().setRole(a, role);
+            AuditLogger.log(plugin, "command.admin-role", sender.getName(), Map.of("username", a.safeUsername(), "role", role.name()));
             sender.sendMessage(green(msg("adminRoleChanged", "{username} role changed to {role}.",
                     "username", a.safeUsername(),
                     "role", role.name())));
@@ -715,6 +1011,7 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
         if (config != null && config.pluginEnabled && config.directMessageEnabled && sender instanceof Player) {
             sender.sendMessage(yellow("/bmchat dm <player> <message>") + ChatColor.GRAY + " - " + msg("helpDm", "Send a direct message"));
             sender.sendMessage(yellow("/bmchat dm read <player> [pageSize]") + ChatColor.GRAY + " - " + msg("helpDmRead", "Read a direct message thread"));
+            sender.sendMessage(yellow("/bmchat group <room> <message>") + ChatColor.GRAY + " - " + msg("helpGroup", "Send a group chat message"));
         }
     }
 
@@ -855,6 +1152,7 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
             out.add("auth");
             out.add("password");
             if (config != null && config.directMessageEnabled && sender instanceof Player) out.add("dm");
+            if (config != null && config.groupChatEnabled && sender instanceof Player) out.add("group");
             if (sender.hasPermission("bluemapwebchat.admin")) {
                 out.add("reload");
                 out.add("admin");
@@ -881,6 +1179,27 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
                 else if (p.displayName != null && !p.displayName.isBlank()) out.add(p.displayName);
             }
         } else if (args.length >= 3 && "dm".equalsIgnoreCase(args[0]) && sender instanceof Player && !isDmSubcommand(args[1])) {
+            out.addAll(emojiTokenTabSuggestions(args[args.length - 1]));
+        } else if (args.length == 2 && ("group".equalsIgnoreCase(args[0]) || "gc".equalsIgnoreCase(args[0])) && sender instanceof Player) {
+            out.add("list");
+            out.add("read");
+            out.add("send");
+            String senderUuid = ((Player) sender).getUniqueId().toString();
+            if (plugin.groupChats() != null && plugin.groupChats().available()) {
+                for (GroupRoom room : plugin.groupChats().listRooms(senderUuid, 50)) {
+                    if (room != null && room.member && room.name != null && !room.name.isBlank()) out.add(room.name);
+                    if (room != null && room.member && room.id != null && !room.id.isBlank()) out.add(shortRoomId(room.id));
+                }
+            }
+        } else if (args.length == 3 && ("group".equalsIgnoreCase(args[0]) || "gc".equalsIgnoreCase(args[0])) && "read".equalsIgnoreCase(args[1]) && sender instanceof Player) {
+            String senderUuid = ((Player) sender).getUniqueId().toString();
+            if (plugin.groupChats() != null && plugin.groupChats().available()) {
+                for (GroupRoom room : plugin.groupChats().listRooms(senderUuid, 50)) {
+                    if (room != null && room.member && room.name != null && !room.name.isBlank()) out.add(room.name);
+                    if (room != null && room.member && room.id != null && !room.id.isBlank()) out.add(shortRoomId(room.id));
+                }
+            }
+        } else if (args.length >= 3 && ("group".equalsIgnoreCase(args[0]) || "gc".equalsIgnoreCase(args[0])) && sender instanceof Player && !"read".equalsIgnoreCase(args[1]) && !"list".equalsIgnoreCase(args[1]) && !"rooms".equalsIgnoreCase(args[1])) {
             out.addAll(emojiTokenTabSuggestions(args[args.length - 1]));
         } else if (args.length == 2 && "admin".equalsIgnoreCase(args[0]) && sender.hasPermission("bluemapwebchat.admin")) {
             out.add("create");

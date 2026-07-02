@@ -151,7 +151,7 @@ reply:
 
 ```yaml
 discordsrv:
-  append-web-emoji-links: false
+  append-web-emoji-links: true
   game-to-discord: false
   append-game-emoji-links: true
   max-emoji-links-per-message: 4
@@ -304,6 +304,13 @@ TikTok은 공식 `player/v1` iframe을 사용하고 `description=0`, `music_info
 
 `youtube-click-to-load` 또는 `media-click-to-load`를 `false`로 두면 해당 미리보기를 즉시 렌더링합니다. 자동 재생 여부는 브라우저 정책의 영향을 받습니다.
 
+
+## 브라우저 알림과 Web Push
+
+`browser-notifications`는 웹페이지가 열려 있을 때 브라우저의 OS 시스템 알림을 제어합니다. 사용자는 브라우저 알림 권한을 직접 허용해야 합니다. `notify-*` 값은 서버 측 허용 상한선입니다. `true`로 두면 각 사용자/브라우저가 채팅 설정에서 켜고 끌 수 있고, `false`로 두면 사용자가 켜도 해당 알림 종류는 차단됩니다. `notify-keywords`는 사용자가 직접 지정하는 키워드 알림을 제어합니다. 키워드 목록은 브라우저/기기별로 저장되며, 백그라운드 매칭을 위해 해당 기기의 Web Push 구독에만 동기화됩니다.
+
+`web-push`는 HTTPS 또는 localhost, 브라우저 알림 권한, Service Worker/Push API 지원이 맞으면 백그라운드/모바일 푸시를 보낼 수 있습니다. iOS/iPadOS의 일반 브라우저 탭은 Web Push를 지원하지 않으므로 standalone 페이지를 홈 화면 웹앱으로 추가한 경우에만 시도하고, 지원되지 않는 동작은 플랫폼 제한으로 봅니다. `web-push`의 `notify-*` 값도 푸시 전송의 서버 측 허용 상한선입니다. `web-push.enabled: true` 상태에서 VAPID 키를 비워두면 플러그인이 `web-push-vapid.properties`에 지속 키를 생성합니다. `web-push.subject`는 `mailto:admin@example.com` 또는 `https://map.example.com`처럼 실제 연락처/운영자 식별용 VAPID URI로 두는 것을 권장합니다. 임의 문자열은 권장하지 않으며 일부 push 서비스에서 거부되거나 신뢰도가 낮게 처리될 수 있습니다. 모바일의 “스팸일 수 있음” 같은 경고는 브라우저/OS가 표시하는 것이므로 플러그인에서 끌 수 없습니다. 안정적인 HTTPS 도메인, 의미 있는 알림 제목/본문, 보수적인 알림 필터, 반복 테스트 알림 최소화로 가능성을 줄이는 쪽으로 관리합니다. 테스트는 모바일 브라우저에서 HTTPS standalone 페이지를 열고 로그인한 뒤 설정 > 알림에서 모바일 푸시를 켜고 `모바일 푸시 테스트`를 누릅니다.
+
 ## PIP
 
 ```yaml
@@ -348,3 +355,15 @@ ui:
 ## 메시지 검색
 
 저장된 기록을 사용할 때 채팅 패널 우측 상단 플로팅 영역의 돋보기 버튼과 `/history/search` API로 메시지 내용과 작성자를 검색할 수 있습니다. 검색 옵션에서 날짜/시간 범위, 작성자, 출처, 시스템/이벤트 포함 여부를 지정할 수 있습니다. 검색 결과는 스크롤 가능한 목록으로 표시되며, 채팅 테마와 폰트 설정을 따릅니다. 검색 결과를 클릭하면 기존 주변 기록 로드 방식으로 해당 메시지로 이동합니다. i18n 키가 있는 시스템/이벤트 메시지는 가능한 경우 요청된 웹 UI 언어 기준으로 검색되고 표시됩니다. 검색은 `search.enabled`로 끄거나 켤 수 있고, `search.result-limit` 하나가 웹 UI 결과 수와 `/history/search` API 제한을 모두 제어합니다. 별도 내부 최대치는 없어서 2000으로 설정하면 최대 2000개, 10으로 설정하면 최대 10개가 반환됩니다. 10000이나 100000처럼 매우 큰 값도 허용되지만, 검색 속도 저하, 응답 크기 증가, CPU/메모리/DB 부하 증가를 일으킬 수 있습니다. 기본값은 50이며 일반 사용은 50~200을 권장합니다. 기존 config.yml에는 이 항목을 직접 추가하거나 기본 설정과 병합해야 합니다.
+
+## 그룹 채팅
+
+`group-chat.enabled`는 웹 그룹 채팅 기능을 켭니다. 공개/비공개 방, 해시 저장되는 선택 비밀번호, 초대, 방 나가기, 방 숨김/다시 표시, 방 설정, 안 읽음 추적, 사용자별 메시지 숨김, 멤버 강퇴/차단/차단 해제, 방장 이전을 지원합니다. 그룹 메시지는 `group-chat.sqlite-file`(기본 `group-messages.db`)에 저장됩니다. `group-chat.retention-days: 0`은 기간 정리 없음이고, 양수 값은 오래된 그룹 메시지를 물리 삭제합니다.
+
+
+## 비공개 채팅 메타데이터 최고관리자
+
+`private-chat-super-admins: []`에는 DM/그룹채팅 메타데이터를 관리/용량 확인용으로 볼 수 있는 정확한 UUID 또는 마인크래프트 이름을 지정합니다. 이 화면은 참여자/제목, 메시지 수, 대략적인 저장 용량, 보관 상태, 메타데이터 세션 삭제 같은 관리 동작만 제공하며 메시지 본문은 노출하지 않습니다.
+
+
+`standalone-web.app-name`과 `standalone-web.app-short-name`은 standalone 페이지/PWA 이름을 제어합니다. 모바일 홈 화면 웹앱으로 설치한 뒤 값을 바꿨다면 다시 설치해야 반영됩니다. `web-push.notification-title`은 테스트/시스템/백그라운드 푸시의 기본 제목을 제어하며, 비워두면 `standalone-web.app-name`을 사용합니다.

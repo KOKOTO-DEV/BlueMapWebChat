@@ -369,6 +369,18 @@ public final class SqliteHistoryStore implements AutoCloseable {
         }
     }
 
+    public synchronized boolean uploadNameReferenced(String name) {
+        String n = String.valueOf(name == null ? "" : name).trim();
+        if (!n.matches("[A-Za-z0-9._-]+")) return false;
+        try (PreparedStatement ps = conn.prepareStatement("SELECT 1 FROM chat_messages WHERE hidden=0 AND message LIKE ? LIMIT 1")) {
+            ps.setString(1, "%" + n + "%");
+            try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
+        } catch (SQLException ex) {
+            warn("Failed to check SQLite chat history upload reference", ex);
+            return false;
+        }
+    }
+
     public synchronized int migrateJsonlIfEmpty(Path jsonl, long cutoff, int maxMessages) {
         if (jsonl == null || !Files.exists(jsonl) || count() > 0) return 0;
         int migrated = 0;

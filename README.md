@@ -2,8 +2,6 @@
 
 A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can run as a BlueMap web addon, as a standalone `/chat` page served by the plugin, or both at the same time.
 
-<img width="1057" height="682" alt="Image" src="https://github.com/user-attachments/assets/722761ea-94a4-4da9-be79-3cd04997c166" />
-
 ## Features
 
 - BlueMap embedded chat panel and standalone web chat page
@@ -14,7 +12,7 @@ A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can r
 - Admin custom emoji manager: create, upload, rename, and delete emoji folders/files
 - File and clipboard upload, image/video/audio/YouTube/Shorts previews, plus optional TikTok and X/Twitter embeds
 - DiscordSRV relay and Discord CDN media cache
-- Message replies with clickable referenced-message previews, optional game-side reply previews, pinned messages, virtual scrolling, draggable/resizable window, experimental PIP
+- Message replies with clickable referenced-message previews, optional game-side reply previews, pinned messages, virtual scrolling, draggable/resizable window, PIP
 - Optional 1:1 direct-message threads for linked/known players, with unread badges and per-thread retention
 - Built-in UI languages: en-US, ko-KR, ja-JP, zh-CN
 
@@ -25,7 +23,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-4.3.0.jar
+target/BlueMapWebChat-4.5.0.jar
 ```
 
 ## Install
@@ -37,6 +35,110 @@ target/BlueMapWebChat-4.3.0.jar
 5. For BlueMap embedded mode, keep `web-addon.auto-install` and `web-addon.auto-patch-webapp-conf` enabled.
 6. For standalone-only mode, set `standalone-web.enabled: true`, `web-addon.auto-install: false`, and `web-addon.auto-patch-webapp-conf: false`.
 7. Restart the server or run `/bmchat reload`. Run `/bluemap reload` if BlueMap does not refresh web assets automatically.
+
+## 4.5.0 upgrade note and config regeneration
+
+The 4.5.0 line changed a lot of configuration around DM/group chat, metadata administration, browser notifications, Web Push, PWA names, audit logs, and Discord emoji-link handling. For an existing 4.3.x server, the cleanest upgrade path is often to regenerate `config.yml` instead of manually merging every new key.
+
+Regenerating `config.yml` does **not** delete existing data such as `history.db`, direct-message/group-message databases, uploads, emojis, audit logs, copied language files, or `web-push-vapid.properties`. New generated configs start with `enabled: false`, so the plugin only creates/loads configuration and does not start web/chat services, cleanup tasks, private-message storage, or group-chat storage until you review settings and set `enabled: true`.
+
+Suggested flow:
+
+```bash
+# Stop the Minecraft server first.
+cd plugins/BlueMapWebChat
+cp config.yml config.yml.4.3-backup
+# Optional full data backup:
+# cp -a . ../BlueMapWebChat-backup-4.3
+rm config.yml
+# Start the server once to generate a fresh config.yml with enabled: false.
+# Copy your custom values back, then set enabled: true.
+```
+
+Important 4.5.0 config blocks to review or merge:
+
+```yaml
+enabled: false
+
+private-chat-super-admins: []
+
+audit:
+  enabled: true
+  directory: "audit"
+
+standalone-web:
+  enabled: false
+  path: "/chat"
+  app-name: "Web Chat"
+  app-short-name: "Web Chat"
+  api-base-url: ""
+
+direct-message:
+  enabled: false
+  storage: "auto"
+  retention-days: 0
+  max-messages-per-thread: 0
+  max-message-length: 500
+  allow-web-send: true
+  allow-game-send: true
+  notify-on-login: true
+  notify-on-message: true
+  web-unread-badge: true
+  confirm-hide: true
+  jsonl-file: "direct-messages.jsonl"
+  sqlite-file: "direct-messages.db"
+
+group-chat:
+  enabled: false
+  allow-web-send: true
+  allow-public-rooms: true
+  allow-room-passwords: true
+  confirm-leave: true
+  confirm-hide: true
+  retention-days: 30
+  max-messages-per-room: 1000
+  max-message-length: 500
+  max-rooms-per-user: 20
+  max-members-per-room: 50
+  max-room-name-length: 32
+  invite-expire-hours: 72
+  sqlite-file: "group-messages.db"
+
+browser-notifications:
+  enabled: true
+  only-when-hidden: true
+  notify-normal-chat: true
+  notify-dm: true
+  notify-group-chat: true
+  notify-mentions: true
+  notify-system: true
+  notify-keywords: true
+  notify-own-messages: true
+  show-message-preview: true
+
+web-push:
+  enabled: true
+  vapid-public-key: ""
+  vapid-private-key: ""
+  subject: "mailto:admin@example.com"
+  notification-title: ""
+  subscriptions-file: "web-push-subscriptions.jsonl"
+  ttl-seconds: 300
+  notify-normal-chat: true
+  notify-dm: true
+  notify-group-chat: true
+  notify-mentions: true
+  notify-system: true
+  notify-keywords: true
+  notify-own-messages: true
+  show-message-preview: true
+
+discordsrv:
+  append-web-emoji-links: true
+  append-game-emoji-links: true
+```
+
+`web-push.notification-title: ""` means “use `standalone-web.app-name`”. If you want a fixed notification title, set it explicitly. `standalone-web.app-short-name` is the short PWA/Home Screen name used where the UI has limited space.
 
 ## Deployment modes
 
@@ -138,6 +240,12 @@ Legacy modes remain available: use `chat.history-storage: "jsonl"` for the old `
 A `/history/search` API and in-chat search modal are available for message text and sender searches, with optional date/time range, sender, source, and system/event filters. The search button is placed in the floating chat-panel area so the message input row stays compact, and the search modal follows the configured chat theme/font settings with a scrollable result list. i18n-backed system/event messages are searched and displayed in the selected web UI language when possible. Search can be disabled with `search.enabled`, and the single `search.result-limit` setting controls both the web UI result count and the `/history/search` API limit. There is no separate internal maximum: setting it to 2000 returns up to 2000 results, while setting it to 10 returns up to 10. Very large values such as 10000 or 100000 are accepted, but they can slow searches, increase response size, and add significant CPU, memory, and database load. The default is 50, and 50-200 is recommended for normal use. Existing config files from older versions need these keys added manually or merged from the default config.
 
 
+## Group chat rooms
+
+`group-chat.enabled` enables the web group-chat room system. Users can create rooms, choose public/private visibility, set an optional room password, invite known players, accept or decline invitations, leave rooms, hide rooms from their own list and restore them later, edit room settings, kick or ban members, unban users, transfer room ownership, and send messages from the web UI. Public rooms appear in the room list; private rooms are invite-only. Room passwords are stored as PBKDF2 hashes, not plain text.
+
+Group chats use a dedicated SQLite store (`group-chat.sqlite-file`, default `group-messages.db`). `group-chat.retention-days: 0` means no time limit; positive values are shown next to the group-chat title and old group messages are physically removed after that many days. `group-chat.max-messages-per-room: 0` disables count-based cleanup. This release remains web-first; game-side `/bmchat group` commands, room mute, group role-management beyond owner/member actions, and JSONL group storage are not included yet.
+
 ## Direct message threads
 
 `direct-message.enabled` enables optional 1:1 conversation threads. Targets are limited to linked or previously known players with a stored UUID/name. A->B and B->A use the same thread, and messages are stored by UUID while the UI displays `display name (real account name)` when both are available.
@@ -228,3 +336,12 @@ bluemapwebchat.admin
 HTTP-only mode is supported for private/testing use. Passwords are stored hashed on the server, but HTTP login traffic is not encrypted. Use HTTPS for public servers.
 
 Font note: Installed fonts must be typed by their CSS font-family name. Chat settings include a Test button that estimates whether the typed name is available in the current browser without requesting local-font permissions.
+
+### Private chat metadata super admins
+
+Set `private-chat-super-admins` in `config.yml` to exact UUIDs or Minecraft names for users who may see DM/group-chat metadata for moderation/accounting. This view only shows titles/participants, message counts, approximate stored byte sizes, retention status, and cleanup preview counts. It does not expose message bodies or allow opening other users' conversations. Super admins can also lock a DM/group session or exclude it from automatic retention cleanup; these controls are admin-only.
+
+Administrative actions are also appended to date-based text audit files under `plugins/BlueMapWebChat/audit` by default. The audit log is intended for server operators and is not shown in the web UI.
+
+
+Note: `standalone-web.app-name` / `standalone-web.app-short-name` can change the mobile Home Screen web app name, and `web-push.notification-title` can change the default push title. If `web-push.notification-title` is empty, `standalone-web.app-name` is used. On iOS/iPadOS, use the standalone page added to the Home Screen rather than a normal browser tab.

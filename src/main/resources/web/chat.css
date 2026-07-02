@@ -406,6 +406,29 @@
 }
 
 
+/* Account modal: keep the legacy single-row account actions while still allowing
+   detached modal theme variables to style the surface. */
+.bmwc-account-modal {
+  width: min(460px, calc(100vw - 30px)) !important;
+  max-width: calc(100vw - 30px) !important;
+}
+.bmwc-account-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.bmwc-account-actions .bmwc-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+@media (max-width: 420px) {
+  .bmwc-account-actions {
+    flex-wrap: wrap;
+  }
+}
+
+
 /* minimized header should only show title + restore button.
    Account/Admin/Login buttons open clipped modals in minimized iframe, so hide them. */
 #bmwc-root.bmwc-minimized .bmwc-status,
@@ -2820,7 +2843,6 @@ body.bmwc-pip-mode {
 /* User-configurable UI text color. This covers labels and small UI glyphs that
    are not part of the actual chat message body. */
 #bmwc-root .bmwc-status,
-#bmwc-root .bmwc-meta,
 #bmwc-root .bmwc-source-label,
 #bmwc-root .bmwc-time,
 #bmwc-root .bmwc-captcha,
@@ -2964,6 +2986,12 @@ body.bmwc-pip-mode {
 #bmwc-root .bmwc-mini-actions,
 #bmwc-root .bmwc-mini-action {
   flex: 0 0 auto !important;
+}
+
+#bmwc-root .bmwc-meta > .bmwc-sender,
+#bmwc-root .bmwc-meta > .bmwc-source-label,
+#bmwc-root .bmwc-meta > .bmwc-time-actions {
+  margin: 0 !important;
 }
 
 #bmwc-root .bmwc-mini-actions {
@@ -4964,13 +4992,21 @@ body.bmwc-emoji-resizing #bmwc-root.bmwc-theme-system .bmwc-emoji-resize-handle:
   right: 6px;
   width: 20px;
   height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: 0;
   border-radius: 999px;
   cursor: pointer;
   color: var(--bmwc-muted-color, rgba(255,255,255,0.72));
   background: transparent;
   font-size: 16px;
-  line-height: 18px;
+  line-height: 1;
+  text-align: center;
   opacity: 0;
 }
 
@@ -6267,4 +6303,2254 @@ body.bmwc-emoji-resizing #bmwc-root.bmwc-theme-system .bmwc-emoji-resize-handle:
     padding: 3px 7px !important;
     text-shadow: 0 1px 2px rgba(0,0,0,0.80) !important;
   }
+}
+
+/* Group chat first-pass UI */
+.bmwc-group-modal .bmwc-dm-main-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bmwc-group-modal .bmwc-group-invites {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.bmwc-group-modal .bmwc-group-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--bmwc-border, rgba(255,255,255,0.14));
+  background: var(--bmwc-surface-2, rgba(255,255,255,0.06));
+  font-size: 12px;
+}
+
+.bmwc-group-modal .bmwc-group-invite-actions,
+.bmwc-group-modal .bmwc-group-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.bmwc-group-modal .bmwc-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.bmwc-group-modal .bmwc-group-title-label {
+  font-weight: 700;
+}
+
+.bmwc-group-modal .bmwc-group-title-meta,
+.bmwc-group-modal .bmwc-group-room-meta,
+.bmwc-group-modal .bmwc-group-join-hint {
+  opacity: 0.74;
+  font-size: 11px;
+}
+
+.bmwc-group-modal .bmwc-group-room-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.bmwc-group-modal .bmwc-group-room-badge {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 6px;
+  background: var(--bmwc-accent, #60a5fa);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.bmwc-group-modal .bmwc-group-message-hidden {
+  opacity: 0.5;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-group-modal .bmwc-group-invite,
+.bmwc-group-modal-backdrop.bmwc-theme-light .bmwc-group-invite {
+  background: #ffffff;
+  border-color: rgba(15,23,42,0.18);
+  color: #0f172a;
+}
+
+/* Group chat room form */
+.bmwc-group-form-modal {
+  width: min(420px, calc(100vw - 32px));
+}
+.bmwc-group-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 9px 0;
+  font-size: 12px;
+}
+.bmwc-group-form-field > span {
+  opacity: 0.82;
+  font-weight: 700;
+}
+.bmwc-group-form-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.bmwc-group-room-icon {
+  display: inline-block;
+  width: 1.25em;
+  text-align: center;
+}
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-form-modal,
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-group-form-modal {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: rgba(15,23,42,0.18);
+}
+@media (prefers-color-scheme: light) {
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-form-modal,
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-group-form-modal {
+    background: #ffffff;
+    color: #0f172a;
+    border-color: rgba(15,23,42,0.18);
+  }
+}
+
+/* Group chat fixes: list/detail mode and compact room form */
+.bmwc-group-modal.bmwc-dm-thread-mode .bmwc-dm-conversation {
+  display: flex !important;
+}
+.bmwc-group-modal.bmwc-dm-thread-mode .bmwc-dm-sidebar {
+  display: none !important;
+}
+.bmwc-group-form-modal {
+  width: min(360px, calc(100vw - 24px)) !important;
+  padding: 12px !important;
+  box-sizing: border-box;
+}
+.bmwc-group-form-modal .bmwc-group-form-head h3,
+.bmwc-group-form-modal h3 {
+  margin: 0 0 8px !important;
+  font-size: 15px !important;
+  line-height: 1.2;
+}
+.bmwc-group-form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+.bmwc-group-form-field {
+  gap: 3px !important;
+  margin: 0 !important;
+}
+.bmwc-group-form-field > span {
+  font-size: 11px;
+}
+.bmwc-group-form-field .bmwc-input,
+.bmwc-group-form-field select.bmwc-input {
+  min-height: 30px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+.bmwc-group-form-actions {
+  margin-top: 9px !important;
+}
+
+/* DM/group compose parity with normal chat: upload progress and picker placement. */
+.bmwc-dm-modal .bmwc-upload-progress {
+  flex: 0 0 auto;
+  margin: 6px 10px 10px;
+}
+
+.bmwc-dm-modal .bmwc-upload-progress-bar > div,
+.bmwc-upload-progress-bar > div {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(130,190,255,0.9);
+}
+
+.bmwc-dm-modal .bmwc-dm-compose + .bmwc-dm-emoji-panel.bmwc-emoji-panel {
+  border-top: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.10));
+  border-bottom: 0;
+}
+
+.bmwc-dm-modal .bmwc-dm-compose {
+  order: 20;
+}
+
+.bmwc-dm-modal .bmwc-dm-emoji-panel {
+  order: 21;
+}
+
+.bmwc-dm-modal .bmwc-upload-progress {
+  order: 22;
+}
+
+
+/* Group chat polish patch: invite confirmation, bottom-edge toast parity, compact room form, and light-theme readability. */
+.bmwc-group-form-backdrop {
+  align-items: center !important;
+  justify-content: center !important;
+}
+.bmwc-group-form-modal {
+  width: min(320px, calc(100vw - 24px)) !important;
+  max-height: calc(100vh - 32px) !important;
+  padding: 10px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+.bmwc-group-form-head {
+  display: flex !important;
+  align-items: center !important;
+  min-height: 0 !important;
+}
+.bmwc-group-form-modal .bmwc-group-form-head h3,
+.bmwc-group-form-modal h3 {
+  margin: 0 !important;
+  font-size: 14px !important;
+  line-height: 1.2 !important;
+}
+.bmwc-group-form-grid {
+  gap: 6px !important;
+}
+.bmwc-group-form-field {
+  gap: 3px !important;
+  margin: 0 !important;
+  min-width: 0 !important;
+}
+.bmwc-group-form-field > span {
+  color: var(--bmwc-muted-color, rgba(255,255,255,0.78)) !important;
+  opacity: 1 !important;
+  font-size: 11px !important;
+  line-height: 1.2 !important;
+}
+.bmwc-group-form-field .bmwc-input,
+.bmwc-group-form-field select.bmwc-input {
+  min-height: 28px !important;
+  padding: 5px 7px !important;
+  box-sizing: border-box !important;
+}
+.bmwc-group-form-actions {
+  margin-top: 2px !important;
+  gap: 6px !important;
+  justify-content: flex-end !important;
+}
+.bmwc-group-form-actions .bmwc-button {
+  min-height: 28px !important;
+  padding: 5px 9px !important;
+}
+
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-modal,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-modal *,
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-group-form-modal,
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-group-form-modal * {
+  text-shadow: none !important;
+}
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-title,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-title span,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-title small,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-invite-title,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-invite span,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-room-icon,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-join-hint,
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-group-form-head h3,
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-group-form-field > span {
+  color: #0f172a !important;
+  opacity: 1 !important;
+}
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-title small,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-join-hint,
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-group-form-field > span {
+  color: #475569 !important;
+}
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-invite,
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-group-form-modal {
+  background: rgba(255,255,255,0.98) !important;
+  border-color: rgba(100,116,139,0.44) !important;
+  color: #111827 !important;
+  box-shadow: 0 8px 28px rgba(15,23,42,0.18) !important;
+}
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-input,
+.bmwc-group-form-backdrop.bmwc-theme-light select.bmwc-input,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-modal .bmwc-input {
+  color: #111827 !important;
+  background: rgba(255,255,255,0.98) !important;
+  border: 1px solid rgba(100,116,139,0.50) !important;
+  box-shadow: inset 0 1px 2px rgba(15,23,42,0.05) !important;
+}
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-button,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-modal .bmwc-button {
+  color: #1e293b !important;
+  background: rgba(241,245,249,0.98) !important;
+  border: 1px solid rgba(100,116,139,0.52) !important;
+  box-shadow: 0 1px 3px rgba(15,23,42,0.12) !important;
+}
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-button:hover,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-group-modal .bmwc-button:hover {
+  color: #0f172a !important;
+  background: rgba(226,232,240,0.98) !important;
+  border-color: rgba(71,85,105,0.62) !important;
+}
+
+@media (prefers-color-scheme: light) {
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-modal,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-modal *,
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-group-form-modal,
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-group-form-modal * {
+    text-shadow: none !important;
+  }
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-title,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-title span,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-title small,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-invite-title,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-invite span,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-room-icon,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-join-hint,
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-group-form-head h3,
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-group-form-field > span {
+    color: #0f172a !important;
+    opacity: 1 !important;
+  }
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-title small,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-join-hint,
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-group-form-field > span {
+    color: #475569 !important;
+  }
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-invite,
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-group-form-modal {
+    background: rgba(255,255,255,0.98) !important;
+    border-color: rgba(100,116,139,0.44) !important;
+    color: #111827 !important;
+    box-shadow: 0 8px 28px rgba(15,23,42,0.18) !important;
+  }
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-input,
+  .bmwc-group-form-backdrop.bmwc-theme-system select.bmwc-input,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-modal .bmwc-input {
+    color: #111827 !important;
+    background: rgba(255,255,255,0.98) !important;
+    border: 1px solid rgba(100,116,139,0.50) !important;
+    box-shadow: inset 0 1px 2px rgba(15,23,42,0.05) !important;
+  }
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-button,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-group-modal .bmwc-button {
+    color: #1e293b !important;
+    background: rgba(241,245,249,0.98) !important;
+    border: 1px solid rgba(100,116,139,0.52) !important;
+    box-shadow: 0 1px 3px rgba(15,23,42,0.12) !important;
+  }
+}
+
+/* Group chat / private metadata moderation UI */
+.bmwc-group-button {
+  position: relative;
+  min-width: 34px;
+}
+.bmwc-admin-meta-title {
+  margin: 10px 6px 5px;
+  padding: 4px 6px;
+  border-top: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.12));
+  color: var(--bmwc-ui-muted, rgba(255,255,255,0.72));
+  font-size: 11px;
+  font-weight: 700;
+}
+.bmwc-admin-meta-row {
+  cursor: default !important;
+  opacity: 0.92;
+}
+.bmwc-admin-meta-row:hover {
+  transform: none !important;
+}
+.bmwc-admin-meta-note {
+  color: var(--bmwc-ui-muted, rgba(255,255,255,0.72));
+  font-size: 12px;
+  margin: 4px 0 10px;
+}
+.bmwc-group-manage-modal {
+  width: min(520px, calc(100vw - 32px));
+}
+.bmwc-group-member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(58vh, 420px);
+  overflow: auto;
+  margin: 8px 0 12px;
+}
+.bmwc-group-member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.10));
+  border-radius: 10px;
+  background: var(--bmwc-surface-bg, rgba(255,255,255,0.07));
+  color: var(--bmwc-text-color, #fff);
+}
+.bmwc-group-member-row small {
+  display: block;
+  color: var(--bmwc-ui-muted, rgba(255,255,255,0.68));
+  margin-top: 2px;
+}
+.bmwc-group-member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+#bmwc-root.bmwc-theme-light .bmwc-admin-meta-title,
+#bmwc-root.bmwc-theme-light .bmwc-admin-meta-note,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-admin-meta-title,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-admin-meta-note,
+.bmwc-theme-light .bmwc-group-member-row small {
+  color: rgba(30, 41, 59, 0.74) !important;
+}
+#bmwc-root.bmwc-theme-light .bmwc-group-member-row,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-group-member-row {
+  background: rgba(255,255,255,0.92) !important;
+  border-color: rgba(15,23,42,0.16) !important;
+  color: #0f172a !important;
+}
+
+/* Detached admin/group management modals should inherit chat theme and user UI settings. */
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-modal,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-modal,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-modal,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-modal {
+  color: var(--bmwc-text-color, #fff) !important;
+  background: rgba(var(--bmwc-modal-bg-rgb, 29, 29, 36), var(--bmwc-panel-opacity, 0.96)) !important;
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.14)) !important;
+  box-shadow: 0 8px 40px var(--bmwc-shadow-color, rgba(0,0,0,0.45)) !important;
+  font-family: inherit !important;
+  font-size: var(--bmwc-font-size, 13px) !important;
+}
+
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-admin-grid,
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-admin-list,
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-admin-item,
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-group-member-row,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-admin-grid,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-admin-list,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-admin-item,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-group-member-row,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-admin-grid,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-admin-list,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-admin-item,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-group-member-row,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-admin-grid,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-admin-list,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-admin-item,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-group-member-row {
+  color: var(--bmwc-text-color, #fff) !important;
+  background: var(--bmwc-surface-bg, rgba(255,255,255,0.07)) !important;
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.10)) !important;
+  text-shadow: var(--bmwc-text-shadow, none) !important;
+}
+
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-button,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-button,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-button,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-button {
+  color: var(--bmwc-button-text, var(--bmwc-text-color, #fff)) !important;
+  background: var(--bmwc-button-bg, rgba(255,255,255,0.13)) !important;
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.14)) !important;
+  font-family: inherit !important;
+  font-size: var(--bmwc-button-font-size, 12px) !important;
+}
+
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-button:hover,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-button:hover,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-button:hover,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-button:hover {
+  background: var(--bmwc-button-hover-bg, rgba(255,255,255,0.22)) !important;
+}
+
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-input,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-input,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-input,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-input {
+  color: var(--bmwc-text-color, #fff) !important;
+  background: var(--bmwc-input-bg, rgba(0,0,0,0.24)) !important;
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.18)) !important;
+  font-family: inherit !important;
+  font-size: var(--bmwc-input-font-size, 13px) !important;
+}
+
+/* Metadata rows: keep DM/group admin metadata inside the modal width. */
+.bmwc-admin-meta-row,
+.bmwc-group-hidden-row {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name actions" "preview preview";
+  column-gap: 6px;
+  row-gap: 2px;
+  overflow: hidden !important;
+}
+.bmwc-admin-meta-row .bmwc-dm-thread-name,
+.bmwc-group-hidden-row .bmwc-dm-thread-name {
+  grid-area: name;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  display: block !important;
+}
+.bmwc-admin-meta-row .bmwc-dm-thread-preview,
+.bmwc-group-hidden-row .bmwc-dm-thread-preview {
+  grid-area: preview;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+.bmwc-admin-meta-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+.bmwc-admin-meta-actions .bmwc-button {
+  white-space: nowrap;
+  max-width: 120px;
+}
+.bmwc-admin-meta-user {
+  display: inline !important;
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+.bmwc-admin-meta-separator {
+  opacity: 0.7;
+  margin: 0 2px;
+}
+.bmwc-admin-meta-danger {
+  color: #fff !important;
+  background: rgba(220, 38, 38, 0.72) !important;
+  border-color: rgba(248, 113, 113, 0.65) !important;
+}
+.bmwc-admin-meta-danger:hover {
+  background: rgba(185, 28, 28, 0.86) !important;
+}
+
+/* Detached modals should match the same theme/font treatment as chat settings. */
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop * {
+  box-sizing: border-box;
+  font-family: inherit;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-modal {
+  color: var(--bmwc-text-color, #fff) !important;
+  text-shadow: var(--bmwc-text-shadow, none) !important;
+  background: rgba(var(--bmwc-modal-bg-rgb, 29, 29, 36), var(--bmwc-panel-opacity, 0.96)) !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.14)) !important;
+  box-shadow: 0 8px 40px var(--bmwc-shadow-color, rgba(0,0,0,0.45)) !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-modal h3,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-modal h4,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-modal p,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-label,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-font-help,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-opacity-note,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-group-form-field > span {
+  color: var(--bmwc-text-color, #fff) !important;
+  text-shadow: var(--bmwc-text-shadow, none) !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-button,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-input,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-select,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-code {
+  font-family: inherit !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-button {
+  color: var(--bmwc-button-text, var(--bmwc-text-color, #fff)) !important;
+  background: var(--bmwc-button-bg, rgba(255,255,255,0.13)) !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.14)) !important;
+  text-shadow: var(--bmwc-ui-text-shadow, none) !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-button:hover {
+  background: var(--bmwc-button-hover-bg, rgba(255,255,255,0.22)) !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-input,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-select,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop textarea.bmwc-input {
+  color: var(--bmwc-text-color, #fff) !important;
+  background: var(--bmwc-input-bg, rgba(0,0,0,0.24)) !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.18)) !important;
+  text-shadow: var(--bmwc-ui-text-shadow, none) !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-admin-grid,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-admin-list,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-admin-item,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-group-member-row,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-group-invite,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-command-item {
+  color: var(--bmwc-text-color, #fff) !important;
+  background: var(--bmwc-surface-bg, rgba(255,255,255,0.07)) !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.10)) !important;
+  text-shadow: var(--bmwc-text-shadow, none) !important;
+}
+.bmwc-modal-backdrop.bmwc-theme-light.bmwc-user-prefs-backdrop .bmwc-modal {
+  color: #0f172a !important;
+  background: rgba(255,255,255,var(--bmwc-panel-opacity,0.96)) !important;
+  border-color: rgba(100,116,139,0.44) !important;
+  box-shadow: 0 12px 38px rgba(15,23,42,0.20) !important;
+}
+.bmwc-modal-backdrop.bmwc-theme-light.bmwc-user-prefs-backdrop .bmwc-button {
+  border-color: rgba(100,116,139,0.52) !important;
+}
+.bmwc-modal-backdrop.bmwc-theme-light.bmwc-user-prefs-backdrop .bmwc-input,
+.bmwc-modal-backdrop.bmwc-theme-light.bmwc-user-prefs-backdrop .bmwc-pref-select {
+  border-color: rgba(100,116,139,0.50) !important;
+  box-shadow: inset 0 1px 2px rgba(15,23,42,0.05) !important;
+}
+
+/* v4.5.0 follow-up: admin metadata rows must not inherit normal thread truncation/wrapping. */
+.bmwc-admin-meta-row,
+.bmwc-group-hidden-row {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-areas: "name actions" "preview preview" !important;
+  column-gap: 6px !important;
+  row-gap: 3px !important;
+  overflow: hidden !important;
+  cursor: default !important;
+}
+.bmwc-admin-meta-row > .bmwc-dm-thread-name,
+.bmwc-group-hidden-row > .bmwc-dm-thread-name {
+  grid-area: name !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+.bmwc-admin-meta-identities {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  vertical-align: bottom !important;
+}
+.bmwc-admin-meta-user {
+  display: inline !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+}
+.bmwc-admin-meta-user .bmwc-mc-seg,
+.bmwc-admin-meta-user span {
+  white-space: nowrap !important;
+}
+.bmwc-admin-meta-separator {
+  flex: 0 0 auto !important;
+  opacity: 0.72 !important;
+  margin: 0 2px !important;
+}
+.bmwc-admin-meta-actions {
+  grid-area: actions !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+.bmwc-admin-meta-actions .bmwc-button {
+  white-space: nowrap !important;
+  max-width: 120px !important;
+}
+.bmwc-admin-meta-row > .bmwc-dm-thread-preview,
+.bmwc-group-hidden-row > .bmwc-dm-thread-preview {
+  grid-area: preview !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+  word-break: keep-all !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.25 !important;
+}
+.bmwc-group-modal .bmwc-dm-sidebar,
+.bmwc-group-modal .bmwc-dm-thread-list,
+.bmwc-group-modal .bmwc-dm-thread,
+.bmwc-group-modal .bmwc-dm-thread-name,
+.bmwc-group-modal .bmwc-dm-thread-preview {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+.bmwc-group-modal .bmwc-dm-thread-list {
+  overflow-x: hidden !important;
+}
+
+/* Detached user settings/account/password modals inherit the same variable-driven theme. */
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop {
+  color: var(--bmwc-text-color, #fff) !important;
+  font-family: var(--bmwc-font-family, inherit) !important;
+  font-size: var(--bmwc-font-size, 13px) !important;
+  text-shadow: var(--bmwc-text-shadow, none) !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-modal {
+  color: var(--bmwc-text-color, #fff) !important;
+  background: rgba(var(--bmwc-modal-bg-rgb, 29, 29, 36), var(--bmwc-panel-opacity, 0.96)) !important;
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.14)) !important;
+  box-shadow: 0 8px 40px var(--bmwc-shadow-color, rgba(0,0,0,0.45)) !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-modal h3,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-modal h4,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-modal p,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-label,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-hints,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-font-help,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-font-status,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-opacity-note {
+  color: var(--bmwc-text-color, #fff) !important;
+  text-shadow: var(--bmwc-text-shadow, none) !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-input,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-select,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop textarea.bmwc-input {
+  color: var(--bmwc-text-color, #fff) !important;
+  background: var(--bmwc-input-bg, rgba(0,0,0,0.24)) !important;
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.18)) !important;
+  box-shadow: none !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-button {
+  color: var(--bmwc-button-text, var(--bmwc-text-color, #fff)) !important;
+  background: var(--bmwc-button-bg, rgba(255,255,255,0.13)) !important;
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.14)) !important;
+  box-shadow: none !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-button:hover {
+  background: var(--bmwc-button-hover-bg, rgba(255,255,255,0.22)) !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-code,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-preview,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-fieldset,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-shadow-custom-panel,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-shadow-preview {
+  color: var(--bmwc-text-color, #fff) !important;
+  background: var(--bmwc-surface-bg, rgba(255,255,255,0.07)) !important;
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.10)) !important;
+}
+
+/* DM-style light surfaces for group player search and public edge toasts.
+   Group search lives inside the same detached DM modal shell, but older
+   group-specific input rules were stronger than the DM search rules. Keep the
+   group player search visually identical to the DM player search. */
+.bmwc-dm-modal-backdrop.bmwc-theme-light #bmwc-group-search-panel,
+.bmwc-dm-modal-backdrop.bmwc-theme-light #bmwc-group-search-panel .bmwc-dm-search-head,
+.bmwc-dm-modal-backdrop.bmwc-theme-light #bmwc-group-search-panel .bmwc-dm-search-head strong {
+  color: var(--bmwc-ui-text-color, var(--bmwc-text-color, #111827)) !important;
+  text-shadow: var(--bmwc-ui-text-shadow, none) !important;
+}
+.bmwc-dm-modal-backdrop.bmwc-theme-light #bmwc-group-search-panel {
+  background: rgba(var(--bmwc-modal-bg-rgb, 248,250,252), 0.98) !important;
+  border-color: rgba(148, 163, 184, 0.50) !important;
+  box-shadow: 0 12px 34px rgba(15,23,42,0.20) !important;
+}
+.bmwc-dm-modal-backdrop.bmwc-theme-light #bmwc-group-search-panel .bmwc-input {
+  color: var(--bmwc-text-color, #111827) !important;
+  background: var(--bmwc-input-bg, rgba(255,255,255,0.98)) !important;
+  border-color: rgba(148, 163, 184, 0.58) !important;
+  box-shadow: inset 0 1px 2px rgba(15,23,42,0.04) !important;
+}
+.bmwc-dm-modal-backdrop.bmwc-theme-light #bmwc-group-player-results .bmwc-dm-player {
+  color: var(--bmwc-text-color, #111827) !important;
+  background: var(--bmwc-surface-bg, rgba(255,255,255,0.78)) !important;
+  border-color: rgba(148, 163, 184, 0.48) !important;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.06) !important;
+}
+.bmwc-dm-modal-backdrop.bmwc-theme-light #bmwc-group-player-results .bmwc-dm-player:hover {
+  background: var(--bmwc-surface-hover-bg, rgba(226,232,240,0.96)) !important;
+  border-color: rgba(100, 116, 139, 0.54) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-history-end {
+  color: #0f172a !important;
+  background: rgba(255,255,255,0.96) !important;
+  border: 1px solid rgba(51,65,85,0.42) !important;
+  box-shadow: 0 6px 18px rgba(15,23,42,0.18) !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+@media (prefers-color-scheme: light) {
+  .bmwc-dm-modal-backdrop.bmwc-theme-system #bmwc-group-search-panel,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system #bmwc-group-search-panel .bmwc-dm-search-head,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system #bmwc-group-search-panel .bmwc-dm-search-head strong {
+    color: var(--bmwc-ui-text-color, var(--bmwc-text-color, #111827)) !important;
+    text-shadow: var(--bmwc-ui-text-shadow, none) !important;
+  }
+  .bmwc-dm-modal-backdrop.bmwc-theme-system #bmwc-group-search-panel {
+    background: rgba(var(--bmwc-modal-bg-rgb, 248,250,252), 0.98) !important;
+    border-color: rgba(148, 163, 184, 0.50) !important;
+    box-shadow: 0 12px 34px rgba(15,23,42,0.20) !important;
+  }
+  .bmwc-dm-modal-backdrop.bmwc-theme-system #bmwc-group-search-panel .bmwc-input {
+    color: var(--bmwc-text-color, #111827) !important;
+    background: var(--bmwc-input-bg, rgba(255,255,255,0.98)) !important;
+    border-color: rgba(148, 163, 184, 0.58) !important;
+    box-shadow: inset 0 1px 2px rgba(15,23,42,0.04) !important;
+  }
+  .bmwc-dm-modal-backdrop.bmwc-theme-system #bmwc-group-player-results .bmwc-dm-player {
+    color: var(--bmwc-text-color, #111827) !important;
+    background: var(--bmwc-surface-bg, rgba(255,255,255,0.78)) !important;
+    border-color: rgba(148, 163, 184, 0.48) !important;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.06) !important;
+  }
+  .bmwc-dm-modal-backdrop.bmwc-theme-system #bmwc-group-player-results .bmwc-dm-player:hover {
+    background: var(--bmwc-surface-hover-bg, rgba(226,232,240,0.96)) !important;
+    border-color: rgba(100, 116, 139, 0.54) !important;
+  }
+  #bmwc-root.bmwc-theme-system .bmwc-history-end {
+    color: #0f172a !important;
+    background: rgba(255,255,255,0.96) !important;
+    border: 1px solid rgba(51,65,85,0.42) !important;
+    box-shadow: 0 6px 18px rgba(15,23,42,0.18) !important;
+    opacity: 1 !important;
+    text-shadow: none !important;
+  }
+}
+
+/* Toast visual parity patch.
+   Keep every edge/end toast on the same pill style used by the DM window.
+   Behavior is still controlled by the normal chat edge/retry logic in JS. */
+#bmwc-root .bmwc-history-end,
+.bmwc-dm-edge-toast {
+  position: absolute !important;
+  left: 50% !important;
+  right: auto !important;
+  transform: translateX(-50%) !important;
+  z-index: 30 !important;
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: calc(100% - 24px) !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 5px 10px !important;
+  border-radius: 999px !important;
+  color: var(--bmwc-ui-text-color, var(--bmwc-button-text, #fff)) !important;
+  background: var(--bmwc-button-bg, rgba(0,0,0,0.62)) !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.16)) !important;
+  box-shadow: 0 4px 14px var(--bmwc-shadow-color, rgba(0,0,0,0.32)) !important;
+  backdrop-filter: blur(8px) !important;
+  font-family: inherit !important;
+  font-size: max(11px, calc(var(--bmwc-font-size, 13px) * 0.86)) !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.01em !important;
+  text-align: center !important;
+  white-space: pre-line !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  opacity: 0.96 !important;
+}
+
+#bmwc-root .bmwc-history-end.bmwc-history-end-top {
+  top: var(--bmwc-affordance-top, 54px) !important;
+  bottom: auto !important;
+}
+#bmwc-root .bmwc-history-end.bmwc-history-end-bottom {
+  top: auto !important;
+  bottom: var(--bmwc-affordance-bottom, 72px) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-history-end,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-dm-edge-toast,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-dm-edge-toast {
+  color: #0f172a !important;
+  background: rgba(255,255,255,0.96) !important;
+  border-color: rgba(51,65,85,0.42) !important;
+  box-shadow: 0 6px 18px rgba(15,23,42,0.18) !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+#bmwc-root.bmwc-theme-high-contrast .bmwc-history-end,
+.bmwc-dm-modal-backdrop.bmwc-theme-high-contrast .bmwc-dm-edge-toast,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-dm-edge-toast {
+  color: #ffffff !important;
+  background: #000000 !important;
+  border-color: #ffffff !important;
+  box-shadow: 0 0 0 1px #000000, 0 0 0 2px #ffffff !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+@media (prefers-color-scheme: light) {
+  #bmwc-root.bmwc-theme-system .bmwc-history-end,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-dm-edge-toast,
+  .bmwc-modal-backdrop.bmwc-theme-system .bmwc-dm-edge-toast {
+    color: #0f172a !important;
+    background: rgba(255,255,255,0.96) !important;
+    border-color: rgba(51,65,85,0.42) !important;
+    box-shadow: 0 6px 18px rgba(15,23,42,0.18) !important;
+    opacity: 1 !important;
+    text-shadow: none !important;
+  }
+}
+
+/* Admin retention cleanup preview cards. */
+.bmwc-admin-cleanup-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0;
+  padding: 8px 9px;
+  border-radius: 9px;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.14));
+  background: var(--bmwc-surface-bg, rgba(255,255,255,0.07));
+  color: var(--bmwc-ui-text-color, var(--bmwc-text-color, inherit));
+  font-size: 12px;
+  line-height: 1.3;
+  box-sizing: border-box;
+}
+.bmwc-admin-cleanup-preview strong {
+  font-size: 12px;
+}
+.bmwc-admin-cleanup-preview span {
+  opacity: 0.82;
+}
+
+
+/* v4.5.0 follow-up: keep admin DM/group metadata readable in narrow sidebars. */
+.bmwc-admin-meta-row,
+.bmwc-group-hidden-row {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-areas: "name" "preview" "actions" !important;
+  align-items: start !important;
+  overflow: visible !important;
+}
+.bmwc-admin-meta-row > .bmwc-dm-thread-name,
+.bmwc-group-hidden-row > .bmwc-dm-thread-name {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+  flex-wrap: wrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: anywhere !important;
+}
+.bmwc-admin-meta-identities {
+  display: inline-flex !important;
+  flex-wrap: wrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+  max-width: 100% !important;
+}
+.bmwc-admin-meta-user {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  word-break: keep-all !important;
+  overflow-wrap: anywhere !important;
+}
+.bmwc-admin-meta-actions {
+  justify-content: flex-start !important;
+  flex-wrap: wrap !important;
+}
+.bmwc-admin-meta-actions .bmwc-button {
+  max-width: none !important;
+}
+.bmwc-admin-meta-row > .bmwc-dm-thread-preview,
+.bmwc-group-hidden-row > .bmwc-dm-thread-preview {
+  display: block !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+  word-break: keep-all !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* Compose input background preference scope.
+   ui.input-background-color / user input background color should affect only
+   the actual message compose boxes.  Generic .bmwc-input is used by search,
+   settings, moderation metadata, system/time UI, and several toolbar controls,
+   so those controls must keep the normal theme input/surface colors. */
+#bmwc-root #bmwc-message,
+.bmwc-dm-modal-backdrop #bmwc-dm-input,
+.bmwc-dm-modal-backdrop #bmwc-group-input {
+  background: var(--bmwc-compose-input-bg, var(--bmwc-input-bg, rgba(0,0,0,0.24))) !important;
+}
+#bmwc-root.bmwc-theme-light #bmwc-message,
+.bmwc-dm-modal-backdrop.bmwc-theme-light #bmwc-dm-input,
+.bmwc-dm-modal-backdrop.bmwc-theme-light #bmwc-group-input {
+  background: var(--bmwc-compose-input-bg, var(--bmwc-input-bg, rgba(255,255,255,0.98))) !important;
+}
+@media (prefers-color-scheme: light) {
+  #bmwc-root.bmwc-theme-system #bmwc-message,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system #bmwc-dm-input,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system #bmwc-group-input {
+    background: var(--bmwc-compose-input-bg, var(--bmwc-input-bg, rgba(255,255,255,0.98))) !important;
+  }
+}
+
+/* v4.5.0 light-theme visibility follow-up.
+   Keep the input-background preference scoped to compose boxes, but make title,
+   pinned, DM, group, and detached modal text/buttons obey the configured text
+   shadow, border, and theme surface variables. */
+#bmwc-root .bmwc-title,
+#bmwc-root .bmwc-header,
+#bmwc-root .bmwc-header *,
+#bmwc-root .bmwc-pinned-open,
+#bmwc-root .bmwc-pinned-open *,
+#bmwc-root .bmwc-pinned-item,
+#bmwc-root .bmwc-pinned-item *,
+#bmwc-root .bmwc-system,
+#bmwc-root .bmwc-time,
+#bmwc-root .bmwc-meta,
+.bmwc-modal-backdrop .bmwc-modal,
+.bmwc-modal-backdrop .bmwc-modal h3,
+.bmwc-modal-backdrop .bmwc-modal h4,
+.bmwc-modal-backdrop .bmwc-modal p,
+.bmwc-modal-backdrop .bmwc-modal-head,
+.bmwc-modal-backdrop .bmwc-modal-head *,
+.bmwc-dm-modal-backdrop .bmwc-dm-head,
+.bmwc-dm-modal-backdrop .bmwc-dm-head *,
+.bmwc-dm-modal-backdrop .bmwc-dm-title,
+.bmwc-dm-modal-backdrop .bmwc-dm-main-title,
+.bmwc-dm-modal-backdrop .bmwc-dm-thread-name,
+.bmwc-dm-modal-backdrop .bmwc-dm-thread-preview,
+.bmwc-dm-modal-backdrop .bmwc-dm-message,
+.bmwc-dm-modal-backdrop .bmwc-dm-message *,
+.bmwc-dm-modal-backdrop .bmwc-group-title,
+.bmwc-dm-modal-backdrop .bmwc-group-title *,
+.bmwc-dm-modal-backdrop .bmwc-group-room-meta,
+.bmwc-dm-modal-backdrop .bmwc-group-join-hint,
+.bmwc-dm-modal-backdrop .bmwc-group-invite,
+.bmwc-dm-modal-backdrop .bmwc-group-invite *,
+.bmwc-group-form-backdrop .bmwc-group-form-modal,
+.bmwc-group-form-backdrop .bmwc-group-form-modal * {
+  text-shadow: var(--bmwc-ui-text-shadow, var(--bmwc-text-shadow, none)) !important;
+}
+
+#bmwc-root .bmwc-text,
+#bmwc-root .bmwc-sender,
+#bmwc-root .bmwc-body,
+.bmwc-dm-modal-backdrop .bmwc-dm-message-text,
+.bmwc-dm-modal-backdrop .bmwc-dm-message-body {
+  text-shadow: var(--bmwc-text-shadow, none) !important;
+}
+
+#bmwc-root.bmwc-text-shadow-none .bmwc-title,
+#bmwc-root.bmwc-text-shadow-none .bmwc-header,
+#bmwc-root.bmwc-text-shadow-none .bmwc-header *,
+#bmwc-root.bmwc-text-shadow-none .bmwc-pinned-open,
+#bmwc-root.bmwc-text-shadow-none .bmwc-pinned-open *,
+#bmwc-root.bmwc-text-shadow-none .bmwc-pinned-item,
+#bmwc-root.bmwc-text-shadow-none .bmwc-pinned-item * {
+  text-shadow: none !important;
+}
+
+.bmwc-modal-backdrop .bmwc-modal {
+  color: var(--bmwc-text-color, #fff) !important;
+  background: rgba(var(--bmwc-modal-bg-rgb, 29, 29, 36), var(--bmwc-panel-opacity, 0.96)) !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.14)) !important;
+  box-shadow: 0 8px 40px var(--bmwc-shadow-color, rgba(0,0,0,0.45)) !important;
+}
+
+.bmwc-modal-backdrop .bmwc-button {
+  color: var(--bmwc-button-text, var(--bmwc-text-color, #fff)) !important;
+  background: var(--bmwc-button-bg, rgba(255,255,255,0.13)) !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.16)) !important;
+  box-shadow: 0 1px 2px var(--bmwc-shadow-color, rgba(0,0,0,0.22)) !important;
+  text-shadow: var(--bmwc-ui-text-shadow, var(--bmwc-text-shadow, none)) !important;
+  box-sizing: border-box !important;
+}
+.bmwc-modal-backdrop .bmwc-button:hover {
+  background: var(--bmwc-button-hover-bg, rgba(255,255,255,0.22)) !important;
+}
+.bmwc-modal-backdrop .bmwc-input,
+.bmwc-modal-backdrop textarea.bmwc-input,
+.bmwc-modal-backdrop select.bmwc-input {
+  color: var(--bmwc-text-color, #fff) !important;
+  background: var(--bmwc-input-bg, rgba(0,0,0,0.24)) !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.18)) !important;
+  text-shadow: var(--bmwc-ui-text-shadow, var(--bmwc-text-shadow, none)) !important;
+  box-sizing: border-box !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-title,
+#bmwc-root.bmwc-theme-light .bmwc-status,
+#bmwc-root.bmwc-theme-light .bmwc-header,
+#bmwc-root.bmwc-theme-light .bmwc-header *,
+#bmwc-root.bmwc-theme-light .bmwc-pinned-open,
+#bmwc-root.bmwc-theme-light .bmwc-pinned-open *,
+#bmwc-root.bmwc-theme-light .bmwc-pinned-item,
+#bmwc-root.bmwc-theme-light .bmwc-pinned-item *,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-modal,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-modal *,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-dm-modal,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-dm-modal *,
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-group-form-modal,
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-group-form-modal * {
+  text-shadow: var(--bmwc-ui-text-shadow, var(--bmwc-text-shadow, none)) !important;
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-pinned-open,
+#bmwc-root.bmwc-theme-light .bmwc-pinned-item,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-button,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-button,
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-button {
+  color: var(--bmwc-button-text, var(--bmwc-text-color, #111827)) !important;
+  background: var(--bmwc-button-bg, rgba(241,245,249,0.96)) !important;
+  border: 1px solid var(--bmwc-border-color, rgba(100,116,139,0.52)) !important;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.10) !important;
+}
+#bmwc-root.bmwc-theme-light .bmwc-pinned-open:hover,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-button:hover,
+.bmwc-dm-modal-backdrop.bmwc-theme-light .bmwc-button:hover,
+.bmwc-group-form-backdrop.bmwc-theme-light .bmwc-button:hover {
+  background: var(--bmwc-button-hover-bg, rgba(226,232,240,0.98)) !important;
+  border-color: rgba(100,116,139,0.62) !important;
+}
+
+.bmwc-pinned-backdrop #bmwc-pinned-close,
+.bmwc-pinned-backdrop .bmwc-modal-head .bmwc-button {
+  min-height: 30px !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.16)) !important;
+}
+
+@media (prefers-color-scheme: light) {
+  #bmwc-root.bmwc-theme-system .bmwc-title,
+  #bmwc-root.bmwc-theme-system .bmwc-status,
+  #bmwc-root.bmwc-theme-system .bmwc-header,
+  #bmwc-root.bmwc-theme-system .bmwc-header *,
+  #bmwc-root.bmwc-theme-system .bmwc-pinned-open,
+  #bmwc-root.bmwc-theme-system .bmwc-pinned-open *,
+  #bmwc-root.bmwc-theme-system .bmwc-pinned-item,
+  #bmwc-root.bmwc-theme-system .bmwc-pinned-item *,
+  .bmwc-modal-backdrop.bmwc-theme-system .bmwc-modal,
+  .bmwc-modal-backdrop.bmwc-theme-system .bmwc-modal *,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-dm-modal,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-dm-modal *,
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-group-form-modal,
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-group-form-modal * {
+    text-shadow: var(--bmwc-ui-text-shadow, var(--bmwc-text-shadow, none)) !important;
+  }
+
+  #bmwc-root.bmwc-theme-system .bmwc-pinned-open,
+  #bmwc-root.bmwc-theme-system .bmwc-pinned-item,
+  .bmwc-modal-backdrop.bmwc-theme-system .bmwc-button,
+  .bmwc-dm-modal-backdrop.bmwc-theme-system .bmwc-button,
+  .bmwc-group-form-backdrop.bmwc-theme-system .bmwc-button {
+    color: var(--bmwc-button-text, var(--bmwc-text-color, #111827)) !important;
+    background: var(--bmwc-button-bg, rgba(241,245,249,0.96)) !important;
+    border: 1px solid var(--bmwc-border-color, rgba(100,116,139,0.52)) !important;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.10) !important;
+  }
+}
+
+
+/* v4.5.0 follow-up: minimized mode shows only title + restore button. */
+#bmwc-root.bmwc-minimized #bmwc-group,
+#bmwc-root.bmwc-guest-hidden.bmwc-minimized #bmwc-group {
+  display: none !important;
+}
+
+/* v4.5.0 follow-up: admin DM/group metadata uses a two-line layout:
+   left metadata on two lines, right-side action buttons. */
+.bmwc-admin-meta-row,
+.bmwc-group-hidden-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-areas:
+    "name actions"
+    "preview actions" !important;
+  align-items: center !important;
+  column-gap: 8px !important;
+  row-gap: 2px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+.bmwc-admin-meta-row > .bmwc-dm-thread-name,
+.bmwc-group-hidden-row > .bmwc-dm-thread-name {
+  grid-area: name !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  flex-wrap: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+}
+.bmwc-admin-meta-identities {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  flex-wrap: nowrap !important;
+}
+.bmwc-admin-meta-user {
+  display: inline-block !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  max-width: min(16em, 42%) !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+}
+.bmwc-admin-meta-user .bmwc-mc-seg,
+.bmwc-admin-meta-user span {
+  white-space: nowrap !important;
+}
+.bmwc-admin-meta-separator {
+  flex: 0 0 auto !important;
+  opacity: 0.72 !important;
+  margin: 0 2px !important;
+}
+.bmwc-admin-meta-row > .bmwc-dm-thread-preview,
+.bmwc-group-hidden-row > .bmwc-dm-thread-preview {
+  grid-area: preview !important;
+  display: block !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  line-height: 1.25 !important;
+}
+.bmwc-admin-meta-actions {
+  grid-area: actions !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  align-self: center !important;
+  gap: 4px !important;
+  min-width: max-content !important;
+  max-width: 100% !important;
+  flex-wrap: nowrap !important;
+}
+.bmwc-admin-meta-actions .bmwc-button {
+  white-space: nowrap !important;
+  max-width: none !important;
+  min-width: auto !important;
+  padding-left: 6px !important;
+  padding-right: 6px !important;
+}
+@media (max-width: 520px) {
+  .bmwc-admin-meta-row,
+  .bmwc-group-hidden-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas:
+      "name"
+      "preview"
+      "actions" !important;
+    overflow: visible !important;
+  }
+  .bmwc-admin-meta-actions {
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important;
+    min-width: 0 !important;
+  }
+}
+
+/* v4.5.0 follow-up: DM/group/admin metadata lists must scroll instead of shrinking rows.
+   The thread list is a column flex container; flex children shrink by default,
+   which compressed admin metadata rows when the list became taller than the
+   current chat window.  Keep each list item at its natural height so overflow-y
+   can create the scrollbar. */
+.bmwc-dm-modal .bmwc-dm-thread-list {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+}
+.bmwc-dm-modal .bmwc-dm-thread-list > .bmwc-dm-thread,
+.bmwc-dm-modal .bmwc-dm-thread-list > .bmwc-admin-meta-row,
+.bmwc-dm-modal .bmwc-dm-thread-list > .bmwc-group-hidden-row,
+.bmwc-dm-modal .bmwc-dm-thread-list > .bmwc-admin-meta-title,
+.bmwc-dm-modal .bmwc-dm-thread-list > .bmwc-admin-cleanup-preview,
+.bmwc-dm-modal .bmwc-dm-thread-list > .bmwc-dm-empty {
+  flex: 0 0 auto !important;
+}
+.bmwc-group-modal .bmwc-group-invites {
+  flex: 0 0 auto !important;
+  max-height: min(180px, 34%) !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+.bmwc-group-modal .bmwc-group-invites > * {
+  flex: 0 0 auto !important;
+}
+
+
+/* v4.5.0 follow-up: keep standalone/full-window layout inside the visible viewport.
+   Standalone pages can be taller than the real visible area on mobile browsers when
+   100vh includes browser chrome.  The parent frame now uses the VisualViewport
+   height, and these rules make the iframe content shrink internally so the input
+   row stays visible instead of being pushed below the screen. */
+html.bmwc-standalone-mode,
+body.bmwc-standalone-mode {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+#bmwc-root {
+  box-sizing: border-box !important;
+}
+#bmwc-root .bmwc-panel {
+  min-height: 0 !important;
+  box-sizing: border-box !important;
+}
+#bmwc-root .bmwc-header,
+#bmwc-root .bmwc-pinned-bar,
+#bmwc-root .bmwc-form {
+  flex: 0 0 auto !important;
+}
+#bmwc-root .bmwc-messages {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
+#bmwc-root.bmwc-standalone-mode:not(.bmwc-minimized) {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+#bmwc-root.bmwc-standalone-mode:not(.bmwc-minimized) .bmwc-panel {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+}
+
+/* v4.5.0 follow-up: scope user Chat Settings to real chat content only.
+   Menus, settings windows, sidebars, metadata management lists, search fields,
+   buttons, and other UI chrome keep the selected theme defaults. */
+#bmwc-root .bmwc-messages {
+  background: var(--bmwc-chat-background-color, transparent) !important;
+}
+
+#bmwc-root .bmwc-messages .bmwc-msg,
+#bmwc-root .bmwc-messages .bmwc-system,
+.bmwc-dm-modal-backdrop .bmwc-dm-messages,
+.bmwc-dm-modal-backdrop .bmwc-dm-messages .bmwc-dm-message {
+  font-family: var(--bmwc-chat-font-family, inherit) !important;
+  font-size: var(--bmwc-chat-message-font-size, var(--bmwc-message-font-size, 13px)) !important;
+  text-shadow: var(--bmwc-chat-text-shadow, var(--bmwc-text-shadow, none)) !important;
+}
+
+#bmwc-root .bmwc-messages .bmwc-text,
+#bmwc-root .bmwc-messages .bmwc-body,
+#bmwc-root .bmwc-messages .bmwc-system,
+.bmwc-dm-modal-backdrop .bmwc-dm-message-body,
+.bmwc-dm-modal-backdrop .bmwc-dm-message-text {
+  color: var(--bmwc-chat-text-color, var(--bmwc-text-color, #fff)) !important;
+}
+
+#bmwc-root .bmwc-messages .bmwc-text,
+#bmwc-root .bmwc-messages .bmwc-body,
+#bmwc-root .bmwc-messages .bmwc-meta,
+#bmwc-root .bmwc-messages .bmwc-time,
+#bmwc-root .bmwc-messages .bmwc-source-label,
+#bmwc-root .bmwc-messages .bmwc-source-badge,
+#bmwc-root .bmwc-messages .bmwc-role-badge,
+.bmwc-dm-modal-backdrop .bmwc-dm-messages .bmwc-dm-message-body,
+.bmwc-dm-modal-backdrop .bmwc-dm-messages .bmwc-dm-message-text,
+.bmwc-dm-modal-backdrop .bmwc-dm-messages .bmwc-dm-message-meta,
+.bmwc-dm-modal-backdrop .bmwc-dm-messages .bmwc-source-label,
+.bmwc-dm-modal-backdrop .bmwc-dm-messages .bmwc-time {
+  font-family: var(--bmwc-chat-font-family, inherit) !important;
+  font-size: var(--bmwc-chat-message-font-size, var(--bmwc-message-font-size, 13px)) !important;
+  text-shadow: var(--bmwc-chat-text-shadow, var(--bmwc-text-shadow, none)) !important;
+}
+
+#bmwc-root .bmwc-messages .bmwc-time,
+#bmwc-root .bmwc-messages .bmwc-source-label,
+#bmwc-root .bmwc-messages .bmwc-source-badge,
+#bmwc-root .bmwc-messages .bmwc-role-badge,
+.bmwc-dm-modal-backdrop .bmwc-dm-messages .bmwc-time,
+.bmwc-dm-modal-backdrop .bmwc-dm-messages .bmwc-source-label,
+.bmwc-dm-modal-backdrop .bmwc-dm-messages .bmwc-source-badge,
+.bmwc-dm-modal-backdrop .bmwc-dm-messages .bmwc-role-badge {
+  color: var(--bmwc-chat-ui-text-color, var(--bmwc-muted-color, rgba(255,255,255,0.74))) !important;
+}
+
+.bmwc-dm-modal-backdrop .bmwc-dm-messages {
+  background: var(--bmwc-chat-background-color, transparent) !important;
+}
+
+/* Do not force .bmwc-sender color here; Minecraft/name color-code spans must keep
+   their own rendered colors. */
+#bmwc-root #bmwc-message,
+.bmwc-dm-modal-backdrop #bmwc-dm-input,
+.bmwc-dm-modal-backdrop #bmwc-group-input {
+  background: var(--bmwc-compose-input-bg, var(--bmwc-input-bg, rgba(0,0,0,0.24))) !important;
+}
+
+/* v4.5.0 follow-up: keep message metadata formatting consistent everywhere.
+   General chat, DM, group chat, and pinned-message rows use the same left-to-right
+   flow with visible middle-dot separators. Names keep their own Minecraft/user
+   color rendering; chat UI color is only applied to separators, source labels,
+   timestamps, and pinned metadata details. */
+#bmwc-root .bmwc-meta,
+.bmwc-dm-modal-backdrop .bmwc-dm-message-meta,
+.bmwc-pinned-backdrop .bmwc-pinned-item .bmwc-meta {
+  display: flex !important;
+  align-items: baseline !important;
+  justify-content: flex-start !important;
+  flex-wrap: wrap !important;
+  column-gap: 4px !important;
+  row-gap: 1px !important;
+  text-align: left !important;
+}
+
+#bmwc-root .bmwc-meta-sep,
+.bmwc-dm-modal-backdrop .bmwc-meta-sep,
+.bmwc-pinned-backdrop .bmwc-meta-sep {
+  flex: 0 0 auto !important;
+  opacity: 0.82 !important;
+  user-select: none !important;
+  color: var(--bmwc-chat-ui-text-color, var(--bmwc-muted-color, rgba(255,255,255,0.74))) !important;
+}
+
+.bmwc-dm-modal-backdrop .bmwc-dm-message-meta {
+  gap: 4px !important;
+  margin-bottom: 3px !important;
+}
+
+.bmwc-dm-modal-backdrop .bmwc-dm-message-meta > .bmwc-sender,
+.bmwc-dm-modal-backdrop .bmwc-dm-message-meta > .bmwc-time,
+.bmwc-dm-modal-backdrop .bmwc-dm-message-meta > .bmwc-meta-sep,
+.bmwc-pinned-backdrop .bmwc-pinned-item .bmwc-meta > .bmwc-sender,
+.bmwc-pinned-backdrop .bmwc-pinned-item .bmwc-meta > .bmwc-source-label,
+.bmwc-pinned-backdrop .bmwc-pinned-item .bmwc-meta > .bmwc-time-actions,
+.bmwc-pinned-backdrop .bmwc-pinned-item .bmwc-meta > .bmwc-pinned-detail,
+.bmwc-pinned-backdrop .bmwc-pinned-item .bmwc-meta > .bmwc-meta-sep {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+}
+
+.bmwc-dm-modal-backdrop .bmwc-dm-message-meta .bmwc-time,
+.bmwc-pinned-backdrop .bmwc-pinned-item .bmwc-source-label,
+.bmwc-pinned-backdrop .bmwc-pinned-item .bmwc-time,
+.bmwc-pinned-backdrop .bmwc-pinned-item .bmwc-pinned-detail {
+  color: var(--bmwc-chat-ui-text-color, var(--bmwc-muted-color, rgba(255,255,255,0.74))) !important;
+}
+
+/* Pinned message contents are real chat contents, so they follow Chat Settings.
+   Modal headers, buttons, and surrounding management UI still keep theme defaults. */
+.bmwc-pinned-backdrop .bmwc-pinned-list {
+  background: var(--bmwc-chat-background-color, transparent) !important;
+}
+
+.bmwc-pinned-backdrop .bmwc-pinned-list .bmwc-pinned-item,
+.bmwc-pinned-backdrop .bmwc-pinned-list .bmwc-pinned-item .bmwc-meta,
+.bmwc-pinned-backdrop .bmwc-pinned-list .bmwc-pinned-item .bmwc-text {
+  font-family: var(--bmwc-chat-font-family, inherit) !important;
+  font-size: var(--bmwc-chat-message-font-size, var(--bmwc-message-font-size, 13px)) !important;
+  text-shadow: var(--bmwc-chat-text-shadow, var(--bmwc-text-shadow, none)) !important;
+}
+
+.bmwc-pinned-backdrop .bmwc-pinned-list .bmwc-pinned-item .bmwc-text {
+  color: var(--bmwc-chat-text-color, var(--bmwc-text-color, #fff)) !important;
+}
+
+
+/* v4.5.0 follow-up: normalize themed control affordances across all themes.
+   Pinned-message action buttons live in a detached modal, so #bmwc-root scoped
+   button rules do not reach them.  Give root controls and detached modal
+   controls the same visible surface, border, hover and focus treatment. */
+#bmwc-root .bmwc-pinned-open,
+#bmwc-root .bmwc-pinned-item,
+#bmwc-root .bmwc-mini-action,
+#bmwc-root .bmwc-media-load,
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-mini-action,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-mini-action,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-mini-action,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-mini-action,
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-media-load,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-media-load,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-media-load,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-media-load {
+  box-sizing: border-box !important;
+  color: var(--bmwc-button-text, var(--bmwc-text-color, #fff)) !important;
+  background: var(--bmwc-button-bg, rgba(255,255,255,0.13)) !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.14)) !important;
+  box-shadow: 0 1px 2px var(--bmwc-control-shadow, rgba(0,0,0,0.14)) !important;
+  text-shadow: var(--bmwc-ui-text-shadow, none) !important;
+}
+
+#bmwc-root .bmwc-pinned-open:hover,
+#bmwc-root .bmwc-mini-action:hover,
+#bmwc-root .bmwc-media-load:hover,
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-mini-action:hover,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-mini-action:hover,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-mini-action:hover,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-mini-action:hover,
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-media-load:hover,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-media-load:hover,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-media-load:hover,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-media-load:hover {
+  background: var(--bmwc-button-hover-bg, rgba(255,255,255,0.22)) !important;
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.22)) !important;
+}
+
+#bmwc-root .bmwc-pinned-open:focus-visible,
+#bmwc-root .bmwc-mini-action:focus-visible,
+#bmwc-root .bmwc-media-load:focus-visible,
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-mini-action:focus-visible,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-mini-action:focus-visible,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-mini-action:focus-visible,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-mini-action:focus-visible,
+.bmwc-modal-backdrop.bmwc-theme-dark .bmwc-media-load:focus-visible,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-media-load:focus-visible,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-media-load:focus-visible,
+.bmwc-modal-backdrop.bmwc-theme-system .bmwc-media-load:focus-visible {
+  outline: 2px solid var(--bmwc-link-color, rgba(130,190,255,0.65)) !important;
+  outline-offset: 2px !important;
+}
+
+#bmwc-root.bmwc-theme-light,
+#bmwc-root.bmwc-theme-system,
+.bmwc-modal-backdrop.bmwc-theme-light,
+.bmwc-modal-backdrop.bmwc-theme-system {
+  --bmwc-control-shadow: rgba(15,23,42,0.12);
+}
+
+#bmwc-root.bmwc-theme-light .bmwc-pinned-open,
+#bmwc-root.bmwc-theme-light .bmwc-pinned-item,
+#bmwc-root.bmwc-theme-light .bmwc-mini-action,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-pinned-item,
+.bmwc-modal-backdrop.bmwc-theme-light .bmwc-mini-action {
+  border-color: rgba(71,85,105,0.50) !important;
+}
+
+@media (prefers-color-scheme: light) {
+  #bmwc-root.bmwc-theme-system .bmwc-pinned-open,
+  #bmwc-root.bmwc-theme-system .bmwc-pinned-item,
+  #bmwc-root.bmwc-theme-system .bmwc-mini-action,
+  .bmwc-modal-backdrop.bmwc-theme-system .bmwc-pinned-item,
+  .bmwc-modal-backdrop.bmwc-theme-system .bmwc-mini-action {
+    border-color: rgba(71,85,105,0.50) !important;
+  }
+}
+
+#bmwc-root.bmwc-theme-high-contrast .bmwc-pinned-open,
+#bmwc-root.bmwc-theme-high-contrast .bmwc-pinned-item,
+#bmwc-root.bmwc-theme-high-contrast .bmwc-mini-action,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-pinned-item,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast .bmwc-mini-action {
+  border-color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.bmwc-pinned-backdrop .bmwc-pinned-list .bmwc-pinned-item {
+  background: var(--bmwc-surface-bg, rgba(255,255,255,0.07)) !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.14)) !important;
+  border-radius: 10px !important;
+}
+
+.bmwc-pinned-backdrop .bmwc-pinned-actions {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 4px !important;
+  margin-left: 6px !important;
+  vertical-align: baseline !important;
+}
+
+.bmwc-pinned-backdrop .bmwc-pinned-actions .bmwc-mini-action {
+  min-width: 24px !important;
+  min-height: 20px !important;
+  padding: 2px 6px !important;
+  border-radius: 6px !important;
+  line-height: 1.25 !important;
+  white-space: nowrap !important;
+}
+
+.bmwc-pinned-backdrop .bmwc-pinned-actions .bmwc-mini-action[disabled],
+#bmwc-root .bmwc-pinned-actions .bmwc-mini-action[disabled] {
+  opacity: 0.48 !important;
+  cursor: default !important;
+  pointer-events: none !important;
+  filter: grayscale(0.2) !important;
+}
+
+.bmwc-pinned-backdrop .bmwc-pinned-actions .bmwc-mini-action[data-unpin] {
+  min-width: 44px !important;
+}
+
+.bmwc-pref-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.bmwc-notification-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.16));
+}
+
+.bmwc-pref-button-row .bmwc-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* v4.5.0 follow-up: resize lock, admin badge action, and local chat-setting presets. */
+#bmwc-root .bmwc-resize-lock-float {
+  position: absolute;
+  top: 92px;
+  right: 10px;
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 !important;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.16)) !important;
+  border-radius: 999px;
+  color: var(--bmwc-button-text, var(--bmwc-text-color, #fff)) !important;
+  background: var(--bmwc-button-bg, rgba(28, 35, 48, 0.92)) !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.24);
+  backdrop-filter: blur(8px);
+  text-align: center;
+  font-size: 15px !important;
+  line-height: 1;
+}
+
+#bmwc-root.bmwc-has-pinned-bar .bmwc-resize-lock-float {
+  top: 136px;
+}
+
+#bmwc-root .bmwc-resize-lock-float:hover,
+#bmwc-root .bmwc-resize-lock-float:focus-visible {
+  background: var(--bmwc-button-hover-bg, rgba(42, 52, 70, 0.96)) !important;
+  outline: none;
+}
+
+#bmwc-root.bmwc-resize-locked .bmwc-resize-handle,
+#bmwc-root:not(.bmwc-resizable) .bmwc-resize-handle,
+#bmwc-root.bmwc-minimized .bmwc-resize-lock-button,
+#bmwc-root.bmwc-guest-hidden .bmwc-resize-lock-button {
+  display: none !important;
+}
+
+#bmwc-root .bmwc-status.bmwc-status-admin-action {
+  cursor: pointer !important;
+  max-width: 70px !important;
+  min-width: 44px !important;
+  min-height: 22px !important;
+  height: 22px !important;
+  padding-left: 7px !important;
+  padding-right: 7px !important;
+  font-size: 10px !important;
+  justify-content: center !important;
+}
+
+#bmwc-root .bmwc-status.bmwc-status-admin-action:hover,
+#bmwc-root .bmwc-status.bmwc-status-admin-action:focus-visible {
+  filter: brightness(1.08);
+  outline: 2px solid var(--bmwc-link-color, rgba(130,190,255,0.65));
+  outline-offset: 2px;
+}
+
+.bmwc-preset-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.16));
+}
+
+.bmwc-preset-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+}
+
+.bmwc-preset-row .bmwc-button {
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .bmwc-preset-row {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+  }
+  .bmwc-preset-row #bmwc-prefs-preset-save,
+  .bmwc-preset-row #bmwc-prefs-preset-load,
+  .bmwc-preset-row #bmwc-prefs-preset-delete {
+    width: 100%;
+  }
+}
+
+/* v4.5.0 follow-up: keep the clickable admin badge visually identical to the
+   existing badge. Hover should not create an extra marker/outline at the side. */
+#bmwc-root .bmwc-status.bmwc-status-admin-action:hover {
+  outline: none !important;
+  outline-offset: 0 !important;
+  filter: none !important;
+}
+
+#bmwc-root .bmwc-status.bmwc-status-admin-action:focus-visible {
+  outline: 2px solid var(--bmwc-link-color, rgba(130,190,255,0.65)) !important;
+  outline-offset: 2px !important;
+}
+
+#bmwc-root.bmwc-minimized .bmwc-resize-lock-float {
+  display: none !important;
+}
+
+#bmwc-root .bmwc-notify-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px 8px;
+  margin: 4px 0 8px;
+}
+
+#bmwc-root .bmwc-notify-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--bmwc-muted-color, rgba(230, 235, 245, 0.72));
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+#bmwc-root .bmwc-notify-option input {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+#bmwc-root .bmwc-notify-option span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 420px) {
+  #bmwc-root .bmwc-notify-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* v4.5.0 follow-up: keep settings modal scrollbars inside the modal and hide bulky optional sections by default. */
+.bmwc-user-prefs-modal {
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  max-height: calc(100vh - 40px) !important;
+  overflow: hidden !important;
+}
+
+.bmwc-user-prefs-modal > .bmwc-modal-head {
+  flex: 0 0 auto !important;
+}
+
+.bmwc-user-prefs-scroll {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  scrollbar-gutter: stable !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--bmwc-border-color, rgba(255,255,255,0.24)) transparent !important;
+  box-sizing: border-box !important;
+  padding-right: 8px !important;
+  margin-right: -2px !important;
+}
+
+.bmwc-user-prefs-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.bmwc-user-prefs-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bmwc-user-prefs-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--bmwc-border-color, rgba(255,255,255,0.24));
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+.bmwc-user-prefs-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--bmwc-link-color, rgba(130,190,255,0.65));
+}
+
+
+/* v4.5.0 follow-up: color inputs need a visible swatch edge on light backgrounds. */
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-color-input {
+  border-color: var(--bmwc-border-color, rgba(255,255,255,0.18)) !important;
+  box-shadow: 0 1px 2px var(--bmwc-control-shadow, rgba(0,0,0,0.10)) !important;
+}
+
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-color-input::-webkit-color-swatch {
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.18)) !important;
+}
+
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-color-input::-moz-color-swatch {
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.18)) !important;
+}
+
+.bmwc-modal-backdrop.bmwc-theme-light.bmwc-user-prefs-backdrop .bmwc-pref-color-input,
+.bmwc-modal-backdrop.bmwc-theme-system.bmwc-user-prefs-backdrop .bmwc-pref-color-input {
+  border-color: rgba(100, 116, 139, 0.64) !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+}
+
+.bmwc-modal-backdrop.bmwc-theme-light.bmwc-user-prefs-backdrop .bmwc-pref-color-input::-webkit-color-swatch,
+.bmwc-modal-backdrop.bmwc-theme-system.bmwc-user-prefs-backdrop .bmwc-pref-color-input::-webkit-color-swatch {
+  border-color: rgba(71, 85, 105, 0.72) !important;
+}
+
+.bmwc-modal-backdrop.bmwc-theme-light.bmwc-user-prefs-backdrop .bmwc-pref-color-input::-moz-color-swatch,
+.bmwc-modal-backdrop.bmwc-theme-system.bmwc-user-prefs-backdrop .bmwc-pref-color-input::-moz-color-swatch {
+  border-color: rgba(71, 85, 105, 0.72) !important;
+}
+
+.bmwc-modal-backdrop.bmwc-theme-high-contrast.bmwc-user-prefs-backdrop .bmwc-pref-color-input,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast.bmwc-user-prefs-backdrop .bmwc-pref-color-input::-webkit-color-swatch,
+.bmwc-modal-backdrop.bmwc-theme-high-contrast.bmwc-user-prefs-backdrop .bmwc-pref-color-input::-moz-color-swatch {
+  border-color: #ffffff !important;
+}
+
+.bmwc-pref-collapsible {
+  display: block;
+}
+
+.bmwc-pref-collapsible > summary {
+  cursor: pointer;
+  color: var(--bmwc-text-color, #fff);
+  font-weight: 700;
+  margin: 0 0 8px;
+  user-select: none;
+}
+
+.bmwc-pref-collapsible > summary:focus-visible {
+  outline: 2px solid var(--bmwc-link-color, rgba(130,190,255,0.65));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-collapsible > summary {
+  color: var(--bmwc-text-color, #fff) !important;
+  text-shadow: var(--bmwc-ui-text-shadow, none) !important;
+}
+
+.bmwc-preset-row {
+  grid-template-columns: minmax(0, 1fr) auto auto auto !important;
+}
+
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-notify-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px 8px;
+  margin: 4px 0 8px;
+}
+
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-notify-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-notify-option input {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-notify-option span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 420px) {
+  .bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-notify-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* v4.5.0 follow-up: grouped settings and light-theme readability. */
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.14));
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-hints,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-pref-hints span,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-notify-option,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-notify-option span {
+  color: var(--bmwc-muted-text-color, rgba(255,255,255,0.70)) !important;
+  text-shadow: var(--bmwc-ui-text-shadow, none) !important;
+}
+.bmwc-modal-backdrop.bmwc-theme-light.bmwc-user-prefs-backdrop .bmwc-pref-hints,
+.bmwc-modal-backdrop.bmwc-theme-light.bmwc-user-prefs-backdrop .bmwc-pref-hints span,
+.bmwc-modal-backdrop.bmwc-theme-light.bmwc-user-prefs-backdrop .bmwc-notify-option,
+.bmwc-modal-backdrop.bmwc-theme-light.bmwc-user-prefs-backdrop .bmwc-notify-option span,
+.bmwc-modal-backdrop.bmwc-theme-system.bmwc-user-prefs-backdrop .bmwc-pref-hints,
+.bmwc-modal-backdrop.bmwc-theme-system.bmwc-user-prefs-backdrop .bmwc-pref-hints span,
+.bmwc-modal-backdrop.bmwc-theme-system.bmwc-user-prefs-backdrop .bmwc-notify-option,
+.bmwc-modal-backdrop.bmwc-theme-system.bmwc-user-prefs-backdrop .bmwc-notify-option span {
+  color: rgba(71,85,105,0.86) !important;
+}
+
+/* v4.5.0 follow-up: let DM/group inbox names use remaining row width before truncating. */
+.bmwc-dm-modal .bmwc-dm-thread-list > .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-auto-rows: auto !important;
+  align-items: start !important;
+  column-gap: 6px !important;
+}
+.bmwc-dm-modal .bmwc-dm-thread-list > .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) > .bmwc-dm-thread-name {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  display: block !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+.bmwc-dm-modal .bmwc-dm-thread-list > .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) > .bmwc-dm-thread-badge {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  float: none !important;
+  align-self: start !important;
+}
+.bmwc-dm-modal .bmwc-dm-thread-list > .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) > .bmwc-dm-thread-preview {
+  grid-column: 1 / -1 !important;
+  min-width: 0 !important;
+}
+
+.bmwc-pref-section-title {
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--bmwc-ui-text-color, var(--bmwc-text-color, inherit));
+}
+
+.bmwc-notify-option-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.bmwc-notify-option-disabled input {
+  cursor: not-allowed;
+}
+
+.bmwc-pref-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 64px;
+  resize: vertical;
+}
+
+.bmwc-group-title-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bmwc-group-title-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bmwc-group-member-counts {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.82;
+  padding: 1px 6px;
+  border: 1px solid var(--bmwc-border-color, rgba(255,255,255,0.18));
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.bmwc-group-online-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bmwc-group-online-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #56d364;
+  box-shadow: 0 0 0 2px rgba(86, 211, 100, 0.14);
+}
+
+.bmwc-group-online-dot.bmwc-offline {
+  background: rgba(160, 160, 170, 0.65);
+  box-shadow: none;
+}
+
+/* v4.5.0 follow-up: keyword alert apply/status line. */
+.bmwc-pref-keyword-actions {
+  align-items: center;
+}
+
+.bmwc-pref-inline-status {
+  color: var(--bmwc-muted-color, rgba(255,255,255,0.72));
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+
+/* v4.5.0 follow-up: allow DM/group list names and metadata to use the available row width. */
+.bmwc-dm-modal .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-areas: "name badge" "preview preview" !important;
+  align-items: center !important;
+  column-gap: 6px !important;
+  row-gap: 2px !important;
+}
+.bmwc-dm-modal .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) > .bmwc-dm-thread-name {
+  grid-area: name !important;
+  display: block !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+.bmwc-dm-modal .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) > .bmwc-dm-thread-badge {
+  grid-area: badge !important;
+  justify-self: end !important;
+}
+.bmwc-dm-modal .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) > .bmwc-dm-thread-preview {
+  grid-area: preview !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+.bmwc-admin-meta-row > .bmwc-dm-thread-name,
+.bmwc-group-hidden-row > .bmwc-dm-thread-name,
+.bmwc-group-title,
+.bmwc-group-title-main,
+.bmwc-group-title-name,
+.bmwc-admin-meta-identities {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+.bmwc-admin-meta-identities {
+  width: 100% !important;
+}
+.bmwc-admin-meta-user {
+  max-width: none !important;
+  min-width: 0 !important;
+  flex: 0 1 auto !important;
+}
+.bmwc-group-title-main {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+.bmwc-group-title-name {
+  flex: 1 1 auto !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+}
+.bmwc-group-member-counts {
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+
+
+/* v4.5.0 follow-up fix: keyword/settings and DM/group metadata layout. */
+.bmwc-dm-modal .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-areas: "name badge" "preview preview" !important;
+  column-gap: 6px !important;
+  row-gap: 2px !important;
+  align-items: center !important;
+}
+.bmwc-dm-modal .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) > .bmwc-dm-thread-name {
+  grid-area: name !important;
+  display: block !important;
+  width: auto !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+.bmwc-dm-modal .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) > .bmwc-dm-thread-badge {
+  grid-area: badge !important;
+  float: none !important;
+  justify-self: end !important;
+}
+.bmwc-dm-modal .bmwc-dm-thread:not(.bmwc-admin-meta-row):not(.bmwc-group-hidden-row) > .bmwc-dm-thread-preview {
+  grid-area: preview !important;
+}
+.bmwc-admin-meta-row > .bmwc-dm-thread-name,
+.bmwc-group-hidden-row > .bmwc-dm-thread-name {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+}
+.bmwc-admin-meta-identities {
+  width: auto !important;
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+.bmwc-group-member-counts {
+  cursor: pointer !important;
+  user-select: none !important;
+}
+.bmwc-group-member-counts:hover,
+.bmwc-group-member-counts:focus-visible {
+  opacity: 1 !important;
+  background: var(--bmwc-surface-hover-bg, rgba(130,190,255,0.20)) !important;
+  outline: none !important;
+}
+
+
+/* v4.5.0 final follow-up: avoid premature ellipsis in DM/group metadata identity rows. */
+.bmwc-dm-modal .bmwc-admin-meta-row,
+.bmwc-dm-modal .bmwc-group-hidden-row {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-areas: "name" "preview" "actions" !important;
+  overflow: visible !important;
+}
+.bmwc-dm-modal .bmwc-admin-meta-row > .bmwc-dm-thread-name,
+.bmwc-dm-modal .bmwc-group-hidden-row > .bmwc-dm-thread-name {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  width: 100% !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+}
+.bmwc-dm-modal .bmwc-admin-meta-identities {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  width: auto !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+}
+.bmwc-dm-modal .bmwc-admin-meta-user {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+}
+.bmwc-dm-modal .bmwc-admin-meta-actions {
+  justify-content: flex-start !important;
+  flex-wrap: wrap !important;
+  max-width: 100% !important;
+}
+
+
+/* v4.5.0 follow-up: keep settings header actions fixed at the top and prevent preset empty text from being squeezed. */
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-modal-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-modal-head h3 {
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-modal-head-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex: 0 0 auto !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-preset-row-stacked,
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-preset-row.bmwc-preset-row-stacked {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 6px !important;
+  align-items: stretch !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop .bmwc-preset-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 6px !important;
+  flex-wrap: wrap !important;
+}
+.bmwc-modal-backdrop.bmwc-user-prefs-backdrop #bmwc-prefs-preset-select {
+  width: 100% !important;
+  min-width: 0 !important;
 }

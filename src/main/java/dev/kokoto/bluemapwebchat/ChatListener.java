@@ -69,7 +69,7 @@ public class ChatListener implements Listener {
         if (parts.length < 2) return false;
         String root = parts[0].toLowerCase(java.util.Locale.ROOT);
         String sub = parts[1].toLowerCase(java.util.Locale.ROOT);
-        return isBmChatRoot(root) && sub.equals("dm");
+        return isBmChatRoot(root) && (sub.equals("dm") || sub.equals("group") || sub.equals("gc"));
     }
 
     private boolean isBmChatRoot(String root) {

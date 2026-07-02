@@ -207,11 +207,15 @@ public class DirectMessageStore {
                     "user_a_uuid TEXT NOT NULL," +
                     "user_b_uuid TEXT NOT NULL," +
                     "created_at INTEGER NOT NULL," +
-                    "updated_at INTEGER NOT NULL" +
+                    "updated_at INTEGER NOT NULL," +
+                    "locked INTEGER NOT NULL DEFAULT 0," +
+                    "retention_exempt INTEGER NOT NULL DEFAULT 0" +
                     ")");
             st.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_dm_threads_pair ON dm_threads(user_a_uuid, user_b_uuid)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_dm_threads_user_a ON dm_threads(user_a_uuid, updated_at)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_dm_threads_user_b ON dm_threads(user_b_uuid, updated_at)");
+            addColumnIfMissing(st, "dm_threads", "locked", "INTEGER NOT NULL DEFAULT 0");
+            addColumnIfMissing(st, "dm_threads", "retention_exempt", "INTEGER NOT NULL DEFAULT 0");
             st.execute("CREATE TABLE IF NOT EXISTS dm_messages (" +
                     "id INTEGER PRIMARY KEY AUTOINCREMENT," +
                     "thread_id TEXT NOT NULL," +
@@ -240,6 +244,15 @@ public class DirectMessageStore {
         }
     }
 
+    private void addColumnIfMissing(Statement st, String table, String column, String definition) throws SQLException {
+        try (ResultSet rs = st.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("name"))) return;
+            }
+        }
+        st.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+    }
+
     public synchronized void cleanup() {
         if (jsonlMode()) {
             cleanupJsonl();
@@ -250,7 +263,7 @@ public class DirectMessageStore {
         try {
             if (c != null && c.directMessageRetentionDays > 0) {
                 long cutoff = System.currentTimeMillis() - c.directMessageRetentionDays * 24L * 60L * 60L * 1000L;
-                try (PreparedStatement ps = connection.prepareStatement("DELETE FROM dm_messages WHERE created_at < ?")) {
+                try (PreparedStatement ps = connection.prepareStatement("DELETE FROM dm_messages WHERE created_at < ? AND thread_id NOT IN (SELECT id FROM dm_threads WHERE retention_exempt=1)")) {
                     ps.setLong(1, cutoff);
                     ps.executeUpdate();
                 }
@@ -273,7 +286,7 @@ public class DirectMessageStore {
             }
             try (Statement st = connection.createStatement()) {
                 st.executeUpdate("DELETE FROM dm_message_state WHERE message_id NOT IN (SELECT id FROM dm_messages)");
-                st.executeUpdate("DELETE FROM dm_threads WHERE id NOT IN (SELECT DISTINCT thread_id FROM dm_messages)");
+                st.executeUpdate("DELETE FROM dm_threads WHERE retention_exempt=0 AND id NOT IN (SELECT DISTINCT thread_id FROM dm_messages)");
                 st.executeUpdate("DELETE FROM dm_thread_state WHERE thread_id NOT IN (SELECT id FROM dm_threads)");
             }
         } catch (SQLException ex) {
@@ -405,7 +418,7 @@ public class DirectMessageStore {
         String[] pair = orderedPair(uuidA, uuidB);
         String id = threadId(uuidA, uuidB);
         try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT OR IGNORE INTO dm_threads(id,user_a_uuid,user_b_uuid,created_at,updated_at) VALUES(?,?,?,?,?)")) {
+                "INSERT OR IGNORE INTO dm_threads(id,user_a_uuid,user_b_uuid,created_at,updated_at,locked,retention_exempt) VALUES(?,?,?,?,?,0,0)")) {
             ps.setString(1, id);
             ps.setString(2, pair[0]);
             ps.setString(3, pair[1]);
@@ -460,6 +473,10 @@ public class DirectMessageStore {
         String threadId = threadId(sender, target);
         try {
             ensureThread(sender, target, now);
+            if (isThreadLocked(threadId)) {
+                result.error = "thread_locked";
+                return result;
+            }
             long messageId;
             try (PreparedStatement ps = connection.prepareStatement(
                     "INSERT INTO dm_messages(thread_id,sender_uuid,body,created_at,hidden) VALUES(?,?,?,?,0)", Statement.RETURN_GENERATED_KEYS)) {
@@ -590,6 +607,268 @@ public class DirectMessageStore {
         JsonlMessage msg = jsonlMessages.get(messageId);
         if (user.isBlank() || msg == null || !jsonlVisibleFor(msg, user)) return "";
         return msg.threadId;
+    }
+
+
+    public synchronized List<String> adminThreadSummaries(int limit) {
+        if (jsonlMode()) return jsonlAdminThreadSummaries(limit);
+        List<String> out = new ArrayList<>();
+        if (connection == null) return out;
+        int max = limit <= 0 ? 200 : Math.min(limit, 500);
+        // Use the latest surviving message timestamp as the retention base.
+        // t.updated_at is thread metadata and can be refreshed by non-message actions
+        // or old schema data; using it made retention estimates jump after reload.
+        String sql = "SELECT t.id,t.user_a_uuid,t.user_b_uuid,t.updated_at," +
+                "COUNT(m.id)," +
+                "COALESCE(SUM(LENGTH(m.body)),0)," +
+                "COALESCE(MAX(m.created_at),0)," +
+                "t.locked,t.retention_exempt " +
+                "FROM dm_threads t JOIN dm_messages m ON m.thread_id=t.id AND m.hidden=0 " +
+                "GROUP BY t.id,t.user_a_uuid,t.user_b_uuid,t.updated_at,t.locked,t.retention_exempt " +
+                "ORDER BY COALESCE(MAX(m.created_at), t.updated_at) DESC LIMIT ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setInt(1, max);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(adminThreadSummaryJson(rs.getString(1), normalizeUuid(rs.getString(2)), normalizeUuid(rs.getString(3)), rs.getLong(4), rs.getInt(5), rs.getLong(6), rs.getLong(7), rs.getInt(8) != 0, rs.getInt(9) != 0));
+                }
+            }
+        } catch (SQLException ex) {
+            plugin.getLogger().warning("Failed to list direct message admin summaries: " + ex.getMessage());
+        }
+        return out;
+    }
+
+    private List<String> jsonlAdminThreadSummaries(int limit) {
+        Map<String, int[]> counts = new LinkedHashMap<>();
+        Map<String, Long> bytes = new LinkedHashMap<>();
+        Map<String, Long> updated = new LinkedHashMap<>();
+        for (JsonlMessage msg : jsonlMessages.values()) {
+            if (msg.hidden || msg.threadId == null || msg.threadId.isBlank()) continue;
+            counts.computeIfAbsent(msg.threadId, k -> new int[]{0})[0]++;
+            bytes.put(msg.threadId, bytes.getOrDefault(msg.threadId, 0L) + String.valueOf(msg.body == null ? "" : msg.body).getBytes(StandardCharsets.UTF_8).length);
+            updated.put(msg.threadId, Math.max(updated.getOrDefault(msg.threadId, 0L), msg.createdAt));
+        }
+        List<Map.Entry<String, Long>> order = new ArrayList<>(updated.entrySet());
+        order.sort((a,b) -> Long.compare(b.getValue(), a.getValue()));
+        int max = limit <= 0 ? 200 : Math.min(limit, 500);
+        List<String> out = new ArrayList<>();
+        for (Map.Entry<String, Long> e : order) {
+            if (out.size() >= max) break;
+            String[] parts = e.getKey().split(":", 2);
+            String a = parts.length > 0 ? normalizeUuid(parts[0]) : "";
+            String b = parts.length > 1 ? normalizeUuid(parts[1]) : "";
+            out.add(adminThreadSummaryJson(e.getKey(), a, b, e.getValue(), counts.getOrDefault(e.getKey(), new int[]{0})[0], bytes.getOrDefault(e.getKey(), 0L), e.getValue(), false, false));
+        }
+        return out;
+    }
+
+    private String adminThreadSummaryJson(String id, String userA, String userB, long updatedAt, int messageCount, long storageBytes, long latestMessageAt, boolean locked, boolean retentionExempt) {
+        PlayerIdentity a = currentPlayerIdentity(userA);
+        PlayerIdentity b = currentPlayerIdentity(userB);
+        ConfigValues c = plugin.configValues();
+        int retentionDays = c == null ? 0 : Math.max(0, c.directMessageRetentionDays);
+        long retentionBaseAt = latestMessageAt > 0L ? latestMessageAt : updatedAt;
+        Map<String,Object> m = new LinkedHashMap<>();
+        m.put("id", id);
+        m.put("userAUuid", userA);
+        m.put("userBUuid", userB);
+        m.put("userAUsername", a == null ? "" : String.valueOf(a.username == null ? "" : a.username));
+        m.put("userADisplayName", a == null ? "" : String.valueOf(a.displayName == null ? "" : a.displayName));
+        m.put("userBUsername", b == null ? "" : String.valueOf(b.username == null ? "" : b.username));
+        m.put("userBDisplayName", b == null ? "" : String.valueOf(b.displayName == null ? "" : b.displayName));
+        m.put("userALabel", labelForIdentity(a, userA));
+        m.put("userBLabel", labelForIdentity(b, userB));
+        m.put("updatedAt", updatedAt);
+        m.put("latestMessageAt", latestMessageAt);
+        m.put("retentionBaseAt", retentionBaseAt);
+        m.put("retentionDays", retentionDays);
+        m.put("retentionExpiresAt", retentionDays > 0 && retentionBaseAt > 0L ? retentionBaseAt + retentionDays * 24L * 60L * 60L * 1000L : 0L);
+        m.put("messageCount", messageCount);
+        m.put("storageBytes", storageBytes);
+        m.put("locked", locked);
+        m.put("retentionExempt", retentionExempt);
+        m.put("adminOnly", true);
+        return JsonUtil.obj(m);
+    }
+
+    public synchronized List<String> messageBodiesForThread(String threadId) {
+        String tid = String.valueOf(threadId == null ? "" : threadId).trim();
+        List<String> out = new ArrayList<>();
+        if (tid.isBlank()) return out;
+        if (jsonlMode()) {
+            for (JsonlMessage msg : jsonlMessages.values()) {
+                if (msg != null && tid.equals(msg.threadId) && !msg.hidden) out.add(String.valueOf(msg.body == null ? "" : msg.body));
+            }
+            return out;
+        }
+        if (connection == null) return out;
+        try (PreparedStatement ps = connection.prepareStatement("SELECT body FROM dm_messages WHERE thread_id=? AND hidden=0")) {
+            ps.setString(1, tid);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(String.valueOf(rs.getString(1) == null ? "" : rs.getString(1)));
+            }
+        } catch (SQLException ex) {
+            plugin.getLogger().warning("Failed to list direct message bodies: " + ex.getMessage());
+        }
+        return out;
+    }
+
+    public synchronized Set<String> participantUuidsForThread(String threadId) {
+        Set<String> out = new LinkedHashSet<>();
+        String tid = String.valueOf(threadId == null ? "" : threadId).trim();
+        if (tid.isBlank()) return out;
+        String[] parts = tid.split(":", 2);
+        if (parts.length > 0) {
+            String a = normalizeUuid(parts[0]);
+            if (!a.isBlank()) out.add(a);
+        }
+        if (parts.length > 1) {
+            String b = normalizeUuid(parts[1]);
+            if (!b.isBlank()) out.add(b);
+        }
+        if (connection != null) {
+            try (PreparedStatement ps = connection.prepareStatement("SELECT user_a_uuid,user_b_uuid FROM dm_threads WHERE id=?")) {
+                ps.setString(1, tid);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        String a = normalizeUuid(rs.getString(1));
+                        String b = normalizeUuid(rs.getString(2));
+                        if (!a.isBlank()) out.add(a);
+                        if (!b.isBlank()) out.add(b);
+                    }
+                }
+            } catch (SQLException ignored) {}
+        }
+        return out;
+    }
+
+    public synchronized boolean deleteThread(String threadId) {
+        String tid = String.valueOf(threadId == null ? "" : threadId).trim();
+        if (tid.isBlank()) return false;
+        if (jsonlMode()) {
+            boolean changed = false;
+            Iterator<Map.Entry<Long, JsonlMessage>> it = jsonlMessages.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<Long, JsonlMessage> e = it.next();
+                JsonlMessage msg = e.getValue();
+                if (msg != null && tid.equals(msg.threadId)) {
+                    it.remove();
+                    changed = true;
+                }
+            }
+            if (changed) {
+                jsonlHiddenMessages.removeIf(key -> {
+                    String[] parts = key.split("\\|", 2);
+                    if (parts.length != 2) return false;
+                    long messageId = parseLong(parts[1], 0L);
+                    return messageId > 0 && !jsonlMessages.containsKey(messageId);
+                });
+                jsonlLastRead.keySet().removeIf(key -> key.startsWith(tid + "|"));
+                try { rewriteJsonl(); } catch (IOException ex) { plugin.getLogger().warning("Failed to rewrite direct message JSONL after deleting thread: " + ex.getMessage()); }
+            }
+            return changed;
+        }
+        if (connection == null) return false;
+        try {
+            connection.setAutoCommit(false);
+            try (PreparedStatement ps = connection.prepareStatement("DELETE FROM dm_message_state WHERE message_id IN (SELECT id FROM dm_messages WHERE thread_id=?)")) {
+                ps.setString(1, tid);
+                ps.executeUpdate();
+            }
+            try (PreparedStatement ps = connection.prepareStatement("DELETE FROM dm_messages WHERE thread_id=?")) {
+                ps.setString(1, tid);
+                ps.executeUpdate();
+            }
+            try (PreparedStatement ps = connection.prepareStatement("DELETE FROM dm_thread_state WHERE thread_id=?")) {
+                ps.setString(1, tid);
+                ps.executeUpdate();
+            }
+            int removed;
+            try (PreparedStatement ps = connection.prepareStatement("DELETE FROM dm_threads WHERE id=?")) {
+                ps.setString(1, tid);
+                removed = ps.executeUpdate();
+            }
+            connection.commit();
+            return removed > 0;
+        } catch (SQLException ex) {
+            try { connection.rollback(); } catch (SQLException ignored) {}
+            plugin.getLogger().warning("Failed to delete direct message thread: " + ex.getMessage());
+            return false;
+        } finally {
+            try { connection.setAutoCommit(true); } catch (SQLException ignored) {}
+        }
+    }
+
+
+    public synchronized boolean isThreadLocked(String threadId) {
+        String tid = String.valueOf(threadId == null ? "" : threadId).trim();
+        if (tid.isBlank() || connection == null) return false;
+        try (PreparedStatement ps = connection.prepareStatement("SELECT locked FROM dm_threads WHERE id=?")) {
+            ps.setString(1, tid);
+            try (ResultSet rs = ps.executeQuery()) { return rs.next() && rs.getInt(1) != 0; }
+        } catch (SQLException ex) { return false; }
+    }
+
+    public synchronized boolean setSessionFlags(String threadId, Boolean locked, Boolean retentionExempt) {
+        String tid = String.valueOf(threadId == null ? "" : threadId).trim();
+        if (tid.isBlank() || connection == null) return false;
+        List<String> sets = new ArrayList<>();
+        if (locked != null) sets.add("locked=" + (locked ? "1" : "0"));
+        if (retentionExempt != null) sets.add("retention_exempt=" + (retentionExempt ? "1" : "0"));
+        if (sets.isEmpty()) return false;
+        try (Statement st = connection.createStatement()) {
+            int removed = st.executeUpdate("UPDATE dm_threads SET " + String.join(",", sets) + " WHERE id='" + tid.replace("'", "''") + "'");
+            return removed > 0;
+        } catch (SQLException ex) {
+            plugin.getLogger().warning("Failed to update direct message session flags: " + ex.getMessage());
+            return false;
+        }
+    }
+
+    public synchronized String cleanupPreviewJson() {
+        Map<String,Object> m = new LinkedHashMap<>();
+        ConfigValues c = plugin.configValues();
+        int days = c == null ? 0 : Math.max(0, c.directMessageRetentionDays);
+        m.put("retentionDays", days);
+        if (jsonlMode() || connection == null || days <= 0) {
+            m.put("expiredMessages", 0); m.put("emptySessions", 0); m.put("lockedSessions", 0); m.put("retentionExemptSessions", 0); return JsonUtil.obj(m);
+        }
+        long cutoff = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L;
+        try (Statement st = connection.createStatement()) {
+            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM dm_messages WHERE created_at < " + cutoff + " AND thread_id NOT IN (SELECT id FROM dm_threads WHERE retention_exempt=1)")) { m.put("expiredMessages", rs.next() ? rs.getInt(1) : 0); }
+            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM dm_threads WHERE retention_exempt=0 AND id NOT IN (SELECT DISTINCT thread_id FROM dm_messages WHERE created_at >= " + cutoff + ")")) { m.put("emptySessions", rs.next() ? rs.getInt(1) : 0); }
+            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM dm_threads WHERE locked=1")) { m.put("lockedSessions", rs.next() ? rs.getInt(1) : 0); }
+            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM dm_threads WHERE retention_exempt=1")) { m.put("retentionExemptSessions", rs.next() ? rs.getInt(1) : 0); }
+        } catch (SQLException ex) { plugin.getLogger().warning("Failed to calculate direct message cleanup preview: " + ex.getMessage()); }
+        return JsonUtil.obj(m);
+    }
+
+    public synchronized boolean uploadNameReferenced(String name, String ignoreThreadId) {
+        String n = String.valueOf(name == null ? "" : name).trim();
+        if (!n.matches("[A-Za-z0-9._-]+")) return false;
+        String ignore = String.valueOf(ignoreThreadId == null ? "" : ignoreThreadId).trim();
+        if (jsonlMode()) {
+            for (JsonlMessage msg : jsonlMessages.values()) {
+                if (msg == null || msg.hidden || ignore.equals(msg.threadId)) continue;
+                if (String.valueOf(msg.body == null ? "" : msg.body).contains(n)) return true;
+            }
+            return false;
+        }
+        if (connection == null) return false;
+        try (PreparedStatement ps = connection.prepareStatement("SELECT 1 FROM dm_messages WHERE hidden=0 AND thread_id<>? AND body LIKE ? LIMIT 1")) {
+            ps.setString(1, ignore);
+            ps.setString(2, "%" + n + "%");
+            try (ResultSet rs = ps.executeQuery()) { return rs.next(); }
+        } catch (SQLException ex) { return false; }
+    }
+
+    private String labelForIdentity(PlayerIdentity identity, String fallback) {
+        if (identity == null) return fallback == null ? "" : fallback;
+        String label = identity.displayName == null || identity.displayName.isBlank() ? identity.username : identity.displayName;
+        if (label == null || label.isBlank()) label = fallback;
+        if (identity.username != null && !identity.username.isBlank() && !identity.username.equals(label)) label += " (" + identity.username + ")";
+        return label == null ? "" : label;
     }
 
     public synchronized List<DirectMessageThread> listThreads(String userUuid, int limit) {

@@ -37,6 +37,7 @@ public class WebChatServer {
     private final Storage storage;
     private final AuthManager auth;
     private final CaptchaManager captcha;
+    private final WebPushManager webPush;
     private final RateLimiter rateLimiter = new RateLimiter();
     private final Deque<ChatMessage> history = new ArrayDeque<>();
     private SqliteHistoryStore sqliteHistory;
@@ -66,6 +67,7 @@ public class WebChatServer {
         this.storage = storage;
         this.auth = auth;
         this.captcha = captcha;
+        this.webPush = new WebPushManager(plugin);
     }
 
     public void start() throws IOException {
@@ -92,6 +94,8 @@ public class WebChatServer {
             createApiContexts(apiPrefix);
         }
 
+        webPush.start();
+
         initializeHistoryStorage();
         loadPersistedHistory();
         cleanupOldUploads();
@@ -113,12 +117,36 @@ public class WebChatServer {
         server.createContext(p + "/pins", this::handlePins);
         server.createContext(p + "/stream", this::handleStream);
         server.createContext(p + "/send", this::handleSend);
+        server.createContext(p + "/push/subscribe", this::handlePushSubscribe);
+        server.createContext(p + "/push/unsubscribe", this::handlePushUnsubscribe);
+        server.createContext(p + "/push/test", this::handlePushTest);
+        server.createContext(p + "/push/sw.js", this::handlePushServiceWorker);
         server.createContext(p + "/dm/threads", this::handleDmThreads);
         server.createContext(p + "/dm/messages", this::handleDmMessages);
         server.createContext(p + "/dm/players", this::handleDmPlayers);
         server.createContext(p + "/dm/send", this::handleDmSend);
         server.createContext(p + "/dm/read", this::handleDmRead);
         server.createContext(p + "/dm/hide-message", this::handleDmHideMessage);
+        server.createContext(p + "/group/rooms", this::handleGroupRooms);
+        server.createContext(p + "/group/players", this::handleGroupPlayers);
+        server.createContext(p + "/group/messages", this::handleGroupMessages);
+        server.createContext(p + "/group/create", this::handleGroupCreate);
+        server.createContext(p + "/group/join", this::handleGroupJoin);
+        server.createContext(p + "/group/leave", this::handleGroupLeave);
+        server.createContext(p + "/group/invite", this::handleGroupInvite);
+        server.createContext(p + "/group/invites", this::handleGroupInvites);
+        server.createContext(p + "/group/invite/respond", this::handleGroupInviteRespond);
+        server.createContext(p + "/group/send", this::handleGroupSend);
+        server.createContext(p + "/group/read", this::handleGroupRead);
+        server.createContext(p + "/group/hide-message", this::handleGroupHideMessage);
+        server.createContext(p + "/group/settings", this::handleGroupSettings);
+        server.createContext(p + "/group/members", this::handleGroupMembers);
+        server.createContext(p + "/group/kick", this::handleGroupKick);
+        server.createContext(p + "/group/ban", this::handleGroupBan);
+        server.createContext(p + "/group/unban", this::handleGroupUnban);
+        server.createContext(p + "/group/hide-room", this::handleGroupHideRoom);
+        server.createContext(p + "/group/unhide-room", this::handleGroupUnhideRoom);
+        server.createContext(p + "/group/transfer-owner", this::handleGroupTransferOwner);
         server.createContext(p + "/commands", this::handleCommands);
         server.createContext(p + "/commands/run", this::handleCommandRun);
         server.createContext(p + "/upload", this::handleUpload);
@@ -143,6 +171,10 @@ public class WebChatServer {
         server.createContext(p + "/admin/mute", this::handleAdminMute);
         server.createContext(p + "/admin/unmute", this::handleAdminUnmute);
         server.createContext(p + "/admin/delete-message", this::handleAdminDeleteMessage);
+        server.createContext(p + "/admin/delete-dm-thread", this::handleAdminDeleteDmThread);
+        server.createContext(p + "/admin/delete-group-room", this::handleAdminDeleteGroupRoom);
+        server.createContext(p + "/admin/session-flags", this::handleAdminSessionFlags);
+        server.createContext(p + "/admin/cleanup-preview", this::handleAdminCleanupPreview);
         server.createContext(p + "/admin/pin-message", this::handleAdminPinMessage);
         server.createContext(p + "/admin/unpin-message", this::handleAdminUnpinMessage);
         server.createContext(p + "/admin/move-pin", this::handleAdminMovePin);
@@ -180,6 +212,11 @@ public class WebChatServer {
             if (apiPrefix.equals(internalApiPrefix) || !apiPrefix.endsWith(internalApiPrefix)) continue;
             String publicPrefix = trimTrailingSlash(apiPrefix.substring(0, apiPrefix.length() - internalApiPrefix.length()));
             if (publicPrefix.isBlank()) continue;
+            // Also expose the public prefix itself as a standalone base.  This
+            // keeps relative PWA resources such as /bmwc/manifest.webmanifest
+            // valid when a reverse proxy maps /bmwc/ to the standalone page,
+            // while the longer /bmwc/api context still handles API requests.
+            out.add(normalizeContextPrefix(publicPrefix, standalonePath));
             if (standalonePath.equals(publicPrefix) || standalonePath.startsWith(publicPrefix + "/")) continue;
             out.add(normalizeContextPrefix(publicPrefix + standalonePath, standalonePath));
         }
@@ -298,17 +335,42 @@ public class WebChatServer {
 
         String suffix = path.equals(base) ? "" : path.substring(base.length());
         if (suffix.isEmpty() || "/".equals(suffix)) {
-            sendStandaloneIndex(ex, config);
+            sendStandaloneIndex(ex, config, base);
         } else if ("/chat.js".equals(suffix)) {
             sendClasspathResource(ex, "web/chat.js", "application/javascript; charset=utf-8");
         } else if ("/chat.css".equals(suffix)) {
             sendClasspathResource(ex, "web/chat.css", "text/css; charset=utf-8");
+        } else if ("/manifest.webmanifest".equals(suffix)) {
+            sendStandaloneManifest(ex);
         } else {
             sendBytes(ex, 404, "text/plain; charset=utf-8", "not_found".getBytes(StandardCharsets.UTF_8));
         }
     }
 
-    private void sendStandaloneIndex(HttpExchange ex, ConfigValues config) throws IOException {
+
+    private String configuredStandaloneAppName() {
+        ConfigValues c = plugin.configValues();
+        String value = c == null ? "" : c.standaloneWebAppName;
+        value = stripControl(String.valueOf(value == null ? "" : value), 80);
+        return value == null || value.isBlank() ? "Web Chat" : value;
+    }
+
+    private String configuredStandaloneAppShortName() {
+        ConfigValues c = plugin.configValues();
+        String value = c == null ? "" : c.standaloneWebAppShortName;
+        value = stripControl(String.valueOf(value == null ? "" : value), 40);
+        if (value == null || value.isBlank()) value = configuredStandaloneAppName();
+        return value;
+    }
+
+    private String configuredWebPushTitle() {
+        ConfigValues c = plugin.configValues();
+        String value = c == null ? "" : c.webPushNotificationTitle;
+        value = stripControl(String.valueOf(value == null ? "" : value), 80);
+        return value == null || value.isBlank() ? configuredStandaloneAppName() : value;
+    }
+
+    private void sendStandaloneIndex(HttpExchange ex, ConfigValues config, String standaloneBasePath) throws IOException {
         String version = plugin.getDescription().getVersion();
         String apiBase = config.standaloneWebApiBaseUrl == null ? "" : config.standaloneWebApiBaseUrl.trim();
         String webAddonApiBase = config.apiBaseUrl == null ? "" : config.apiBaseUrl.trim();
@@ -355,22 +417,125 @@ public class WebChatServer {
                     .replace("</script", "<\\/script");
         }
 
+        String manifestBase = trimTrailingSlash(standaloneBasePath);
+        if (manifestBase.isBlank()) manifestBase = "/";
+        Map<String, Object> inlineManifest = new LinkedHashMap<>();
+        String appName = configuredStandaloneAppName();
+        String appShortName = configuredStandaloneAppShortName();
+        inlineManifest.put("name", appName);
+        inlineManifest.put("short_name", appShortName);
+        inlineManifest.put("display", "standalone");
+        inlineManifest.put("start_url", manifestBase);
+        inlineManifest.put("scope", manifestBase);
+        inlineManifest.put("background_color", "#111318");
+        inlineManifest.put("theme_color", "#111318");
+        String manifestJson = JsonUtil.obj(inlineManifest);
+        String manifestHref = "data:application/manifest+json;base64," + Base64.getEncoder().encodeToString(manifestJson.getBytes(StandardCharsets.UTF_8));
         String html = "<!doctype html>\n"
                 + "<html lang=\"en\">\n"
                 + "<head>\n"
                 + "  <meta charset=\"utf-8\">\n"
                 + "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
-                + "  <title>BlueMapWebChat</title>\n"
-                + "  <style>html,body{margin:0;width:100%;height:100%;background:#111318;color:#eee;font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;overflow:hidden;} .bmwc-standalone-note{position:fixed;left:14px;bottom:12px;opacity:.55;font-size:12px;}</style>\n"
+                + "  <title>" + htmlEsc(appName) + "</title>\n"
+                + "  <meta name=\"theme-color\" content=\"#111318\">\n"
+                + "  <link rel=\"manifest\" href=\"" + htmlEsc(manifestHref) + "\">\n"
+                + "  <style>html,body{margin:0;width:100%;height:100%;height:100dvh;background:#111318;color:#eee;font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;overflow:hidden;} .bmwc-standalone-note{position:fixed;left:14px;bottom:12px;opacity:.55;font-size:12px;pointer-events:none;}</style>\n"
                 + "</head>\n"
                 + "<body data-bmwc-version=\"" + htmlEsc(version) + "\">\n"
                 + "  <noscript>JavaScript is required to use the web chat.</noscript>\n"
-                + "  <div class=\"bmwc-standalone-note\">BlueMapWebChat standalone mode</div>\n"
+                + "  <div class=\"bmwc-standalone-note\">" + htmlEsc(appName) + " standalone mode</div>\n"
                 + "  <script>window.BlueMapWebChatConfig={apiBase:" + apiBaseJs + ",apiBaseUrl:" + apiBaseJs + ",standalone:true,standalonePath:" + JsonUtil.quote(config.standaloneWebPath) + "};</script>\n"
                 + "  <script>\n" + standaloneScript + "\n  </script>\n"
                 + "</body>\n"
                 + "</html>\n";
         sendBytes(ex, 200, "text/html; charset=utf-8", html.getBytes(StandardCharsets.UTF_8));
+    }
+
+
+    private void sendStandaloneManifest(HttpExchange ex) throws IOException {
+        String path = ex.getRequestURI().getPath();
+        String suffix = "/manifest.webmanifest";
+        String base = path != null && path.endsWith(suffix)
+                ? path.substring(0, path.length() - suffix.length())
+                : ".";
+        if (base.isBlank()) base = "/";
+        Map<String, Object> m = new LinkedHashMap<>();
+        String appName = configuredStandaloneAppName();
+        String appShortName = configuredStandaloneAppShortName();
+        m.put("name", appName);
+        m.put("short_name", appShortName);
+        m.put("display", "standalone");
+        m.put("start_url", base);
+        m.put("scope", base);
+        m.put("background_color", "#111318");
+        m.put("theme_color", "#111318");
+        sendBytes(ex, 200, "application/manifest+json; charset=utf-8", JsonUtil.obj(m).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void handlePushServiceWorker(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendBytes(ex, 405, "text/plain; charset=utf-8", "method_not_allowed".getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+        String js = "self.addEventListener('push',function(event){"
+                + "var data={};try{data=event.data?event.data.json():{};}catch(e){data={body:event.data?event.data.text():''};}"
+                + "var title=data.title||" + JsonUtil.quote(configuredWebPushTitle()) + ";"
+                + "var opts={body:data.body||'',tag:data.tag||'bmwc',renotify:true,data:{url:data.url||'/'},timestamp:data.time||Date.now()};"
+                + "event.waitUntil(self.registration.showNotification(title,opts));"
+                + "});"
+                + "self.addEventListener('notificationclick',function(event){"
+                + "event.notification.close();var url=(event.notification.data&&event.notification.data.url)||'/';"
+                + "event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(function(list){"
+                + "for(var i=0;i<list.length;i++){var c=list[i];if(c.url&&c.url.indexOf(url)>=0){return c.focus();}}"
+                + "return clients.openWindow(url);" 
+                + "}));"
+                + "});";
+        ex.getResponseHeaders().set("Service-Worker-Allowed", "/");
+        ex.getResponseHeaders().set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        sendBytes(ex, 200, "application/javascript; charset=utf-8", js.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void handlePushSubscribe(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.webPushEnabled) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"web_push_disabled\"}"); return; }
+        Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        SessionContext ctx = storage.getSession(body.get("token"));
+        if (ctx == null || ctx.account == null || ctx.account.uuid == null || ctx.account.uuid.isBlank()) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"not_logged_in\"}"); return; }
+        String userAgent = ex.getRequestHeaders().getFirst("User-Agent");
+        boolean ok = webPush.subscribe(ctx.account, body, userAgent);
+        sendJson(ex, ok ? 200 : 400, "{\"ok\":" + ok + (ok ? "" : ",\"error\":\"invalid_subscription\"") + "}");
+    }
+
+    private void handlePushUnsubscribe(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        SessionContext ctx = storage.getSession(body.get("token"));
+        if (ctx == null || ctx.account == null) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"not_logged_in\"}"); return; }
+        boolean ok = webPush.unsubscribe(ctx.account, body.get("endpoint"));
+        sendJson(ex, 200, "{\"ok\":" + ok + "}");
+    }
+
+    private void handlePushTest(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.webPushEnabled) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"web_push_disabled\"}"); return; }
+        Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        SessionContext ctx = storage.getSession(body.get("token"));
+        if (ctx == null || ctx.account == null || ctx.account.uuid == null || ctx.account.uuid.isBlank()) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"not_logged_in\"}"); return; }
+        WebPushManager.Payload p = new WebPushManager.Payload();
+        p.type = "test";
+        p.title = configuredWebPushTitle();
+        p.body = "";
+        p.url = standaloneOpenUrl();
+        p.tag = "bmwc-test";
+        p.senderUuid = "";
+        webPush.sendToUser(ctx.account.uuid, p);
+        sendJson(ex, 200, "{\"ok\":true}");
     }
 
     private void sendClasspathResource(HttpExchange ex, String resource, String contentType) throws IOException {
@@ -410,6 +575,7 @@ public class WebChatServer {
                 .withRealSender(stripControl(realPlayerName, 64), stripControl(playerUuid, 64));
         addHistory(msg);
         broadcast(msg);
+        dispatchWebPushChat(msg);
         if (plugin.discordBridge() != null) {
             plugin.discordBridge().sendGameMessage(msg);
         }
@@ -441,6 +607,7 @@ public class WebChatServer {
         msg.withI18n(i18nKey, i18nArgsJson);
         addHistory(msg);
         broadcast(msg);
+        dispatchWebPushChat(msg);
     }
 
     private void handleConfig(HttpExchange ex) throws IOException {
@@ -492,6 +659,30 @@ public class WebChatServer {
         m.put("uiUserFontOptions", c.uiUserFontOptions);
         m.put("uiFontFamily", c.uiFontFamily);
         m.put("uiPictureInPictureEnabled", c.uiPictureInPictureEnabled);
+        m.put("browserNotificationsEnabled", c.browserNotificationsEnabled);
+        m.put("browserNotificationsOnlyWhenHidden", c.browserNotificationsOnlyWhenHidden);
+        m.put("browserNotificationsNotifyNormalChat", c.browserNotificationsNotifyNormalChat);
+        m.put("browserNotificationsNotifyDm", c.browserNotificationsNotifyDm);
+        m.put("browserNotificationsNotifyGroupChat", c.browserNotificationsNotifyGroupChat);
+        m.put("browserNotificationsNotifyMentions", c.browserNotificationsNotifyMentions);
+        m.put("browserNotificationsNotifySystem", c.browserNotificationsNotifySystem);
+        m.put("browserNotificationsNotifyKeywords", c.browserNotificationsNotifyKeywords);
+        m.put("browserNotificationsNotifyOwnMessages", c.browserNotificationsNotifyOwnMessages);
+        m.put("browserNotificationsShowMessagePreview", c.browserNotificationsShowMessagePreview);
+        m.put("webPushEnabled", c.webPushEnabled);
+        m.put("webPushAvailable", c.webPushEnabled && webPush.available());
+        m.put("webPushVapidPublicKey", c.webPushEnabled ? webPush.vapidPublicKey() : "");
+        m.put("standaloneWebAppName", configuredStandaloneAppName());
+        m.put("standaloneWebAppShortName", configuredStandaloneAppShortName());
+        m.put("webPushNotificationTitle", configuredWebPushTitle());
+        m.put("webPushNotifyNormalChat", c.webPushNotifyNormalChat);
+        m.put("webPushNotifyDm", c.webPushNotifyDm);
+        m.put("webPushNotifyGroupChat", c.webPushNotifyGroupChat);
+        m.put("webPushNotifyMentions", c.webPushNotifyMentions);
+        m.put("webPushNotifySystem", c.webPushNotifySystem);
+        m.put("webPushNotifyKeywords", c.webPushNotifyKeywords);
+        m.put("webPushNotifyOwnMessages", c.webPushNotifyOwnMessages);
+        m.put("webPushShowMessagePreview", c.webPushShowMessagePreview);
         m.put("playerNameMode", c.playerNameMode);
         m.put("playerNameStripColors", c.playerNameStripColors);
         m.put("webFontsEnabled", c.webFontsEnabled);
@@ -516,6 +707,15 @@ public class WebChatServer {
         m.put("directMessageWebUnreadBadge", c.directMessageWebUnreadBadge);
         m.put("directMessageConfirmHide", c.directMessageConfirmHide);
         m.put("directMessageStorage", c.directMessageStorage);
+        m.put("groupChatEnabled", c.groupChatEnabled);
+        m.put("groupChatAllowWebSend", c.groupChatAllowWebSend);
+        m.put("groupChatRetentionDays", c.groupChatRetentionDays);
+        m.put("groupChatMaxMessageLength", c.groupChatMaxMessageLength);
+        m.put("groupChatConfirmLeave", c.groupChatConfirmLeave);
+        m.put("groupChatConfirmHide", c.groupChatConfirmHide);
+        m.put("groupChatAllowPublicRooms", c.groupChatAllowPublicRooms);
+        m.put("groupChatAllowRoomPasswords", c.groupChatAllowRoomPasswords);
+        m.put("privateChatSuperAdminConfigured", c.privateChatSuperAdmins != null && !c.privateChatSuperAdmins.isEmpty());
         m.put("language", c.uiLanguage);
         m.put("uiTimeZone", c.uiTimeZone);
         m.put("linkifyUrls", c.linkifyUrls);
@@ -823,6 +1023,7 @@ public class WebChatServer {
         Map<String, String> streamQuery = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
         SessionContext streamContext = storage.getSession(streamQuery.get("token"));
         String streamAccountUuid = streamContext == null || streamContext.account == null || streamContext.account.uuid == null ? "" : streamContext.account.uuid.trim().toLowerCase(Locale.ROOT);
+        boolean streamPrivateChatSuperAdmin = isPrivateChatSuperAdmin(streamContext);
 
         addCors(ex);
         addSecurityHeaders(ex);
@@ -832,7 +1033,7 @@ public class WebChatServer {
         h.set("Connection", "keep-alive");
         ex.sendResponseHeaders(200, 0);
 
-        SseClient client = new SseClient(ex.getResponseBody(), ip, streamAccountUuid);
+        SseClient client = new SseClient(ex.getResponseBody(), ip, streamAccountUuid, streamPrivateChatSuperAdmin);
         clients.add(client);
         try {
             client.sendRaw("event: ready\ndata: {\"ok\":true}\n\n");
@@ -907,7 +1108,7 @@ public class WebChatServer {
         }
         ConfigValues config = plugin.configValues();
         if (config == null || !config.directMessageEnabled || plugin.directMessages() == null || !plugin.directMessages().available()) {
-            sendJson(ex, 200, "{\"ok\":true,\"enabled\":false,\"unread\":0,\"threads\":[]}");
+            sendJson(ex, 200, "{\"ok\":true,\"enabled\":false,\"unread\":0,\"privateChatSuperAdmin\":false,\"threads\":[],\"adminThreads\":[],\"cleanupPreview\":null}");
             return;
         }
         SessionContext ctx = sessionFromQuery(ex);
@@ -921,8 +1122,19 @@ public class WebChatServer {
         for (DirectMessageThread thread : plugin.directMessages().listThreads(ctx.account.uuid, limit)) {
             items.add(thread.toJson());
         }
+        boolean privateChatSuperAdmin = isPrivateChatSuperAdmin(ctx);
+        List<String> adminItems = new ArrayList<>();
+        String cleanupPreview = "null";
+        if (privateChatSuperAdmin) {
+            adminItems.addAll(plugin.directMessages().adminThreadSummaries(limit));
+            cleanupPreview = plugin.directMessages().cleanupPreviewJson();
+        }
         int unread = plugin.directMessages().unreadCount(ctx.account.uuid);
-        sendJson(ex, 200, "{\"ok\":true,\"enabled\":true,\"unread\":" + unread + ",\"threads\":[" + String.join(",", items) + "]}");
+        sendJson(ex, 200, "{\"ok\":true,\"enabled\":true,\"unread\":" + unread
+                + ",\"privateChatSuperAdmin\":" + privateChatSuperAdmin
+                + ",\"threads\":[" + String.join(",", items) + "]"
+                + ",\"adminThreads\":[" + String.join(",", adminItems) + "]"
+                + ",\"cleanupPreview\":" + cleanupPreview + "}");
     }
 
     private void handleDmMessages(HttpExchange ex) throws IOException {
@@ -1028,6 +1240,7 @@ public class WebChatServer {
             return;
         }
         publishDirectMessageUpdate(ctx.account.uuid, target.uuid, result.thread == null ? "" : result.thread.id);
+        dispatchWebPushDirectMessage(ctx.account.uuid, plugin.displayNameForAccount(ctx.account), target.uuid, target.label(), message);
         notifyOnlineDirectMessage(ctx.account, target, message);
         String threadJson = result.thread == null ? "null" : result.thread.toJson();
         String messageJson = result.message == null ? "null" : result.message.toJson();
@@ -1087,6 +1300,320 @@ public class WebChatServer {
         sendJson(ex, 200, "{\"ok\":" + ok + ",\"unread\":" + plugin.directMessages().unreadCount(ctx.account.uuid) + "}");
     }
 
+
+    private void handleGroupRooms(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.groupChatEnabled || plugin.groupChats() == null || !plugin.groupChats().available()) {
+            sendJson(ex, 200, "{\"ok\":true,\"enabled\":false,\"unread\":0,\"privateChatSuperAdmin\":false,\"rooms\":[],\"invites\":[],\"hiddenRooms\":[],\"adminRooms\":[],\"cleanupPreview\":null}"); return;
+        }
+        SessionContext ctx = sessionFromQuery(ex);
+        if (!validGroupUser(ctx)) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}"); return; }
+        Map<String,String> q = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
+        int limit = boundedInt(q.get("limit"), 200, 1, 0);
+        List<String> rooms = new ArrayList<>();
+        for (GroupRoom room : plugin.groupChats().listRooms(ctx.account.uuid, limit)) rooms.add(room.toJson());
+        List<String> invites = new ArrayList<>();
+        for (GroupInvite invite : plugin.groupChats().listInvites(ctx.account.uuid, 100)) invites.add(invite.toJson());
+        List<String> hiddenRooms = plugin.groupChats().listHiddenRoomsJson(ctx.account.uuid, limit);
+        boolean privateChatSuperAdmin = isPrivateChatSuperAdmin(ctx);
+        List<String> adminRooms = new ArrayList<>();
+        String cleanupPreview = "null";
+        if (privateChatSuperAdmin) {
+            adminRooms.addAll(plugin.groupChats().adminRoomSummaries(limit));
+            cleanupPreview = plugin.groupChats().cleanupPreviewJson();
+        }
+        sendJson(ex, 200, "{\"ok\":true,\"enabled\":true,\"unread\":" + plugin.groupChats().unreadCount(ctx.account.uuid)
+                + ",\"privateChatSuperAdmin\":" + privateChatSuperAdmin
+                + ",\"rooms\":[" + String.join(",", rooms) + "]"
+                + ",\"invites\":[" + String.join(",", invites) + "]"
+                + ",\"hiddenRooms\":[" + String.join(",", hiddenRooms) + "]"
+                + ",\"adminRooms\":[" + String.join(",", adminRooms) + "]"
+                + ",\"cleanupPreview\":" + cleanupPreview + "}");
+    }
+
+
+    private void handleGroupPlayers(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+            sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.groupChatEnabled || plugin.groupChats() == null || !plugin.groupChats().available()) {
+            sendJson(ex, 200, "{\"ok\":true,\"enabled\":false,\"players\":[]}");
+            return;
+        }
+        SessionContext ctx = sessionFromQuery(ex);
+        if (!validGroupUser(ctx)) {
+            sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}");
+            return;
+        }
+        Map<String, String> q = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
+        String query = stripControl(q.get("q"), 80).trim();
+        int limit = boundedInt(q.get("limit"), 20, 1, 0);
+        List<String> items = new ArrayList<>();
+        String self = ctx.account.uuid == null ? "" : ctx.account.uuid.trim().toLowerCase(Locale.ROOT);
+        for (PlayerIdentity player : storage.listKnownPlayers(query, limit + 1)) {
+            if (player.uuid.equalsIgnoreCase(self)) continue;
+            items.add(player.toJson());
+            if (items.size() >= limit) break;
+        }
+        sendJson(ex, 200, "{\"ok\":true,\"enabled\":true,\"players\":[" + String.join(",", items) + "]}");
+    }
+
+    private void handleGroupMessages(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.groupChatEnabled || plugin.groupChats() == null || !plugin.groupChats().available()) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"group_disabled\"}"); return; }
+        SessionContext ctx = sessionFromQuery(ex);
+        if (!validGroupUser(ctx)) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}"); return; }
+        Map<String,String> q = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
+        String roomId = stripControl(q.get("roomId"), 120).trim();
+        long before = parseLong(q.get("before"), 0L);
+        int limit = boundedInt(q.get("limit"), 100, 1, 0);
+        List<String> messages = new ArrayList<>();
+        for (GroupMessage message : plugin.groupChats().listMessages(ctx.account.uuid, roomId, before, limit)) messages.add(message.toJson());
+        sendJson(ex, 200, "{\"ok\":true,\"unread\":" + plugin.groupChats().unreadCount(ctx.account.uuid) + ",\"messages\":[" + String.join(",", messages) + "]}");
+    }
+
+    private void handleGroupCreate(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.groupChatEnabled || plugin.groupChats() == null || !plugin.groupChats().available()) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"group_disabled\"}"); return; }
+        Map<String,String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        SessionContext ctx = storage.getSession(body.get("token"));
+        if (!validGroupUser(ctx)) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}"); return; }
+        GroupChatStore.CreateResult result = plugin.groupChats().createRoom(ctx.account.uuid, body.get("name"), body.get("visibility"), body.get("password"));
+        if (!result.ok) { sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}"); return; }
+        publishGroupChatUpdate(result.room == null ? "" : result.room.id);
+        sendJson(ex, 200, "{\"ok\":true,\"room\":" + (result.room == null ? "null" : result.room.toJson()) + "}");
+    }
+
+    private void handleGroupJoin(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        GroupChatStore.ActionResult result = plugin.groupChats().joinRoom(req.ctx.account.uuid, req.body.get("roomId"), req.body.get("password"));
+        if (!result.ok) { sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}"); return; }
+        publishGroupChatUpdate(result.room == null ? req.body.get("roomId") : result.room.id);
+        sendJson(ex, 200, "{\"ok\":true,\"room\":" + (result.room == null ? "null" : result.room.toJson()) + "}");
+    }
+
+    private void handleGroupLeave(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        String roomId = req.body.get("roomId");
+        GroupChatStore.ActionResult result = plugin.groupChats().leaveRoom(req.ctx.account.uuid, roomId);
+        if (!result.ok) { sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}"); return; }
+        publishGroupChatUpdate(roomId);
+        sendJson(ex, 200, "{\"ok\":true,\"unread\":" + plugin.groupChats().unreadCount(req.ctx.account.uuid) + "}");
+    }
+
+    private void handleGroupInvite(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        String targetUuid = stripControl(req.body.get("targetUuid"), 80).trim();
+        if (targetUuid.isBlank()) {
+            PlayerIdentity target = storage.findKnownPlayer(req.body.get("target"));
+            if (target != null) targetUuid = target.uuid;
+        }
+        PlayerIdentity target = storage.findKnownPlayerByUuid(targetUuid);
+        if (target == null || target.uuid == null || target.uuid.isBlank()) { sendJson(ex, 404, "{\"ok\":false,\"error\":\"player_not_found\"}"); return; }
+        GroupChatStore.ActionResult result = plugin.groupChats().invite(req.ctx.account.uuid, req.body.get("roomId"), target.uuid);
+        if (!result.ok) { sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}"); return; }
+        // Broadcast globally so the invitee sees the pending invitation immediately even before becoming a room member.
+        publishGroupChatUpdate("");
+        sendJson(ex, 200, "{\"ok\":true}");
+    }
+
+    private void handleGroupInvites(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.groupChatEnabled || plugin.groupChats() == null || !plugin.groupChats().available()) { sendJson(ex, 200, "{\"ok\":true,\"invites\":[]}"); return; }
+        SessionContext ctx = sessionFromQuery(ex);
+        if (!validGroupUser(ctx)) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}"); return; }
+        List<String> invites = new ArrayList<>();
+        for (GroupInvite invite : plugin.groupChats().listInvites(ctx.account.uuid, 100)) invites.add(invite.toJson());
+        sendJson(ex, 200, "{\"ok\":true,\"invites\":[" + String.join(",", invites) + "]}");
+    }
+
+    private void handleGroupInviteRespond(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        long inviteId = parseLong(req.body.get("inviteId"), 0L);
+        boolean accept = Boolean.parseBoolean(String.valueOf(req.body.getOrDefault("accept", "false")));
+        GroupChatStore.ActionResult result = plugin.groupChats().respondInvite(req.ctx.account.uuid, inviteId, accept);
+        if (!result.ok) { sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}"); return; }
+        publishGroupChatUpdate(result.room == null ? "" : result.room.id);
+        sendJson(ex, 200, "{\"ok\":true,\"room\":" + (result.room == null ? "null" : result.room.toJson()) + "}");
+    }
+
+    private void handleGroupSend(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.groupChatAllowWebSend) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"web_send_disabled\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        GroupChatStore.SendResult result = plugin.groupChats().send(req.ctx.account.uuid, req.body.get("roomId"), req.body.get("message"));
+        if (!result.ok) { sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}"); return; }
+        publishGroupChatUpdate(result.room == null ? req.body.get("roomId") : result.room.id);
+        dispatchWebPushGroupMessage(req.ctx.account.uuid, plugin.displayNameForAccount(req.ctx.account), result.room, result.message, req.body.get("roomId"));
+        notifyOnlineGroupMembers(req.ctx.account, result.room, result.message, req.body.get("roomId"));
+        sendJson(ex, 200, "{\"ok\":true,\"room\":" + (result.room == null ? "null" : result.room.toJson()) + ",\"message\":" + (result.message == null ? "null" : result.message.toJson()) + "}");
+    }
+
+    private void handleGroupRead(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        boolean ok = plugin.groupChats().markRead(req.body.get("roomId"), req.ctx.account.uuid);
+        sendJson(ex, 200, "{\"ok\":" + ok + ",\"unread\":" + plugin.groupChats().unreadCount(req.ctx.account.uuid) + "}");
+    }
+
+    private void handleGroupHideMessage(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        long messageId = parseLong(req.body.get("messageId"), 0L);
+        String roomId = plugin.groupChats().roomIdForMessage(req.ctx.account.uuid, messageId);
+        boolean ok = plugin.groupChats().hideMessage(req.ctx.account.uuid, messageId);
+        if (ok) publishGroupChatUpdate(roomId);
+        sendJson(ex, 200, "{\"ok\":" + ok + ",\"unread\":" + plugin.groupChats().unreadCount(req.ctx.account.uuid) + "}");
+    }
+
+    private void handleGroupSettings(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        boolean passwordSet = req.body.containsKey("password");
+        GroupChatStore.ActionResult result = plugin.groupChats().updateSettings(req.ctx.account.uuid, req.body.get("roomId"), req.body.get("name"), req.body.get("visibility"), req.body.get("password"), passwordSet);
+        if (!result.ok) { sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}"); return; }
+        publishGroupChatUpdate(result.room == null ? req.body.get("roomId") : result.room.id);
+        sendJson(ex, 200, "{\"ok\":true,\"room\":" + (result.room == null ? "null" : result.room.toJson()) + "}");
+    }
+
+
+    private void handleGroupMembers(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.groupChatEnabled || plugin.groupChats() == null || !plugin.groupChats().available()) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"group_disabled\"}"); return; }
+        SessionContext ctx = sessionFromQuery(ex);
+        if (!validGroupUser(ctx)) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}"); return; }
+        Map<String,String> q = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
+        String roomId = stripControl(q.get("roomId"), 120).trim();
+        List<String> members = plugin.groupChats().listMembersJson(ctx.account.uuid, roomId);
+        List<String> bans = plugin.groupChats().listBansJson(ctx.account.uuid, roomId);
+        sendJson(ex, 200, "{\"ok\":true,\"members\":[" + String.join(",", members) + "],\"bans\":[" + String.join(",", bans) + "]}");
+    }
+
+    private void handleGroupKick(HttpExchange ex) throws IOException { handleGroupMemberAction(ex, "kick"); }
+    private void handleGroupBan(HttpExchange ex) throws IOException { handleGroupMemberAction(ex, "ban"); }
+    private void handleGroupUnban(HttpExchange ex) throws IOException { handleGroupMemberAction(ex, "unban"); }
+
+    private void handleGroupMemberAction(HttpExchange ex, String action) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        String targetUuid = stripControl(req.body.get("targetUuid"), 80).trim();
+        GroupChatStore.ActionResult result;
+        if ("unban".equals(action)) result = plugin.groupChats().unban(req.ctx.account.uuid, req.body.get("roomId"), targetUuid);
+        else result = plugin.groupChats().kick(req.ctx.account.uuid, req.body.get("roomId"), targetUuid, "ban".equals(action));
+        if (!result.ok) { sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}"); return; }
+        publishGroupChatUpdate(req.body.get("roomId"), targetUuid);
+        sendJson(ex, 200, "{\"ok\":true}");
+    }
+
+    private void handleGroupHideRoom(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        String roomId = req.body.get("roomId");
+        GroupChatStore.ActionResult result = plugin.groupChats().hideRoom(req.ctx.account.uuid, roomId);
+        if (!result.ok) { sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}"); return; }
+        publishGroupChatUpdate(roomId, req.ctx.account.uuid);
+        sendJson(ex, 200, "{\"ok\":true,\"unread\":" + plugin.groupChats().unreadCount(req.ctx.account.uuid) + "}");
+    }
+
+    private void handleGroupUnhideRoom(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        String roomId = req.body.get("roomId");
+        GroupChatStore.ActionResult result = plugin.groupChats().unhideRoom(req.ctx.account.uuid, roomId);
+        if (!result.ok) { sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}"); return; }
+        publishGroupChatUpdate(roomId, req.ctx.account.uuid);
+        sendJson(ex, 200, "{\"ok\":true,\"room\":" + (result.room == null ? "null" : result.room.toJson()) + ",\"unread\":" + plugin.groupChats().unreadCount(req.ctx.account.uuid) + "}");
+    }
+
+    private void handleGroupTransferOwner(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        GroupRequest req = groupRequest(ex);
+        if (!req.ok) return;
+        String targetUuid = stripControl(req.body.get("targetUuid"), 80).trim();
+        GroupChatStore.ActionResult result = plugin.groupChats().transferOwner(req.ctx.account.uuid, req.body.get("roomId"), targetUuid);
+        if (!result.ok) { sendJson(ex, 400, "{\"ok\":false,\"error\":" + JsonUtil.quote(result.error) + "}"); return; }
+        publishGroupChatUpdate(req.body.get("roomId"));
+        sendJson(ex, 200, "{\"ok\":true,\"room\":" + (result.room == null ? "null" : result.room.toJson()) + "}");
+    }
+
+    private GroupRequest groupRequest(HttpExchange ex) throws IOException {
+        GroupRequest req = new GroupRequest();
+        ConfigValues config = plugin.configValues();
+        if (config == null || !config.groupChatEnabled || plugin.groupChats() == null || !plugin.groupChats().available()) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"group_disabled\"}"); return req; }
+        req.body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        req.ctx = storage.getSession(req.body.get("token"));
+        if (!validGroupUser(req.ctx)) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}"); return req; }
+        req.ok = true;
+        return req;
+    }
+
+    private boolean validGroupUser(SessionContext ctx) {
+        return ctx != null && ctx.account != null && ctx.account.role.atLeast(Role.USER)
+                && ctx.account.uuid != null && !ctx.account.uuid.isBlank();
+    }
+
+    private boolean isPrivateChatSuperAdmin(SessionContext ctx) {
+        if (ctx == null || ctx.account == null || ctx.account.uuid == null || ctx.account.uuid.isBlank()) return false;
+        ConfigValues config = plugin.configValues();
+        if (config == null || config.privateChatSuperAdmins == null || config.privateChatSuperAdmins.isEmpty()) return false;
+        String uuid = String.valueOf(ctx.account.uuid == null ? "" : ctx.account.uuid).trim().toLowerCase(Locale.ROOT);
+        String username = String.valueOf(ctx.account.safeUsername() == null ? "" : ctx.account.safeUsername()).trim().toLowerCase(Locale.ROOT);
+        String display = String.valueOf(plugin.displayNameForAccount(ctx.account) == null ? "" : plugin.displayNameForAccount(ctx.account)).trim().toLowerCase(Locale.ROOT);
+        for (String raw : config.privateChatSuperAdmins) {
+            String v = String.valueOf(raw == null ? "" : raw).trim().toLowerCase(Locale.ROOT);
+            if (v.isBlank()) continue;
+            if (v.equals(uuid) || v.equals(username) || v.equals(display)) return true;
+        }
+        return false;
+    }
+
+    private static final class GroupRequest {
+        boolean ok;
+        Map<String,String> body = new LinkedHashMap<>();
+        SessionContext ctx;
+    }
+
     private SessionContext sessionFromQuery(HttpExchange ex) {
         Map<String, String> q = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
         return storage.getSession(q.get("token"));
@@ -1120,6 +1647,32 @@ public class WebChatServer {
                 vars.put("message", ChatColor.RESET + body);
                 recipient.sendMessage(ChatColor.LIGHT_PURPLE + plugin.langManager().text("command.dmIncoming", "DM from {player}: {message}", vars));
             } catch (IllegalArgumentException ignored) {
+            }
+        });
+    }
+
+    private void notifyOnlineGroupMembers(Account sender, GroupRoom room, GroupMessage message, String fallbackRoomId) {
+        if (sender == null || plugin.groupChats() == null || message == null) return;
+        String roomId = room != null && room.id != null && !room.id.isBlank() ? room.id : String.valueOf(fallbackRoomId == null ? "" : fallbackRoomId);
+        if (roomId.isBlank()) return;
+        String roomName = room != null && room.name != null && !room.name.isBlank() ? room.name : roomId;
+        String senderName = plugin.displayNameForAccount(sender);
+        String body = colorizeForGame(trimForNotice(message.body, 100));
+        java.util.Map<String, String> vars = new java.util.HashMap<>();
+        vars.put("room", ChatColor.RESET + roomName + ChatColor.AQUA);
+        vars.put("player", ChatColor.RESET + senderName + ChatColor.AQUA);
+        vars.put("message", ChatColor.RESET + body);
+        String line = ChatColor.AQUA + plugin.langManager().text("command.groupIncoming", "Group {room} from {player}: {message}", vars);
+        java.util.Set<String> members = plugin.groupChats().memberUuids(roomId);
+        if (members == null || members.isEmpty()) return;
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            for (String memberUuid : members) {
+                if (memberUuid == null || memberUuid.isBlank()) continue;
+                try {
+                    Player recipient = Bukkit.getPlayer(java.util.UUID.fromString(memberUuid));
+                    if (recipient != null && recipient.isOnline()) recipient.sendMessage(line);
+                } catch (IllegalArgumentException ignored) {
+                }
             }
         });
     }
@@ -1169,6 +1722,7 @@ public class WebChatServer {
         if (c.broadcastWebChatToWeb) {
             addHistory(msg);
             broadcast(msg);
+            dispatchWebPushChat(msg);
         }
         sendJson(ex, 200, "{\"ok\":true}");
         sendToGame(msg, ctx.account.role == Role.ADMIN ? c.webAdminToGameFormat : c.webUserToGameFormat);
@@ -1233,6 +1787,7 @@ public class WebChatServer {
         if (config.broadcastWebChatToWeb) {
             addHistory(msg);
             broadcast(msg);
+            dispatchWebPushChat(msg);
         }
         String extra = captchaPass == null ? "" : ",\"captchaPass\":" + JsonUtil.quote(captchaPass);
         sendJson(ex, 200, "{\"ok\":true" + extra + "}");
@@ -1342,6 +1897,7 @@ public class WebChatServer {
         try {
             accepted = future.get(5, TimeUnit.SECONDS);
         } catch (TimeoutException timeout) {
+            audit(ctx, "command.run", Map.of("command", finalCommand, "result", "timeout"));
             sendJson(ex, 202, "{\"ok\":true,\"submitted\":true,\"timeout\":true}");
             return;
         } catch (Exception err) {
@@ -1349,6 +1905,8 @@ public class WebChatServer {
             sendJson(ex, 500, "{\"ok\":false,\"error\":\"command_failed\"}");
             return;
         }
+
+        audit(ctx, "command.run", Map.of("command", finalCommand, "label", resultLabel == null ? "" : resultLabel, "accepted", accepted));
 
         if (config.commandsBroadcastToWebChat) {
             String executor = commandExecutorLabel(ctx.account);
@@ -2774,7 +3332,9 @@ public class WebChatServer {
         try (java.util.stream.Stream<Path> stream = Files.list(dir)) {
             stream.filter(Files::isRegularFile).forEach(file -> {
                 try {
-                    if (protectedPinnedUploads.contains(file.getFileName().toString())) return;
+                    String uploadName = file.getFileName().toString();
+                    if (protectedPinnedUploads.contains(uploadName)) return;
+                    if (uploadNameReferencedAnywhere(uploadName, "", "")) return;
                     if (Files.getLastModifiedTime(file).toMillis() < cutoff) {
                         Files.deleteIfExists(file);
                     }
@@ -2804,6 +3364,60 @@ public class WebChatServer {
             }
         }
         return out;
+    }
+
+    private Set<String> uploadNamesFromTexts(Collection<String> texts) {
+        Set<String> out = new LinkedHashSet<>();
+        if (texts == null || texts.isEmpty()) return out;
+        Pattern relativeUpload = Pattern.compile("(?i)(?:^|[\s<>'\"])(/[^\s<>'\"]*/uploads/([A-Za-z0-9._-]+))");
+        for (String text : texts) {
+            if (text == null || text.isBlank()) continue;
+            Matcher urlMatcher = URL_PATTERN.matcher(text);
+            while (urlMatcher.find()) {
+                String raw = splitUrlTrailing(urlMatcher.group(1))[0];
+                String name = uploadNameFromUrl(raw);
+                if (!name.isBlank()) out.add(name);
+            }
+            Matcher relative = relativeUpload.matcher(text);
+            while (relative.find()) {
+                String name = relative.group(2);
+                if (name != null && name.matches("[A-Za-z0-9._-]+")) out.add(name);
+            }
+        }
+        return out;
+    }
+
+    private void deleteUploadedFilesIfUnreferenced(Collection<String> names, String ignoreDmThreadId, String ignoreGroupRoomId) {
+        if (names == null || names.isEmpty()) return;
+        Path dir = uploadDir();
+        for (String rawName : names) {
+            String name = String.valueOf(rawName == null ? "" : rawName).trim();
+            if (!name.matches("[A-Za-z0-9._-]+")) continue;
+            if (uploadNameReferencedAnywhere(name, ignoreDmThreadId, ignoreGroupRoomId)) continue;
+            try {
+                Path file = dir.resolve(name).normalize();
+                if (!file.startsWith(dir)) continue;
+                Files.deleteIfExists(file);
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    private boolean uploadNameReferencedAnywhere(String name, String ignoreDmThreadId, String ignoreGroupRoomId) {
+        String n = String.valueOf(name == null ? "" : name).trim();
+        if (!n.matches("[A-Za-z0-9._-]+")) return false;
+        for (String text : storage.pinnedMessageTexts()) {
+            if (text != null && text.contains(n)) return true;
+        }
+        synchronized (history) {
+            for (ChatMessage msg : history) {
+                if (msg != null && !msg.hidden && msg.message != null && msg.message.contains(n)) return true;
+            }
+        }
+        if (sqliteHistoryEnabled() && sqliteHistory.uploadNameReferenced(n)) return true;
+        if (plugin.directMessages() != null && plugin.directMessages().uploadNameReferenced(n, ignoreDmThreadId)) return true;
+        if (plugin.groupChats() != null && plugin.groupChats().uploadNameReferenced(n, ignoreGroupRoomId)) return true;
+        return false;
     }
 
     private String uploadNameFromUrl(String raw) {
@@ -3367,6 +3981,8 @@ public class WebChatServer {
         for (SessionContext sc : storage.listSessions()) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("username", sc.account.safeUsername());
+            m.put("displayName", plugin.displayNameForAccount(sc.account));
+            m.put("uuid", sc.account.uuid == null ? "" : sc.account.uuid);
             m.put("role", sc.account.role.name());
             m.put("createdAt", sc.session.createdAt);
             m.put("expiresAt", sc.session.expiresAt);
@@ -3384,6 +4000,7 @@ public class WebChatServer {
         for (Account a : storage.listAccounts()) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("username", a.safeUsername());
+            m.put("displayName", plugin.displayNameForAccount(a));
             m.put("role", a.role.name());
             m.put("local", a.local);
             m.put("uuid", a.uuid == null ? "" : a.uuid);
@@ -3402,6 +4019,7 @@ public class WebChatServer {
         Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
         String username = body.get("username");
         int removed = storage.revokeSessionsForUsername(username);
+        audit(ctx, "admin.revoke-sessions", Map.of("username", username == null ? "" : username, "removed", removed));
         sendJson(ex, 200, "{\"ok\":true,\"removed\":" + removed + "}");
     }
 
@@ -3442,6 +4060,7 @@ public class WebChatServer {
             return;
         }
         ModerationEntry e = plugin.moderationManager().mute(type, value, minutes, reason, ctx.account.safeUsername());
+        audit(ctx, "admin.mute", Map.of("type", type, "value", value, "minutes", minutes, "reason", reason));
         sendJson(ex, 200, "{\"ok\":true,\"mute\":" + JsonUtil.obj(e.toMap()) + "}");
     }
 
@@ -3458,7 +4077,10 @@ public class WebChatServer {
             return;
         }
         Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
-        boolean removed = plugin.moderationManager().unmute(body.getOrDefault("type", "guest"), body.getOrDefault("value", ""));
+        String type = body.getOrDefault("type", "guest");
+        String value = body.getOrDefault("value", "");
+        boolean removed = plugin.moderationManager().unmute(type, value);
+        if (removed) audit(ctx, "admin.unmute", Map.of("type", type, "value", value));
         sendJson(ex, 200, "{\"ok\":" + removed + "}");
     }
 
@@ -3493,8 +4115,100 @@ public class WebChatServer {
         if (ok) {
             if (legacyJsonlHistoryEnabled()) savePersistedHistory();
             broadcastEvent("delete", "{\"id\":" + JsonUtil.quote(id) + "}");
+            audit(ctx, "admin.delete-message", Map.of("messageId", id == null ? "" : id));
         }
         sendJson(ex, 200, "{\"ok\":" + ok + "}");
+    }
+
+    private void handleAdminDeleteDmThread(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        SessionContext ctx = requireRole(ex, Role.ADMIN);
+        if (ctx == null) return;
+        if (!isPrivateChatSuperAdmin(ctx)) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}"); return; }
+        Map<String, String> body = parsedBody(ex);
+        String threadId = stripControl(body.get("threadId"), 180).trim();
+        if (threadId.isBlank() || plugin.directMessages() == null || !plugin.directMessages().available()) { sendJson(ex, 400, "{\"ok\":false,\"error\":\"missing_thread\"}"); return; }
+        Set<String> participants = plugin.directMessages().participantUuidsForThread(threadId);
+        Set<String> uploadNames = uploadNamesFromTexts(plugin.directMessages().messageBodiesForThread(threadId));
+        boolean ok = plugin.directMessages().deleteThread(threadId);
+        if (ok) {
+            deleteUploadedFilesIfUnreferenced(uploadNames, threadId, "");
+            audit(ctx, "admin.delete-dm-thread", Map.of("threadId", threadId, "uploads", uploadNames.size(), "participants", participants.size()));
+        }
+        String a = participants.stream().findFirst().orElse("");
+        String b = participants.stream().skip(1).findFirst().orElse("");
+        publishDirectMessageUpdate(a, b, threadId);
+        sendJson(ex, 200, "{\"ok\":" + ok + "}");
+    }
+
+    private void handleAdminDeleteGroupRoom(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        SessionContext ctx = requireRole(ex, Role.ADMIN);
+        if (ctx == null) return;
+        if (!isPrivateChatSuperAdmin(ctx)) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}"); return; }
+        Map<String, String> body = parsedBody(ex);
+        String roomId = stripControl(body.get("roomId"), 140).trim();
+        if (roomId.isBlank() || plugin.groupChats() == null || !plugin.groupChats().available()) { sendJson(ex, 400, "{\"ok\":false,\"error\":\"missing_room\"}"); return; }
+        Set<String> members = plugin.groupChats().memberUuids(roomId);
+        Set<String> uploadNames = uploadNamesFromTexts(plugin.groupChats().messageBodiesForRoom(roomId));
+        boolean ok = plugin.groupChats().deleteRoom(roomId);
+        if (ok) {
+            deleteUploadedFilesIfUnreferenced(uploadNames, "", roomId);
+            audit(ctx, "admin.delete-group-room", Map.of("roomId", roomId, "uploads", uploadNames.size(), "members", members.size()));
+        }
+        publishGroupChatUpdate(roomId);
+        for (String member : members) {
+            if (member != null && !member.isBlank()) publishGroupChatUpdate(roomId, member);
+        }
+        sendJson(ex, 200, "{\"ok\":" + ok + "}");
+    }
+
+
+    private void handleAdminCleanupPreview(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        SessionContext ctx = requireRole(ex, Role.ADMIN);
+        if (ctx == null) return;
+        if (!isPrivateChatSuperAdmin(ctx)) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}"); return; }
+        String dm = (plugin.directMessages() == null || !plugin.directMessages().available()) ? "null" : plugin.directMessages().cleanupPreviewJson();
+        String group = (plugin.groupChats() == null || !plugin.groupChats().available()) ? "null" : plugin.groupChats().cleanupPreviewJson();
+        sendJson(ex, 200, "{\"ok\":true,\"dm\":" + dm + ",\"group\":" + group + "}");
+    }
+
+    private void handleAdminSessionFlags(HttpExchange ex) throws IOException {
+        if (preflight(ex)) return;
+        SessionContext ctx = requireRole(ex, Role.ADMIN);
+        if (ctx == null) return;
+        if (!isPrivateChatSuperAdmin(ctx)) { sendJson(ex, 403, "{\"ok\":false,\"error\":\"permission_denied\"}"); return; }
+        if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) { sendJson(ex, 405, "{\"ok\":false,\"error\":\"method_not_allowed\"}"); return; }
+        Map<String, String> body = parsedBody(ex);
+        String type = stripControl(body.get("type"), 20).trim().toLowerCase(Locale.ROOT);
+        String id = stripControl(body.get("id"), 180).trim();
+        Boolean locked = parseNullableBoolean(body.get("locked"));
+        Boolean retentionExempt = parseNullableBoolean(body.get("retentionExempt"));
+        if (id.isBlank() || (!"dm".equals(type) && !"group".equals(type))) { sendJson(ex, 400, "{\"ok\":false,\"error\":\"invalid_session\"}"); return; }
+        boolean ok;
+        if ("dm".equals(type)) ok = plugin.directMessages() != null && plugin.directMessages().setSessionFlags(id, locked, retentionExempt);
+        else ok = plugin.groupChats() != null && plugin.groupChats().setSessionFlags(id, locked, retentionExempt);
+        if (ok) {
+            audit(ctx, "admin.session-flags", Map.of("type", type, "id", id, "locked", locked == null ? "unchanged" : locked, "retentionExempt", retentionExempt == null ? "unchanged" : retentionExempt));
+            if ("dm".equals(type)) {
+                Set<String> participants = plugin.directMessages().participantUuidsForThread(id);
+                String a = participants.stream().findFirst().orElse("");
+                String b = participants.stream().skip(1).findFirst().orElse("");
+                publishDirectMessageUpdate(a, b, id);
+            } else {
+                publishGroupChatUpdate(id);
+                for (String member : plugin.groupChats().memberUuids(id)) publishGroupChatUpdate(id, member);
+            }
+        }
+        sendJson(ex, 200, "{\"ok\":" + ok + "}");
+    }
+
+    private Boolean parseNullableBoolean(String raw) {
+        if (raw == null) return null;
+        String v = raw.trim().toLowerCase(Locale.ROOT);
+        if (v.isBlank() || "null".equals(v) || "undefined".equals(v)) return null;
+        return "true".equals(v) || "1".equals(v) || "yes".equals(v) || "on".equals(v);
     }
 
     private void handleAdminPinMessage(HttpExchange ex) throws IOException {
@@ -3531,6 +4245,7 @@ public class WebChatServer {
             return;
         }
         broadcastPinsChanged();
+        audit(ctx, "admin.pin-message", Map.of("messageId", id == null ? "" : id, "pinId", pin.pinId == null ? "" : pin.pinId));
         sendJson(ex, 200, "{\"ok\":true,\"pin\":" + pin.toJson() + "}");
     }
 
@@ -3541,7 +4256,10 @@ public class WebChatServer {
         Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
         String pinId = body.get("pinId");
         boolean ok = storage.unpinMessage(pinId);
-        if (ok) broadcastPinsChanged();
+        if (ok) {
+            broadcastPinsChanged();
+            audit(ctx, "admin.unpin-message", Map.of("pinId", pinId == null ? "" : pinId));
+        }
         sendJson(ex, 200, "{\"ok\":" + ok + "}");
     }
 
@@ -3558,7 +4276,10 @@ public class WebChatServer {
         String pinId = body.get("pinId");
         String direction = body.get("direction");
         boolean ok = storage.movePinnedMessage(pinId, direction);
-        if (ok) broadcastPinsChanged();
+        if (ok) {
+            broadcastPinsChanged();
+            audit(ctx, "admin.move-pin", Map.of("pinId", pinId == null ? "" : pinId, "direction", direction == null ? "" : direction));
+        }
         sendJson(ex, 200, "{\"ok\":" + ok + "}");
     }
 
@@ -3657,6 +4378,7 @@ public class WebChatServer {
             return;
         }
         Files.createDirectories(dir);
+        audit(ctx, "admin.emoji-create-pack", Map.of("pack", packId));
         sendJson(ex, 200, "{\"ok\":true,\"pack\":" + JsonUtil.quote(packId) + "}");
     }
 
@@ -3760,6 +4482,7 @@ public class WebChatServer {
         res.put("size", file.data.length);
         res.put("pngSidecar", sidecar != null);
         res.put("pngSidecarFilename", sidecar == null ? "" : sidecar.getFileName().toString());
+        audit(ctx, "admin.emoji-upload", Map.of("pack", packId, "filename", stored, "size", file.data.length, "pngSidecar", sidecar != null));
         sendJson(ex, 200, JsonUtil.obj(res));
     }
 
@@ -3816,6 +4539,7 @@ public class WebChatServer {
                 return;
             }
             Files.move(oldDir, newDir);
+            audit(ctx, "admin.emoji-rename-pack", Map.of("oldPack", oldPack, "newPack", newPack));
             sendJson(ex, 200, "{\"ok\":true,\"pack\":" + JsonUtil.quote(newPack) + "}");
             return;
         }
@@ -3871,6 +4595,7 @@ public class WebChatServer {
         String base = renamed.contains(".") ? renamed.substring(0, renamed.lastIndexOf('.')) : renamed;
         String newItemName = sanitizeEmojiSegment(base);
         String newId = found.pack + "/" + newItemName;
+        audit(ctx, "admin.emoji-rename", Map.of("oldId", found.id, "newId", newId, "filename", renamed));
         sendJson(ex, 200, "{\"ok\":true,\"id\":" + JsonUtil.quote(newId) + ",\"filename\":" + JsonUtil.quote(renamed) + "}");
     }
 
@@ -3911,6 +4636,7 @@ public class WebChatServer {
                     Files.deleteIfExists(normalized);
                 }
             }
+            audit(ctx, "admin.emoji-delete-pack", Map.of("pack", packId));
             sendJson(ex, 200, "{\"ok\":true}");
             return;
         }
@@ -3940,6 +4666,7 @@ public class WebChatServer {
         Path sidecar = emojiPngSidecarPath(file);
         boolean ok = Files.deleteIfExists(file);
         if (ok && sidecar != null && Files.isRegularFile(sidecar)) Files.deleteIfExists(sidecar);
+        if (ok) audit(ctx, "admin.emoji-delete", Map.of("id", found.id, "path", found.relativePath == null ? "" : found.relativePath));
         sendJson(ex, 200, "{\"ok\":" + ok + "}");
     }
 
@@ -3953,7 +4680,30 @@ public class WebChatServer {
         if (sqliteHistoryEnabled()) sqliteHistory.clear();
         else savePersistedHistory();
         broadcastEvent("clear", "{\"ok\":true}");
+        audit(ctx, "admin.clear-history", Map.of());
         sendJson(ex, 200, "{\"ok\":true}");
+    }
+
+
+    private void audit(SessionContext ctx, String action, Map<String, ?> details) {
+        String actor = "";
+        if (ctx != null && ctx.account != null) actor = ctx.account.safeUsername();
+        AuditLogger.log(plugin, action, actor, details);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, String> parsedBody(HttpExchange ex) throws IOException {
+        Object existing = ex.getAttribute("parsedBody");
+        if (existing instanceof Map<?, ?> map) {
+            Map<String, String> out = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                out.put(String.valueOf(e.getKey()), String.valueOf(e.getValue()));
+            }
+            return out;
+        }
+        Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
+        ex.setAttribute("parsedBody", body);
+        return body;
     }
 
     private SessionContext requireRole(HttpExchange ex, Role role) throws IOException {
@@ -5076,6 +5826,66 @@ public class WebChatServer {
         broadcastEvent("chat", msg.toJson());
     }
 
+    private void dispatchWebPushChat(ChatMessage msg) {
+        ConfigValues c = plugin.configValues();
+        if (c == null || !c.webPushEnabled || msg == null) return;
+        String source = String.valueOf(msg.source == null ? "" : msg.source).toLowerCase(Locale.ROOT);
+        boolean system = source.equals("event") || source.equals("system") || source.equals("server");
+        WebPushManager.Payload p = new WebPushManager.Payload();
+        p.type = system ? "system" : "chat";
+        p.title = configuredWebPushTitle();
+        p.body = system ? String.valueOf(msg.message == null ? "" : msg.message) : notificationSender(msg.sender) + (msg.message == null || msg.message.isBlank() ? "" : ": " + msg.message);
+        p.url = standaloneOpenUrl();
+        p.tag = system ? "bmwc-system" : "bmwc-chat";
+        p.senderUuid = msg.playerUuid == null ? "" : msg.playerUuid;
+        webPush.sendToAll(p);
+    }
+
+    public void dispatchWebPushDirectMessage(String senderUuid, String senderName, String targetUuid, String targetName, String body) {
+        ConfigValues c = plugin.configValues();
+        if (c == null || !c.webPushEnabled) return;
+        WebPushManager.Payload p = new WebPushManager.Payload();
+        p.type = "dm";
+        p.title = notificationSender(senderName);
+        p.body = body == null ? "" : body;
+        p.url = standaloneOpenUrl();
+        p.tag = "bmwc-dm-" + String.valueOf(targetUuid == null ? "" : targetUuid).replaceAll("[^A-Za-z0-9_-]", "");
+        p.senderUuid = senderUuid == null ? "" : senderUuid;
+        webPush.sendToUser(targetUuid, p);
+        if (c.webPushNotifyOwnMessages && senderUuid != null && !senderUuid.isBlank()) webPush.sendToUser(senderUuid, p);
+    }
+
+    public void dispatchWebPushGroupMessage(String senderUuid, String senderName, GroupRoom room, GroupMessage message, String fallbackRoomId) {
+        ConfigValues c = plugin.configValues();
+        if (c == null || !c.webPushEnabled || plugin.groupChats() == null) return;
+        String roomId = room != null && room.id != null && !room.id.isBlank() ? room.id : String.valueOf(fallbackRoomId == null ? "" : fallbackRoomId);
+        if (roomId.isBlank()) return;
+        Set<String> members = plugin.groupChats().memberUuids(roomId);
+        if (members == null || members.isEmpty()) return;
+        String roomName = room != null && room.name != null && !room.name.isBlank() ? room.name : plugin.langManager().text("notification.groupChat", "Group chat");
+        String body = message == null ? "" : message.body;
+        WebPushManager.Payload p = new WebPushManager.Payload();
+        p.type = "group";
+        p.title = roomName + " · " + notificationSender(senderName);
+        p.body = body == null ? "" : body;
+        p.url = standaloneOpenUrl();
+        p.tag = "bmwc-group-" + roomId.replaceAll("[^A-Za-z0-9_-]", "");
+        p.senderUuid = senderUuid == null ? (message == null ? "" : message.senderUuid) : senderUuid;
+        webPush.sendToUsers(members, p);
+    }
+
+    private String standaloneOpenUrl() {
+        ConfigValues c = plugin.configValues();
+        if (c != null && c.standaloneWebPath != null && !c.standaloneWebPath.isBlank()) return c.standaloneWebPath;
+        return "/";
+    }
+
+    private String notificationSender(String value) {
+        String text = stripControl(String.valueOf(value == null ? "" : value), 80);
+        text = ChatColor.stripColor(text);
+        return text == null || text.isBlank() ? configuredWebPushTitle() : text;
+    }
+
 
 
     public void publishDirectMessageUpdate(String userUuidA, String userUuidB, String threadId) {
@@ -5090,13 +5900,40 @@ public class WebChatServer {
         broadcastDirectMessageEvent(JsonUtil.obj(m), a, b);
     }
 
+
+    public void publishGroupChatUpdate(String roomId) {
+        publishGroupChatUpdate(roomId, "");
+    }
+
+    public void publishGroupChatUpdate(String roomId, String extraUserUuid) {
+        String id = String.valueOf(roomId == null ? "" : roomId).trim();
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("ok", true);
+        m.put("roomId", id);
+        broadcastGroupChatEvent(JsonUtil.obj(m), id, extraUserUuid);
+    }
+
+    private void broadcastGroupChatEvent(String json, String roomId, String extraUserUuid) {
+        String id = String.valueOf(roomId == null ? "" : roomId).trim();
+        String extra = String.valueOf(extraUserUuid == null ? "" : extraUserUuid).trim().toLowerCase(Locale.ROOT);
+        Set<String> members = plugin.groupChats() == null ? Collections.emptySet() : plugin.groupChats().memberUuids(id);
+        String data = "event: group\ndata: " + json + "\n\n";
+        for (SseClient client : new ArrayList<>(clients)) {
+            String clientUuid = client.accountUuid == null ? "" : client.accountUuid;
+            boolean allowed = client.privateChatSuperAdmin || members.isEmpty() || members.contains(clientUuid) || (!extra.isBlank() && extra.equals(clientUuid));
+            if (!allowed) continue;
+            try { client.sendRaw(data); }
+            catch (IOException ex) { clients.remove(client); client.close(); }
+        }
+    }
+
     private void broadcastDirectMessageEvent(String json, String userUuidA, String userUuidB) {
         String a = String.valueOf(userUuidA == null ? "" : userUuidA).trim().toLowerCase(Locale.ROOT);
         String b = String.valueOf(userUuidB == null ? "" : userUuidB).trim().toLowerCase(Locale.ROOT);
         String data = "event: dm\ndata: " + json + "\n\n";
         for (SseClient client : new ArrayList<>(clients)) {
             String clientUuid = client.accountUuid == null ? "" : client.accountUuid;
-            if (!clientUuid.equals(a) && !clientUuid.equals(b)) continue;
+            if (!client.privateChatSuperAdmin && !clientUuid.equals(a) && !clientUuid.equals(b)) continue;
             try {
                 client.sendRaw(data);
             } catch (IOException ex) {
@@ -5319,12 +6156,14 @@ public class WebChatServer {
         private final OutputStream out;
         private final String ip;
         private final String accountUuid;
+        private final boolean privateChatSuperAdmin;
         private volatile boolean open = true;
 
-        private SseClient(OutputStream out, String ip, String accountUuid) {
+        private SseClient(OutputStream out, String ip, String accountUuid, boolean privateChatSuperAdmin) {
             this.out = out;
             this.ip = ip == null ? "" : ip;
             this.accountUuid = accountUuid == null ? "" : accountUuid;
+            this.privateChatSuperAdmin = privateChatSuperAdmin;
         }
 
         synchronized void sendRaw(String s) throws IOException {

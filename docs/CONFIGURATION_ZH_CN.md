@@ -142,7 +142,7 @@ reply:
 
 ```yaml
 discordsrv:
-  append-web-emoji-links: false
+  append-web-emoji-links: true
   game-to-discord: false
   append-game-emoji-links: true
   max-emoji-links-per-message: 4
@@ -275,6 +275,13 @@ TikTok 使用官方 `player/v1` iframe，并应用 `description=0`、`music_info
 
 将 `youtube-click-to-load` 或 `media-click-to-load` 设为 `false` 会立即渲染对应预览。自动播放仍受浏览器策略控制。
 
+
+## 浏览器通知和 Web Push
+
+`browser-notifications` 控制网页打开期间由浏览器显示的系统通知。用户仍需要在浏览器中允许通知权限。`notify-*` 值是服务器端允许上限：保持 `true` 时每个用户/浏览器可在聊天设置中自行开关；设为 `false` 时，即使用户启用，该通知类型也会被阻止。`notify-keywords` 控制用户自定义关键词提醒；关键词列表按浏览器/设备保存，并且仅同步到该设备的 Web Push 订阅用于后台匹配。
+
+`web-push` 当 HTTPS 或 localhost、浏览器通知权限以及 Service Worker / Push API 支持都满足时，可发送后台/移动推送通知。普通 iOS/iPadOS 浏览器标签页不支持 Web Push；只能在把 standalone 页面添加到主屏幕后作为 Web App 尝试使用，未支持的行为应视为平台限制。`web-push` 的 `notify-*` 值同样是推送投递的服务器端允许上限。若 `web-push.enabled: true` 且 VAPID key 留空，插件会在 `web-push-vapid.properties` 中生成持久 key。`web-push.subject` 建议使用真实的 VAPID 联系/运营者识别 URI，例如 `mailto:admin@example.com` 或 `https://map.example.com`。不建议使用任意文本；某些 push 服务可能拒绝或降低信任度。移动端“可能是垃圾信息”等警告由浏览器/操作系统控制，插件无法关闭。使用稳定的 HTTPS 域名、有意义的通知标题/正文、保守的通知过滤设置，并避免频繁测试通知，可降低出现概率。
+
 ## PIP
 
 ```yaml
@@ -350,3 +357,15 @@ ui:
 ## 消息搜索
 
 启用存储历史记录时，可以通过聊天面板右上角的浮动区域的放大镜按钮和 `/history/search` API 搜索消息内容和发送者。搜索选项可按日期/时间范围、发送者、来源以及是否包含系统/事件消息进行筛选。搜索结果会显示在可滚动列表中，并遵循聊天主题和字体设置。点击搜索结果会使用现有的周边历史加载跳转到对应消息。带有 i18n 键的系统/事件消息会尽可能按请求的 Web UI 语言搜索和显示。 可通过 `search.enabled` 启用/禁用搜索，且仅用 `search.result-limit` 同时控制 Web UI 结果数量和 `/history/search` API 限制。没有单独的内部最大值：设置为 2000 时最多返回 2000 条，设置为 10 时最多返回 10 条。10000 或 100000 这类非常大的值也会被接受，但可能导致搜索变慢、响应体变大，并显著增加 CPU、内存和数据库负载。默认值为 50，普通使用建议 50-200。旧版 config.yml 需要手动添加这些项目，或与默认配置合并。
+
+## 群组聊天
+
+`group-chat.enabled` 启用 Web 群组聊天功能。支持公开/私密房间、哈希保存的可选密码、邀请、退出房间、隐藏/恢复房间、房间设置、未读追踪、按用户隐藏消息、踢出/封禁/解除封禁成员以及转移房主。群组消息保存在 `group-chat.sqlite-file`（默认 `group-messages.db`）中。`group-chat.retention-days: 0` 表示不按时间清理；正数会物理删除更旧的群组消息。
+
+
+## 私信/群组聊天元数据超级管理员
+
+`private-chat-super-admins: []` 用于填写可出于管理/容量检查目的查看 DM/群组聊天元数据的准确 UUID 或 Minecraft 名。该视图只提供参与者/标题、消息数、大致存储大小、保留状态以及元数据会话删除等管理操作，不会显示消息正文。
+
+
+`standalone-web.app-name` 和 `standalone-web.app-short-name` 控制 standalone 页面/PWA 名称。移动端添加到主屏幕后如更改这些值，需要重新添加。`web-push.notification-title` 控制测试/系统/后台推送的默认标题；留空时使用 `standalone-web.app-name`。

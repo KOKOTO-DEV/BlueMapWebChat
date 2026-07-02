@@ -1,5 +1,155 @@
 # Changelog
 
+
+## 4.5.0
+
+4.5.0 jumps directly from the 4.3.x line because the accumulated changes are larger than a normal patch release. The summary below focuses on the major changes from 4.3.0 to 4.5.0.
+
+### Group chat
+- Added optional web group-chat rooms on top of the 4.3.0 direct-message system.
+- Supports public/private rooms, optional room passwords, invitations, unread badges, hidden-room restore, member management, and room management actions.
+- Group chat uses its own SQLite-backed storage and retention settings, and remains disabled by default because it stores multi-user private messages.
+
+### Metadata-only private chat administration
+- Added `private-chat-super-admins` for metadata-only DM/group review.
+- Super admins can review room/thread titles, participants, message counts, approximate storage size, retention status, locks, exclusion flags, cleanup previews, and deletion controls without viewing message bodies.
+- Added session locks, auto-delete exclusions, retention-remaining displays, cleanup previews, and full-session deletion for DM/group sessions.
+
+### Notifications and mobile Web Push
+- Added browser/system notifications for open web chat pages, with per-browser user preferences and server-side allow limits.
+- Added background/mobile Web Push using Service Worker subscriptions, VAPID keys, stored subscriptions, notification type filters, and a Web Push test action.
+- Documented HTTPS/PWA requirements, iOS/iPadOS limitations, VAPID `subject` guidance, and the fact that browser/OS spam warnings cannot be disabled by the plugin.
+
+### Theme, layout, and chat settings
+- Reworked public chat, DM, group chat, pinned-message, and admin metadata rows for more consistent wrapping, clipping, and `·` separator behavior.
+- Scoped chat font, text color, UI-meta color, shadow, message background, and input background settings to real chat-content areas only, instead of applying them to settings and management UI.
+- Grouped chat settings into language/theme, window, font, and notification areas; optional sections are collapsed by default and the collapsed/open state is saved locally.
+- The saved-chat-settings action area stays visible instead of becoming another collapsible section.
+- Improved light/dark/system/high-contrast control visibility, color swatch borders, settings scrollbar placement/style, detached modal styling, standalone viewport sizing, toasts, minimized mode, and DM/group hide button alignment.
+- Added browser-local setting presets for visual chat settings, window size/position, resize lock, minimized state, language, notification toggles, and related browser-local preferences.
+
+### Standalone, HTTPS, and resource loading
+- Fixed standalone `chat.js` bootstrap so the embedded inner application is available and does not fail with `BMWC_EMBEDDED_INNER_TEXT is not defined`.
+- Fixed standalone manifest URL generation so `/bmwc/chat` serves its manifest from the standalone route.
+- Improved API base handling for direct HTTP, same-domain HTTPS reverse proxy, standalone pages, uploads, and emoji URLs.
+- Refreshed Caddy/Nginx and configuration documentation around same-domain `/bmwc/api` and `/bmwc/chat` deployments.
+
+### Retention, cleanup, upload safety, and audit logs
+- Improved DM/group retention cleanup so decisions are based on surviving message timestamps and respect locked or auto-delete-excluded sessions.
+- Improved upload cleanup so files still referenced by public chat history, pinned messages, DM threads, or group rooms are protected before deletion.
+- Added optional append-only daily audit logs under `audit/YYYY-MM-DD.log` for management-impacting actions such as command execution, administrative `/bmchat` commands, session flag changes, forced DM/group deletion, message deletion, pin management, emoji management, and history clearing.
+
+### Configuration, language files, and upgrade notes
+- Added the `group-chat`, `private-chat-super-admins`, `audit`, `browser-notifications`, and `web-push` configuration blocks.
+- Changed the default `discordsrv.game-to-discord-format` to `{sender}: {message}`.
+- Browser notification and Web Push `notify-*` values are server-side allow limits; users can still choose their own browser-local notification preferences within those limits.
+- Added or refreshed UI language strings for group chat, metadata-only administration, retention status, hidden-room actions, admin confirmations, notification controls, and Web Push status/test messages in `en-US`, `ko-KR`, `ja-JP`, and `zh-CN`.
+- Existing `config.yml` files are not rewritten automatically. Merge the new blocks from the default config or regenerate the config after backing up your current settings.
+- If group chat is enabled, include `group-messages.db`, `group-messages.db-wal`, and `group-messages.db-shm` in backup plans.
+- Message bodies remain unavailable from the super-admin metadata view by design.
+
+### 4.5.0 - documentation and upgrade guidance
+
+- Added an upgrade recommendation for 4.5.0: because many options changed between 4.3.x and 4.5.0, it is usually safer to back up the old `config.yml`, regenerate a fresh one, and then copy custom settings back manually.
+- Clarified that newly generated configs start with `enabled: false`, so regenerating `config.yml` does not start web/chat services, cleanup tasks, or private-message/group-chat storage until the administrator reviews settings and sets `enabled: true`. Existing history databases, uploads, emojis, audit logs, language files, and VAPID key files are not deleted by config regeneration.
+
+Example migration flow:
+
+```bash
+# Stop the Minecraft server first.
+cd plugins/BlueMapWebChat
+cp config.yml config.yml.4.3-backup
+# Optional: keep a full plugin-data backup too.
+# cp -a . ../BlueMapWebChat-backup-4.3
+rm config.yml
+# Start the server once. The new config.yml is generated with enabled: false.
+# Review and merge your custom values, then set enabled: true and restart or /bmchat reload.
+```
+
+Key 4.5.0 config blocks to review or merge:
+
+```yaml
+enabled: false
+
+private-chat-super-admins: []
+
+audit:
+  enabled: true
+  directory: "audit"
+
+standalone-web:
+  enabled: false
+  path: "/chat"
+  app-name: "Web Chat"
+  app-short-name: "Web Chat"
+  api-base-url: ""
+
+direct-message:
+  enabled: false
+  storage: "auto"
+  retention-days: 0
+  max-messages-per-thread: 0
+  max-message-length: 500
+  allow-web-send: true
+  allow-game-send: true
+  notify-on-login: true
+  notify-on-message: true
+  web-unread-badge: true
+  confirm-hide: true
+  jsonl-file: "direct-messages.jsonl"
+  sqlite-file: "direct-messages.db"
+
+group-chat:
+  enabled: false
+  allow-web-send: true
+  allow-public-rooms: true
+  allow-room-passwords: true
+  confirm-leave: true
+  confirm-hide: true
+  retention-days: 30
+  max-messages-per-room: 1000
+  max-message-length: 500
+  max-rooms-per-user: 20
+  max-members-per-room: 50
+  max-room-name-length: 32
+  invite-expire-hours: 72
+  sqlite-file: "group-messages.db"
+
+browser-notifications:
+  enabled: true
+  only-when-hidden: true
+  notify-normal-chat: true
+  notify-dm: true
+  notify-group-chat: true
+  notify-mentions: true
+  notify-system: true
+  notify-keywords: true
+  notify-own-messages: true
+  show-message-preview: true
+
+web-push:
+  enabled: true
+  vapid-public-key: ""
+  vapid-private-key: ""
+  subject: "mailto:admin@example.com"
+  notification-title: ""
+  subscriptions-file: "web-push-subscriptions.jsonl"
+  ttl-seconds: 300
+  notify-normal-chat: true
+  notify-dm: true
+  notify-group-chat: true
+  notify-mentions: true
+  notify-system: true
+  notify-keywords: true
+  notify-own-messages: true
+  show-message-preview: true
+
+discordsrv:
+  append-web-emoji-links: true
+  append-game-emoji-links: true
+```
+
+
 ## 4.3.0
 
 ### Startup safety
@@ -19,7 +169,7 @@ When `enabled: false`, the plugin does not start the HTTP server, web addon inst
 
 ### Thread-style direct messages
 
-- Changed the in-game DM sent confirmation to use the new `command.dmSentEcho` key so existing language files still show the sent body (`to: {player} {message}`).
+- Changed the in-game DM sent confirmation to use the new `command.dmSentEcho` key so existing language files still show the sent body (`to: {player} {message}` / `보냄: {player} {message}`).
 - Added optional 1:1 direct message threads for linked/known Minecraft players.
 - Direct message targets are limited to players with a stored UUID/name, usually from joining the server at least once or linking a web account.
 - Messages are stored by UUID and displayed as `display name (real account name)` where both values are available.
@@ -164,6 +314,7 @@ search:
 
 ### Upgrade notes
 
+- In-game group-chat sending now preserves original `:emoji:` / `:pack/name:` message tokens without failing the direct-player-input safety check.
 - Existing `config.yml` files are not rewritten automatically. To use SQLite/search after upgrading from 4.1.1, add or merge the actual configuration blocks shown above.
 - Because 4.2.0 changes history and search configuration significantly, the safest upgrade path is to stop the server, back up the existing `config.yml`, delete `config.yml`, start the server once to regenerate it, and then reapply your custom settings manually.
 - Back up `history.jsonl`, `history.db`, `history.db-wal`, and `history.db-shm` before testing migration, changing storage backends, or editing the database manually.

@@ -21,6 +21,7 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
     private LangManager langManager;
     private DiscordBridge discordBridge;
     private DirectMessageStore directMessages;
+    private GroupChatStore groupChats;
     private WebChatServer webServer;
     private ChatListener chatListener;
 
@@ -49,6 +50,8 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
         discordBridge = new DiscordBridge(this);
         directMessages = new DirectMessageStore(this);
         directMessages.open();
+        groupChats = new GroupChatStore(this);
+        groupChats.open();
 
         installAssets();
         ensureEmojiDirectory();
@@ -57,7 +60,7 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
 
         registerRuntimeListeners();
 
-        publishAnnouncement("server-start", Map.of("server", getServer().getName()));
+        scheduleServerStartAnnouncement();
 
         getLogger().info("BlueMapWebChat enabled.");
     }
@@ -105,6 +108,10 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
             directMessages = new DirectMessageStore(this);
         }
         directMessages.open();
+        if (groupChats == null) {
+            groupChats = new GroupChatStore(this);
+        }
+        groupChats.open();
         if (langManager == null) {
             langManager = new LangManager(this);
         }
@@ -119,6 +126,16 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
         registerRuntimeListeners();
     }
 
+
+
+    private void scheduleServerStartAnnouncement() {
+        getServer().getScheduler().runTaskLater(this, () -> {
+            ConfigValues config = configValues;
+            if (config != null && config.pluginEnabled) {
+                publishAnnouncement("server-start", Map.of("server", getServer().getName()));
+            }
+        }, 40L);
+    }
 
     private void registerCommandExecutor() {
         BmChatCommand cmd = new BmChatCommand(this);
@@ -147,6 +164,10 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
         if (directMessages != null) {
             directMessages.close();
             directMessages = null;
+        }
+        if (groupChats != null) {
+            groupChats.close();
+            groupChats = null;
         }
         HandlerList.unregisterAll(this);
         chatListener = null;
@@ -209,9 +230,13 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
         values.put("event", key == null ? "" : key);
         if (placeholders != null) values.putAll(placeholders);
 
-        for (Map.Entry<String, String> entry : values.entrySet()) {
-            String value = entry.getValue() == null ? "" : entry.getValue();
-            message = message.replace("{" + entry.getKey() + "}", value);
+        if (langManager != null && isDefaultAnnouncementMessage(key, message)) {
+            message = langManager.text("announcement." + key, message, values);
+        } else {
+            for (Map.Entry<String, String> entry : values.entrySet()) {
+                String value = entry.getValue() == null ? "" : entry.getValue();
+                message = message.replace("{" + entry.getKey() + "}", value);
+            }
         }
 
         message = ChatColor.translateAlternateColorCodes('&', message);
@@ -222,6 +247,27 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
         if (server != null) {
             server.publishSystemEvent("Server", message, "announcement." + key, JsonUtil.obj(values));
         }
+    }
+
+
+    private boolean isDefaultAnnouncementMessage(String key, String message) {
+        if (key == null || message == null) return false;
+        return switch (key) {
+            case "minecraft-join" -> message.equals("🟢 {player} joined the server.");
+            case "minecraft-quit" -> message.equals("🔴 {player} left the server.");
+            case "first-join" -> message.equals("✨ {player} joined the server for the first time.");
+            case "death" -> message.equals("☠ {message}");
+            case "advancement" -> message.equals("🏆 {player} completed the advancement [{advancement}].");
+            case "world-change" -> message.equals("🌍 {player} moved to {to_world}.");
+            case "gamemode-change" -> message.equals("🎮 {player} changed game mode to {to_gamemode}.");
+            case "level-change" -> message.equals("⭐ {player} changed level from {old_level} to {to_level}.") || message.equals("⭐ {player} changed level from {old_level} to {new_level}.");
+            case "bed-enter" -> message.equals("💤 {player} entered a bed.");
+            case "server-start" -> message.equals("🟢 Server started.");
+            case "server-stop" -> message.equals("🔴 Server is stopping.");
+            case "web-login" -> message.equals("🌐 {name} logged in to web chat.");
+            case "web-logout" -> message.equals("🌐 {name} logged out of web chat.");
+            default -> false;
+        };
     }
 
     public void publishAnnouncement(String key, String... placeholders) {
@@ -312,6 +358,10 @@ public class BlueMapWebChatPlugin extends JavaPlugin {
 
     public DirectMessageStore directMessages() {
         return directMessages;
+    }
+
+    public GroupChatStore groupChats() {
+        return groupChats;
     }
 
     public LangManager langManager() {

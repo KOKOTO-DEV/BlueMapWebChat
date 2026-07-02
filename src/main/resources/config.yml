@@ -1,10 +1,21 @@
-# BlueMapWebChat 4.3.0 configuration
+# BlueMapWebChat 4.5.0 configuration
 
 # Master switch for BlueMapWebChat.
 # New generated configs default to false so the plugin creates config.yml first
 # without starting web/chat services or cleanup tasks. /bmchat reload remains available.
 # Existing configs that do not have this key are treated as enabled for upgrade compatibility.
 enabled: false
+
+# Users allowed to see private-message/group-room metadata for moderation/accounting.
+# Only metadata is exposed: room/thread titles, participants, message counts, and byte sizes.
+# Message bodies remain inaccessible. Use exact Minecraft names or UUIDs. Empty = no super admins.
+private-chat-super-admins: []
+
+# Administrative audit log. This is not shown in the web UI.
+# Files are appended by date under plugins/BlueMapWebChat/audit by default.
+audit:
+  enabled: true
+  directory: "audit"
 
 #
 # URL / HTTP / HTTPS quick guide
@@ -89,6 +100,9 @@ standalone-web:
   # Same-domain HTTPS proxy example: https://<domain>/bmwc/chat
   enabled: false
   path: "/chat"
+  # App name used by the standalone page/PWA. If this is changed after mobile installation, reinstall the Home Screen web app.
+  app-name: "Web Chat"
+  app-short-name: "Web Chat"
   # API base used by the standalone page.
   # Empty = auto.
   # - Direct HTTP: current origin + http.path-prefix, e.g. http://host:8899/api.
@@ -234,6 +248,40 @@ direct-message:
   # SQLite file for private 1:1 message threads when storage is sqlite. Relative paths are stored under the plugin data folder.
   sqlite-file: "direct-messages.db"
 
+# Group chat rooms.
+# This is disabled by default because it stores multi-user private messages.
+# Enable only after reviewing retention, room limits, and password policy.
+group-chat:
+  enabled: false
+
+  # Allow sending group messages from the web UI.
+  allow-web-send: true
+  # Allow public rooms to appear in the room list. Private rooms are invite-only.
+  allow-public-rooms: true
+  # Allow room passwords. Passwords are stored as PBKDF2 hashes, never as plain text.
+  allow-room-passwords: true
+
+  # Ask before leaving a room or hiding a group message in the web UI.
+  confirm-leave: true
+  confirm-hide: true
+
+  # 0 = no time limit. A positive value is shown next to the group chat title and
+  # physically removes old group messages after that many days.
+  retention-days: 30
+  # 0 = unlimited by count. When set, only the newest N messages are kept per room.
+  max-messages-per-room: 1000
+  # 0 = unlimited. Recommended: 300-1000.
+  max-message-length: 500
+
+  # Safety limits for room creation and membership. 0 = unlimited.
+  max-rooms-per-user: 20
+  max-members-per-room: 50
+  max-room-name-length: 32
+  invite-expire-hours: 72
+
+  # SQLite file for group chat rooms/messages. Relative paths are stored under the plugin data folder.
+  sqlite-file: "group-messages.db"
+
 ui:
   # Default UI language. Supported values: en-US, ko-KR, ja-JP, zh-CN.
   # Users can still override this per browser from Chat settings when user-preferences-control is true.
@@ -298,9 +346,9 @@ ui:
   font-family: ""
   user-preferences-control: true
 
-  # Experimental: opens a separate browser Picture-in-Picture chat instance.
+  # Opens a separate browser Picture-in-Picture chat instance.
   # Browser UI such as the URL/close controls cannot be hidden.
-  # Keep this disabled unless you explicitly want the experimental duplicate window.
+  # Keep this disabled unless you explicitly want the duplicate window.
   # This single flag controls both the PIP button and PIP execution.
   picture-in-picture:
     enabled: false
@@ -338,6 +386,54 @@ ui:
     min-interval-seconds: 5
     skip-while-media-active: true
     skip-unchanged: true
+
+
+# Browser/system notifications. These are shown by Chrome/Edge/Firefox as OS notifications
+# while the web chat page is open. Users must allow browser notification permission.
+browser-notifications:
+  enabled: true
+  # true = notify only when the tab/window is hidden, minimized, or not focused.
+  only-when-hidden: true
+  # These notify-* values are server-side allow limits. Set false to block that type even if a user enables it.
+  notify-normal-chat: true
+  notify-dm: true
+  notify-group-chat: true
+  notify-mentions: true
+  notify-system: true
+  notify-keywords: true
+  notify-own-messages: true
+  show-message-preview: true
+
+# Mobile/background Web Push.
+# Requirements: HTTPS or localhost, browser notification permission, service worker support,
+# and push support in the browser. iOS/iPadOS does not support ordinary browser-tab
+# Web Push; only try it from the standalone Home Screen web app, and treat unsupported
+# iOS behavior as a platform limitation.
+# If VAPID keys are empty and this is enabled, the plugin generates persistent keys in
+# plugins/BlueMapWebChat/web-push-vapid.properties.
+# subject is VAPID contact information. Use a real mailto: or https: URI that can identify
+# the server operator, for example "mailto:admin@example.com" or "https://map.example.com".
+# Do not use arbitrary text here; some push services may reject or distrust it.
+# Browser/OS warnings such as "may be spam" are controlled by the browser/device and cannot
+# be disabled by this plugin. Use a stable HTTPS domain and avoid excessive/test notifications.
+web-push:
+  enabled: true
+  vapid-public-key: ""
+  vapid-private-key: ""
+  subject: "mailto:admin@example.com"
+  # Default notification title for test/system/background push messages.
+  # Empty = use standalone-web.app-name.
+  notification-title: ""
+  subscriptions-file: "web-push-subscriptions.jsonl"
+  ttl-seconds: 300
+  notify-normal-chat: true
+  notify-dm: true
+  notify-group-chat: true
+  notify-mentions: true
+  notify-system: true
+  notify-keywords: true
+  notify-own-messages: true
+  show-message-preview: true
 
 # Player name shown for Minecraft-origin messages and announcements.
 # name = real Minecraft username, display-name = Bukkit displayName used by nickname plugins,
@@ -474,7 +570,7 @@ discordsrv:
   # so Discord can show them as normal image/link previews.
   # Requires an externally reachable public API/emoji URL, usually through web-addon.api-base-url,
   # standalone-web.api-base-url, emoji.public-base-url, or http.cors-origin.
-  append-web-emoji-links: false
+  append-web-emoji-links: true
   # Append matching BM Web Chat emoji image URLs for game -> Discord messages.
   # This also tries to augment DiscordSRV's normal Minecraft -> Discord relay messages in-place,
   # so you can keep game-to-discord disabled to avoid duplicate Discord messages.
@@ -491,7 +587,7 @@ discordsrv:
     preview-enabled: true
     preview-max-length: 120
   web-to-discord-format: "[Web] {sender}: {message}"
-  game-to-discord-format: "[Game] {sender}: {message}"
+  game-to-discord-format: "{sender}: {message}"
   discord-to-web-sender-format: "Discord:{sender}"
   discord-to-web-message-format: "{message}"
 

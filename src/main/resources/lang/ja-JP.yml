@@ -13,6 +13,8 @@ web:
     login: ログイン
     upload: 添付
     resizeEmojiPanel: ドラッグして絵文字選択欄のサイズを変更
+    resizeLock: リサイズをロック
+    resizeUnlock: リサイズのロック解除
     resize: サイズ変更
     send: 送信
     reset: リセット
@@ -27,6 +29,8 @@ web:
     unmute: 解除
     revoke: 解除
     delete: 削除
+    accept: 承諾
+    decline: 拒否
     cancel: キャンセル
     reply: 返信
     pin: 固定
@@ -37,6 +41,7 @@ web:
     moveDown: 下へ移動
     commands: コマンド
     search: 検索
+    groupChats: グループチャット
     directMessages: メッセージ
     pip: PIP
     run: 実行
@@ -50,6 +55,7 @@ web:
     change: 変更
     rename: 変更
     renamePack: フォルダー名変更
+    hide: '非表示'
   placeholder:
     guestName: ゲスト名
     captchaAnswer: 答え
@@ -83,6 +89,7 @@ web:
     confirmDelete: このメッセージを非表示にしますか？
     deleteFailed: '削除失敗: {error}'
     confirmClearHistory: Webチャット履歴を消去しますか？
+    adminActionFailed: '管理操作に失敗しました: {error}'
     failed: '失敗: {error}'
     loginFailed: 'ログイン失敗: {error}'
     codeFailed: 'コード発行に失敗しました: {error}'
@@ -102,6 +109,15 @@ web:
     dmLoadFailed: "メッセージの読み込みに失敗しました: {error}"
     dmSendFailed: "メッセージの送信に失敗しました: {error}"
     dmHideFailed: "メッセージの非表示に失敗しました: {error}"
+    groupLoadFailed: 'グループチャットの読み込みに失敗しました: {error}'
+    groupJoinFailed: 'グループチャットへの参加に失敗しました: {error}'
+    groupSendFailed: 'グループメッセージの送信に失敗しました: {error}'
+    groupCreateFailed: 'グループチャットの作成に失敗しました: {error}'
+    groupInviteFailed: 'プレイヤーを招待できませんでした: {error}'
+    groupLeaveFailed: 'グループチャットから退出できませんでした: {error}'
+    groupHideFailed: 'メッセージを非表示にできませんでした: {error}'
+    groupActionFailed: 'グループ操作に失敗しました: {error}'
+    groupSettingsFailed: 'グループ設定を保存できませんでした: {error}'
     renameFailed: '名前変更に失敗しました: {error}'
   admin:
     title: BlueMap チャット管理
@@ -112,6 +128,22 @@ web:
     failed: '失敗: {error}'
     revokeConfirm: '{username} の全セッションを解除しますか？'
     online: オンライン
+    privateMetaOnly: '非公開メッセージのメタデータのみ'
+    groupMetaOnly: 'グループルームのメタデータ'
+    noContentAccess: 'この画面ではメッセージ本文を表示できません。'
+    lockDmThreadHint: 'このDMセッションをロックして新しいメッセージ送信を防ぎます。'
+    unlockDmThreadHint: 'このDMセッションのロックを解除して、再びメッセージを送信できるようにします。'
+    excludeDmRetentionHint: 'このDMセッションを自動削除の対象から除外します。'
+    includeDmRetentionHint: 'このDMセッションを再び自動削除の対象に含めます。'
+    deleteDmThreadHint: 'このDMセッションのメタデータ、メッセージ、アップロードを削除します。'
+    lockGroupRoomHint: 'このグループチャットをロックして新しいメッセージ送信を防ぎます。'
+    unlockGroupRoomHint: 'このグループチャットのロックを解除して、再びメッセージを送信できるようにします。'
+    excludeGroupRetentionHint: 'このグループチャットを自動削除の対象から除外します。'
+    includeGroupRetentionHint: 'このグループチャットを再び自動削除の対象に含めます。'
+    deleteGroupRoomHint: 'このグループチャットのメタデータ、メッセージ、アップロードを削除します。'
+    messages: 'メッセージ'
+    storage: '使用量'
+    archived: 'アーカイブ済み'
     accounts: アカウント
     onlinePlayers: オンラインプレイヤー
     none: なし
@@ -133,6 +165,32 @@ web:
     emojiFolderSelect: 絵文字フォルダー
     emojiPackCount: '{count} 個の絵文字'
     emojiNoFileSelected: ファイルが選択されていません
+    passwordSet: 'パスワード'
+    "yes": 'はい'
+    "no": 'いいえ'
+    lastLogin: '最終ログイン'
+    retentionRemaining: '自動削除: {time}'
+    retentionUnlimited: '自動削除: 期限なし'
+    retentionUnknown: '自動削除: 不明'
+    retentionExpired: '自動削除: まもなく削除'
+    retentionMinutes: '残り{value}分'
+    retentionHours: '残り{value}時間'
+    retentionDays: '残り{value}日'
+    deleteThread: '削除'
+    deleteRoom: '削除'
+    confirmDeleteDmThread: 'このDMセッションとすべてのメタデータ/メッセージ/アップロードファイルを削除しますか？元に戻せません。'
+    confirmDeleteGroupRoom: 'このグループチャットセッションとすべてのメタデータ/メッセージ/アップロードファイルを削除しますか？元に戻せません。'
+    lock: 'ロック'
+    unlock: 'ロック解除'
+    locked: 'ロック中'
+    excludeRetention: '除外'
+    includeRetention: '含める'
+    retentionExempt: '自動削除から除外'
+    dmCleanupPreview: 'DM クリーンアップのプレビュー'
+    groupCleanupPreview: 'グループのクリーンアッププレビュー'
+    cleanupRetentionDays: '保持期間 {days} 日'
+    cleanupNoRetention: '期限なし'
+    cleanupPreviewBody: '古いメッセージ {expired} 件、空のセッション {empty} 件、ロック {locked} 件、除外 {exempt} 件'
   prompt:
     createEmojiPack: 新しいフォルダー名
     renameEmoji: 新しい絵文字名
@@ -174,6 +232,8 @@ web:
     description: 次回からゲームに参加せずWebログインでチャットできます。
   account:
     role: 権限
+    local: 'ローカル'
+    linked: '連携済み'
   pip:
     unsupported: このブラウザーは Document Picture-in-Picture に対応していません。デスクトップ版 Chrome または Edge でお試しください。
     openFailed: 'Picture-in-Picture ウィンドウを開けませんでした: {error}'
@@ -185,6 +245,9 @@ web:
     themeDark: ダーク
     themeLight: ライト
     themeHighContrast: ハイコントラスト
+    languageAndTheme: 言語とテーマ
+    windowSettings: ウィンドウ設定
+    fontSettings: フォント設定
     themeResetNote: テーマを変更すると、表示関連のチャット設定はそのテーマの既定値にリセットされます。
     fontSize: 文字サイズ
     fontFamily: フォント
@@ -215,7 +278,69 @@ web:
     textShadowCustomPreview: 影のプレビュー
     textShadowCustomPlaceholder: 0 1px 2px rgba(0, 0, 0, 0.85)
     inputBackgroundColor: 入力欄の背景色
+    notifications: '通知'
+    notificationsPage: 'ブラウザーシステム通知'
+    notificationsPageHelp: 'このページを開いている間、OS通知として表示します。'
+    notificationsEnable: '通知を有効化'
+    notificationsDisable: '通知を無効化'
+    notificationsTest: '通知をテスト'
+    notificationsPermissionDenied: 'このブラウザーで通知権限がブロックされています。'
+    notificationsUnsupported: 'このブラウザーは通知をサポートしていません。'
+    webPush: 'モバイル/バックグラウンドプッシュ'
+    webPushHelp: 'HTTPS、Service Worker、ブラウザー通知権限、対応ブラウザーが必要です。iOS/iPadOSではstandaloneページをホーム画面に追加する必要があります。'
+    webPushEnable: 'モバイルプッシュを有効化'
+    webPushDisable: 'モバイルプッシュを無効化'
+    webPushUnsupported: 'このブラウザーまたはサーバー設定ではWeb Pushを利用できません。'
+    webPushServerDisabled: 'サーバー設定で Web Push が無効です。config.yml の web-push.enabled を有効にしてください。'
+    webPushInsecure: 'モバイルプッシュには HTTPS または localhost が必要です。'
+    webPushNoServiceWorker: 'このブラウザーは Service Worker に対応していません。'
+    webPushNoPushManager: 'このブラウザーは Push API に対応していません。'
+    webPushStandaloneRequired: モバイル/バックグラウンドプッシュは standalone チャットページで有効にしてください。
+    webPushEnabledStatus: 'このブラウザーで有効です。'
+    webPushDisabledStatus: 'このブラウザーで無効です。'
+    notifyTypes: '通知の種類'
+    notifyNormalChat: '通常チャット'
+    notifyDm: 'DM'
+    notifyGroupChat: 'グループチャット'
+    notifyMentions: 'メンション'
+    notifySystem: 'システム/サーバー'
+    notifyKeywords: 'キーワード通知'
+    notifyKeywordsList: 'キーワード通知ワード'
+    notifyKeywordsHelp: 'カンマまたは改行で区切ります。このブラウザに保存され、モバイル/バックグラウンドプッシュはこの端末のプッシュ購読にのみ同期されます。'
+    notifyKeywordsApply: 'キーワードを適用'
+    notifyKeywordsSaved: 'キーワード通知を保存しました。'
+    notifyKeywordsNeedsApply: 'キーワード一覧が変更されました。プッシュフィルターを更新するにはキーワードを適用してください。'
+    notifyDisabledByServer: 'サーバー設定で無効化されています。'
+    keywordNotificationTitle: 'キーワード: {keyword}'
+    notifyOwnMessages: '自分のメッセージ'
+    notifyPreview: 'メッセージプレビュー'
+    notificationsServerDisabled: 'サーバー設定で通知が無効です。'
+    notificationsEnabledStatus: 'このブラウザーで有効です。'
+    notificationsAllowedDisabledStatus: 'ブラウザー権限は許可されていますが、チャット設定では無効です。'
+    notificationsNotRequestedStatus: '通知を有効にしてブラウザー通知権限を許可してください。'
+    webPushTest: 'モバイルプッシュをテスト'
+    webPushTestSent: 'テストプッシュを送信しました。この端末の通知を確認してください。'
+    webPushHowToTest: 'モバイルプッシュのテスト方法: モバイルブラウザーで HTTPS の standalone ページを開き、ログインしてモバイルプッシュを有効化し、通知権限を許可します。その後、モバイルプッシュをテストするか、画面ロック/ブラウザーを離れた状態で別アカウントから DM/グループメッセージを送ります。'
+    webPushFailedHttp: 'Web Push failed: HTTP {status}'
+    webPushInvalidVapid: 'Web Push failed: invalid VAPID key.'
+    webPushTimeout: 'Web Push failed: request timed out.'
+    webPushFailedWithMessage: 'Web Push failed: {message}'
+    webPushFailed: 'Web Push failed.'
+    advancedSettings: '詳細設定'
     backgroundColor: 背景色
+    presets: 保存済みチャット設定
+    presetSave: 保存
+    presetLoad: 読み込み
+    presetDelete: 削除
+    presetName: '設定名'
+    presetNamePrompt: 設定名
+    presetEmpty: 保存済み設定はありません。
+    presetSaved: 保存しました。
+    presetLoaded: 読み込みました。
+    presetDeleted: 削除しました。
+    presetSaveFailed: '保存に失敗しました。ブラウザーの保存領域がブロックされている可能性があります。'
+    presetSelectRequired: 先に保存済み設定を選択してください。
+    presetConfirmDelete: 保存済み設定 {name} を削除しますか？
     language: 言語
     languageDefault: デフォルト
     fontDefault: デフォルト
@@ -264,6 +389,8 @@ web:
     invalid_response: サーバー応答が不正です
     method_not_allowed: 許可されていないリクエスト方式です
     empty_message: メッセージが空です
+    thread_locked: このDMセッションは管理者によりロックされています
+    room_locked: このグループチャットは管理者によりロックされています
     permission_denied: 権限がありません
     guest_disabled: ゲストチャットは無効です
     captcha_failed: 認証に失敗しました
@@ -325,9 +452,69 @@ web:
     threadList: 会話一覧
     showConversationList: 一覧を表示
     showCurrentConversation: 会話のみ
-    retentionLimited: "(保持期間: {days}日)"
-    retentionUnlimited: "(保持期間: 期限なし)"
+    retentionLimited: '保持期間: {days}日'
+    retentionUnlimited: '保持期間: 期限なし'
     backToList: 会話一覧に戻る
+  group:
+    title: 'グループチャット'
+    noRooms: 'グループチャットはありません。'
+    backToList: 'グループチャット一覧に戻る'
+    selectRoom: 'ルームを選択'
+    emptyRoom: 'まだメッセージはありません。'
+    newRoom: '新しいルーム'
+    untitled: '無題のルーム'
+    public: '公開'
+    private: '非公開'
+    roomName: 'ルーム名'
+    visibility: '公開設定'
+    passwordProtected: 'パスワード'
+    passwordOptionalLabel: 'パスワード（任意）'
+    passwordSettingsLabel: 'パスワード（空欄で解除）'
+    membersShort: '人'
+    join: '参加'
+    invite: '招待'
+    invites: '招待'
+    settings: '設定'
+    leave: '退出'
+    namePrompt: 'ルーム名'
+    visibilityChoice: 'この部屋を公開ルームにしますか？\nOK = 公開、キャンセル = 非公開'
+    visibilityPrompt: '公開設定: public または private'
+    passwordPrompt: 'ルームのパスワード'
+    passwordOptionalPrompt: 'パスワード（なしなら空欄）'
+    passwordSettingsPrompt: 'パスワード: 空欄で削除、キャンセルで維持'
+    searchPlayer: '招待するプレイヤーを検索'
+    invitePrompt: 'プレイヤー名またはUUID'
+    inviteSentTo: '{player} に招待を送信しました。'
+    inviteSent: '招待を送信しました。'
+    confirmInvite: '{player} をこのグループチャットに招待しますか？'
+    confirmLeave: 'このグループチャットから退出しますか？'
+    confirmHideMessage: 'このメッセージを自分の表示から隠しますか？'
+    manage: '管理'
+    manageNote: 'ルーム管理者はキック、ブロック、オーナー移譲ができます。メッセージ本文は表示されません。'
+    memberListNote: 'メンバーは参加者リストを表示できます。管理操作はルーム管理者にのみ表示されます。'
+    memberOnlineCount: '{online}/{total} オンライン'
+    online: 'オンライン'
+    offline: 'オフライン'
+    kick: 'キック'
+    ban: 'ブロック'
+    transferOwner: 'オーナー移譲'
+    noMembers: 'メンバーがいません。'
+    confirmKick: '{player} をこのルームからキックしますか？'
+    confirmBan: '{player} をこのルームからブロックしますか？'
+    confirmTransferOwner: 'ルームのオーナーを {player} に移譲しますか？'
+    confirmHideRoom: 'このルームを自分のグループチャット一覧から非表示にしますか？'
+    retentionLimited: '保存期間: {days}日'
+    retentionUnlimited: '保存期間: 無期限'
+
+    members: 'メンバー'
+    banned: 'ブロック済み'
+    unban: 'ブロック解除'
+    bannedUsers: 'ブロック中のユーザー'
+    noBans: 'ブロック中のユーザーはいません。'
+    confirmUnban: '{player} のこの部屋でのブロックを解除しますか？'
+    hiddenRooms: '非表示のルーム'
+    showRoom: '再表示'
+    hiddenRoomHint: '自分の一覧から非表示'
   announcement:
     minecraft-join: 🟢 {player} がサーバーに参加しました。
     minecraft-quit: 🔴 {player} がサーバーから退出しました。
@@ -342,6 +529,12 @@ web:
     bed-enter: 💤 {player} がベッドに入りました。
     web-login: 🌐 {name} がWebチャットにログインしました。
     web-logout: 🌐 {name} がWebチャットからログアウトしました。
+  notification:
+    keyword: 'キーワード'
+    dm: 'DM'
+    groupChat: 'グループチャット'
+    testBody: 'テストプッシュを送信しました。'
+
   sender:
     unknown: 不明
     server: サーバー
@@ -355,6 +548,8 @@ web:
     web: Web
     guest: ゲスト
     discord: Discord
+    system: システム
+    server: サーバー
     event: システム
   command:
     onlyPlayers: このコマンドはプレイヤーのみ使用できます。
@@ -389,6 +584,20 @@ web:
     helpRevoke: Web セッションを取り消し
     helpDm: ダイレクトメッセージを送信
     helpDmRead: 1:1 メッセージスレッドを読む
+    helpGroup: 'グループチャットメッセージを送信'
+    groupDisabled: 'グループチャットは無効です。'
+    groupDirectInputRequired: 'グループチャットメッセージはプレイヤーが直接入力する必要があります。'
+    groupRoomNotFound: 'グループチャットルームが見つからないか、メンバーではありません。'
+    groupEmpty: 'メッセージが空です。'
+    groupFailed: 'グループチャットに失敗しました: {error}'
+    groupSentEcho: 'グループ {room} へ送信: {message}'
+    groupTitle: 'グループチャット: {count}'
+    groupNoRooms: '参加中のグループチャットはありません。'
+    groupReadTitle: 'グループチャット {room}:'
+    groupNoMessages: 'このグループチャットにはメッセージがありません。'
+    groupReadHint: '送信: /bmchat group {room} <message>'
+    groupReadNoCursor: '先にグループチャットを開いてください: /bmchat group read <room>'
+    groupIncoming: 'グループ {room} の {player}: {message}'
     dmDisabled: ダイレクトメッセージは無効です。
     dmTitle: 'ダイレクトメッセージ: 未読 {count} 件'
     dmTitlePage: 'ダイレクトメッセージ: 未読 {count} 件 ({page}/{pages}ページ)'

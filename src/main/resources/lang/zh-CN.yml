@@ -13,6 +13,8 @@ web:
     login: 登录
     upload: 附件
     resizeEmojiPanel: 拖动调整表情选择器大小
+    resizeLock: 锁定大小调整
+    resizeUnlock: 解锁大小调整
     resize: 调整大小
     send: 发送
     reset: 重置
@@ -27,6 +29,8 @@ web:
     unmute: 解除禁言
     revoke: 撤销会话
     delete: 删除
+    accept: 接受
+    decline: 拒绝
     cancel: 取消
     reply: 回复
     pin: 置顶
@@ -37,6 +41,7 @@ web:
     moveDown: 下移
     commands: 命令
     search: 搜索
+    groupChats: 群组聊天
     directMessages: 消息
     pip: PIP
     run: 运行
@@ -50,6 +55,7 @@ web:
     change: 更改
     rename: 更改
     renamePack: 重命名文件夹
+    hide: '隐藏'
   placeholder:
     guestName: 访客名称
     captchaAnswer: 答案
@@ -83,6 +89,7 @@ web:
     confirmDelete: 要隐藏这条消息吗？
     deleteFailed: '删除失败: {error}'
     confirmClearHistory: 要清空网页聊天历史吗？
+    adminActionFailed: '管理操作失败：{error}'
     failed: '失败: {error}'
     loginFailed: '登录失败: {error}'
     codeFailed: '代码生成失败: {error}'
@@ -102,6 +109,15 @@ web:
     dmLoadFailed: "消息加载失败：{error}"
     dmSendFailed: "消息发送失败：{error}"
     dmHideFailed: "隐藏消息失败：{error}"
+    groupLoadFailed: '无法加载群组聊天：{error}'
+    groupJoinFailed: '无法加入群组聊天：{error}'
+    groupSendFailed: '无法发送群组消息：{error}'
+    groupCreateFailed: '无法创建群组聊天：{error}'
+    groupInviteFailed: '无法邀请玩家：{error}'
+    groupLeaveFailed: '无法退出群组聊天：{error}'
+    groupHideFailed: '无法隐藏消息：{error}'
+    groupActionFailed: '群组操作失败：{error}'
+    groupSettingsFailed: '无法保存群组设置：{error}'
     renameFailed: '重命名失败: {error}'
   admin:
     title: BlueMap 聊天管理
@@ -112,6 +128,22 @@ web:
     failed: '失败: {error}'
     revokeConfirm: 要撤销 {username} 的所有会话吗？
     online: 在线
+    privateMetaOnly: '仅显示私信元数据'
+    groupMetaOnly: '群组聊天室元数据'
+    noContentAccess: '此视图无法查看消息正文。'
+    lockDmThreadHint: '锁定此私信会话，阻止发送新消息。'
+    unlockDmThreadHint: '解锁此私信会话，允许再次发送消息。'
+    excludeDmRetentionHint: '将此私信会话排除在自动清理之外。'
+    includeDmRetentionHint: '将此私信会话重新纳入自动清理。'
+    deleteDmThreadHint: '删除此私信会话的元数据、消息和上传文件。'
+    lockGroupRoomHint: '锁定此群聊，阻止发送新消息。'
+    unlockGroupRoomHint: '解锁此群聊，允许再次发送消息。'
+    excludeGroupRetentionHint: '将此群聊排除在自动清理之外。'
+    includeGroupRetentionHint: '将此群聊重新纳入自动清理。'
+    deleteGroupRoomHint: '删除此群聊的元数据、消息和上传文件。'
+    messages: '消息'
+    storage: '占用'
+    archived: '已归档'
     accounts: 账户
     onlinePlayers: 在线玩家
     none: 无
@@ -133,6 +165,32 @@ web:
     emojiFolderSelect: 表情文件夹
     emojiPackCount: '{count} 个表情'
     emojiNoFileSelected: 未选择文件
+    passwordSet: '密码'
+    "yes": '是'
+    "no": '否'
+    lastLogin: '最后登录'
+    retentionRemaining: '自动删除：{time}'
+    retentionUnlimited: '自动删除：无期限'
+    retentionUnknown: '自动删除：未知'
+    retentionExpired: '自动删除：即将删除'
+    retentionMinutes: '剩余 {value} 分钟'
+    retentionHours: '剩余 {value} 小时'
+    retentionDays: '剩余 {value} 天'
+    deleteThread: '删除'
+    deleteRoom: '删除'
+    confirmDeleteDmThread: '要删除此 DM 会话及全部元数据/消息/上传文件吗？此操作无法撤销。'
+    confirmDeleteGroupRoom: '要删除此群聊会话及全部元数据/消息/上传文件吗？此操作无法撤销。'
+    lock: '锁定'
+    unlock: '解锁'
+    locked: '已锁定'
+    excludeRetention: '排除'
+    includeRetention: '纳入'
+    retentionExempt: '已排除自动删除'
+    dmCleanupPreview: 'DM 清理预览'
+    groupCleanupPreview: '群聊清理预览'
+    cleanupRetentionDays: '保留 {days} 天'
+    cleanupNoRetention: '无时间限制'
+    cleanupPreviewBody: '旧消息 {expired} 条，空会话 {empty} 个，锁定 {locked} 个，排除 {exempt} 个'
   prompt:
     createEmojiPack: 新文件夹名称
     renameEmoji: 新表情名称
@@ -174,6 +232,8 @@ web:
     description: 设置网页密码后，下次无需进入游戏即可登录聊天。
   account:
     role: 角色
+    local: '本地'
+    linked: '已关联'
   pip:
     unsupported: 此浏览器不支持 Document Picture-in-Picture。请尝试桌面版 Chrome 或 Edge。
     openFailed: 无法打开 Picture-in-Picture 窗口：{error}
@@ -185,6 +245,9 @@ web:
     themeDark: 深色
     themeLight: 浅色
     themeHighContrast: 高对比度
+    languageAndTheme: 语言和主题
+    windowSettings: 窗口设置
+    fontSettings: 字体设置
     themeResetNote: 切换主题时，聊天外观设置会重置为该主题的默认值。
     fontSize: 字体大小
     fontFamily: 字体
@@ -215,7 +278,69 @@ web:
     textShadowCustomPreview: 阴影预览
     textShadowCustomPlaceholder: 0 1px 2px rgba(0, 0, 0, 0.85)
     inputBackgroundColor: 输入框背景颜色
+    notifications: '通知'
+    notificationsPage: '浏览器系统通知'
+    notificationsPageHelp: '网页保持打开时显示为系统通知。'
+    notificationsEnable: '启用通知'
+    notificationsDisable: '关闭通知'
+    notificationsTest: '测试通知'
+    notificationsPermissionDenied: '此浏览器中的通知权限已被阻止。'
+    notificationsUnsupported: '此浏览器不支持通知。'
+    webPush: '移动/后台推送'
+    webPushHelp: '需要 HTTPS、Service Worker、浏览器通知权限和受支持的浏览器。iOS/iPadOS 需要将 standalone 页面添加到主屏幕。'
+    webPushEnable: '启用移动推送'
+    webPushDisable: '关闭移动推送'
+    webPushUnsupported: '此浏览器或服务器配置无法使用 Web Push。'
+    webPushServerDisabled: '服务器配置中已禁用 Web Push。请在 config.yml 中启用 web-push.enabled。'
+    webPushInsecure: '移动推送需要 HTTPS 或 localhost。'
+    webPushNoServiceWorker: '此浏览器不支持 Service Worker。'
+    webPushNoPushManager: '此浏览器不支持 Push API。'
+    webPushStandaloneRequired: 请在 standalone 聊天页面中启用移动/后台推送。
+    webPushEnabledStatus: '已在此浏览器启用。'
+    webPushDisabledStatus: '已在此浏览器禁用。'
+    notifyTypes: '通知类型'
+    notifyNormalChat: '普通聊天'
+    notifyDm: '私信'
+    notifyGroupChat: '群聊'
+    notifyMentions: '提及'
+    notifySystem: '系统/服务器'
+    notifyKeywords: '关键词提醒'
+    notifyKeywordsList: '关键词提醒词'
+    notifyKeywordsHelp: '用逗号或换行分隔。保存在此浏览器中；移动/后台推送仅同步到当前设备的推送订阅。'
+    notifyKeywordsApply: '应用关键词'
+    notifyKeywordsSaved: '关键词提醒已保存。'
+    notifyKeywordsNeedsApply: '关键词列表已更改。点击应用关键词以更新推送过滤。'
+    notifyDisabledByServer: '已被服务器配置禁用。'
+    keywordNotificationTitle: '关键词：{keyword}'
+    notifyOwnMessages: '我发送的消息'
+    notifyPreview: '消息预览'
+    notificationsServerDisabled: '服务器配置已禁用通知。'
+    notificationsEnabledStatus: '已在此浏览器启用。'
+    notificationsAllowedDisabledStatus: '浏览器权限已允许，但聊天设置中已关闭。'
+    notificationsNotRequestedStatus: '请点击启用通知并允许浏览器通知权限。'
+    webPushTest: '测试移动推送'
+    webPushTestSent: '测试推送已发送。请检查此设备的通知区域。'
+    webPushHowToTest: '移动推送测试方法：在移动浏览器中打开 HTTPS standalone 页面并登录，启用移动推送并允许通知权限。然后点击测试移动推送，或锁屏/离开浏览器后用另一个账号发送 DM/群聊消息。'
+    webPushFailedHttp: 'Web Push 失败：HTTP {status}'
+    webPushInvalidVapid: 'Web Push 失败：VAPID 密钥无效。'
+    webPushTimeout: 'Web Push 失败：请求超时。'
+    webPushFailedWithMessage: 'Web Push 失败：{message}'
+    webPushFailed: 'Web Push 失败。'
+    advancedSettings: '高级设置'
     backgroundColor: 背景颜色
+    presets: 已保存的聊天设置
+    presetSave: 保存
+    presetLoad: 加载
+    presetDelete: 删除
+    presetName: '设置名称'
+    presetNamePrompt: 设置名称
+    presetEmpty: 没有已保存的设置。
+    presetSaved: 已保存。
+    presetLoaded: 已加载。
+    presetDeleted: 已删除。
+    presetSaveFailed: '保存失败。浏览器存储可能被阻止。'
+    presetSelectRequired: 请先选择已保存的设置。
+    presetConfirmDelete: 要删除已保存的设置 {name} 吗？
     language: 语言
     languageDefault: 默认
     fontDefault: 默认
@@ -264,6 +389,8 @@ web:
     invalid_response: 服务器响应无效
     method_not_allowed: 不允许的请求方法
     empty_message: 消息为空
+    thread_locked: 该 DM 会话已被管理员锁定
+    room_locked: 该群组聊天已被管理员锁定
     permission_denied: 权限不足
     guest_disabled: 访客聊天已禁用
     captcha_failed: 验证码验证失败
@@ -325,9 +452,69 @@ web:
     threadList: 会话列表
     showConversationList: 显示列表
     showCurrentConversation: 仅当前会话
-    retentionLimited: "（保留期限：{days} 天）"
-    retentionUnlimited: "（保留期限：无限期）"
+    retentionLimited: '保留期限：{days} 天'
+    retentionUnlimited: '保留期限：无限期'
     backToList: 返回会话列表
+  group:
+    title: '群组聊天'
+    noRooms: '没有群组聊天。'
+    backToList: '返回群聊列表'
+    selectRoom: '选择房间'
+    emptyRoom: '还没有消息。'
+    newRoom: '新建房间'
+    untitled: '未命名房间'
+    public: '公开'
+    private: '私密'
+    roomName: '房间名称'
+    visibility: '可见性'
+    passwordProtected: '密码'
+    passwordOptionalLabel: '密码（可选）'
+    passwordSettingsLabel: '密码（留空则移除）'
+    membersShort: '人'
+    join: '加入'
+    invite: '邀请'
+    invites: '邀请'
+    settings: '设置'
+    leave: '退出'
+    namePrompt: '房间名称'
+    visibilityChoice: '要将此房间设为公开房间吗？\n确定 = 公开，取消 = 私密'
+    visibilityPrompt: '可见性：public 或 private'
+    passwordPrompt: '房间密码'
+    passwordOptionalPrompt: '密码（没有则留空）'
+    passwordSettingsPrompt: '密码：留空则移除，取消则保持不变'
+    searchPlayer: '搜索要邀请的玩家'
+    invitePrompt: '玩家名或 UUID'
+    inviteSentTo: '已向 {player} 发送邀请。'
+    inviteSent: '邀请已发送。'
+    confirmInvite: '要邀请 {player} 加入此群聊吗？'
+    confirmLeave: '要退出此群组聊天吗？'
+    confirmHideMessage: '要从你的视图中隐藏此消息吗？'
+    manage: '管理'
+    manageNote: '房间管理员可以踢出、封禁或转移房主。此处不显示消息正文。'
+    memberListNote: '成员可以查看参与者列表。管理操作仅对房间管理员显示。'
+    memberOnlineCount: '{online}/{total} 在线'
+    online: '在线'
+    offline: '离线'
+    kick: '踢出'
+    ban: '封禁'
+    transferOwner: '转移房主'
+    noMembers: '没有成员。'
+    confirmKick: '要将 {player} 踢出此房间吗？'
+    confirmBan: '要在此房间封禁 {player} 吗？'
+    confirmTransferOwner: '要将房主转移给 {player} 吗？'
+    confirmHideRoom: '要从你的群组聊天列表中隐藏此房间吗？'
+    retentionLimited: '保留期：{days} 天'
+    retentionUnlimited: '保留期：无限期'
+
+    members: '成员'
+    banned: '已封禁'
+    unban: '解除封禁'
+    bannedUsers: '已封禁用户'
+    noBans: '没有已封禁用户。'
+    confirmUnban: '要解除 {player} 在此房间的封禁吗？'
+    hiddenRooms: '已隐藏的房间'
+    showRoom: '重新显示'
+    hiddenRoomHint: '已从你的列表隐藏'
   announcement:
     minecraft-join: 🟢 {player} 加入了服务器。
     minecraft-quit: 🔴 {player} 离开了服务器。
@@ -342,6 +529,12 @@ web:
     bed-enter: 💤 {player} 上床了。
     web-login: 🌐 {name} 登录了网页聊天。
     web-logout: 🌐 {name} 退出了网页聊天。
+  notification:
+    keyword: '关键词'
+    dm: '私信'
+    groupChat: '群聊'
+    testBody: '测试推送已发送。'
+
   sender:
     unknown: 未知
     server: 服务器
@@ -355,6 +548,8 @@ web:
     web: 网页
     guest: 访客
     discord: Discord
+    system: 系统
+    server: 服务器
     event: 系统
   command:
     onlyPlayers: 此命令只能由玩家使用。
@@ -389,6 +584,20 @@ web:
     helpRevoke: 撤销 Web 会话
     helpDm: 发送私信
     helpDmRead: 读取 1 对 1 消息会话
+    helpGroup: '发送群聊消息'
+    groupDisabled: '群聊已禁用。'
+    groupDirectInputRequired: '群聊消息必须由玩家直接输入。'
+    groupRoomNotFound: '找不到群聊房间，或你不是成员。'
+    groupEmpty: '消息为空。'
+    groupFailed: '群聊失败：{error}'
+    groupSentEcho: '已发送到群组 {room}：{message}'
+    groupTitle: '群聊：{count}'
+    groupNoRooms: '没有已加入的群聊。'
+    groupReadTitle: '群聊 {room}：'
+    groupNoMessages: '此群聊中没有消息。'
+    groupReadHint: '发送：/bmchat group {room} <message>'
+    groupReadNoCursor: '请先打开群聊：/bmchat group read <room>'
+    groupIncoming: '群组 {room} 中 {player}：{message}'
     dmDisabled: 私信已禁用。
     dmTitle: '私信: {count} 条未读'
     dmTitlePage: '私信: {count} 条未读（第 {page}/{pages} 页）'
