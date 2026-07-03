@@ -2,6 +2,8 @@
 
 A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can run as a BlueMap web addon, as a standalone `/chat` page served by the plugin, or both at the same time.
 
+<img width="1057" height="682" alt="Image" src="https://github.com/user-attachments/assets/722761ea-94a4-4da9-be79-3cd04997c166" />
+
 ## Features
 
 - BlueMap embedded chat panel and standalone web chat page
