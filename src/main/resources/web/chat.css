@@ -8637,3 +8637,27 @@ body.bmwc-standalone-mode {
 .bmwc-admin-emoji-item-actions {
   flex-wrap: wrap;
 }
+
+
+/* 4.5.1 hotfix: minimized pill must stay clean.
+   Only the title and restore button are allowed here; all other header buttons
+   belong to the expanded chat window. */
+#bmwc-root.bmwc-minimized .bmwc-actions > :not(#bmwc-min),
+#bmwc-root.bmwc-minimized #bmwc-dm,
+#bmwc-root.bmwc-minimized #bmwc-group,
+#bmwc-root.bmwc-minimized #bmwc-notifications,
+#bmwc-root.bmwc-minimized #bmwc-login,
+#bmwc-root.bmwc-minimized #bmwc-admin,
+#bmwc-root.bmwc-minimized #bmwc-pip,
+#bmwc-root.bmwc-minimized #bmwc-search-open,
+#bmwc-root.bmwc-minimized #bmwc-resize-lock {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+#bmwc-root.bmwc-minimized .bmwc-actions > #bmwc-min {
+  display: inline-flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}

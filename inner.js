@@ -3306,7 +3306,9 @@
     const groupBtn = document.getElementById("bmwc-group");
     if (groupBtn) groupBtn.addEventListener("click", () => openGroupChatModal());
     const notificationBtn = document.getElementById("bmwc-notifications");
-    if (notificationBtn) notificationBtn.addEventListener("click", () => openNotificationInboxModal());
+    if (notificationBtn) notificationBtn.addEventListener("click", () => {
+      if (!state.minimized) openNotificationInboxModal();
+    });
     updateNotificationInboxButton();
     const commandBtn = document.getElementById("bmwc-command");
     if (commandBtn) commandBtn.addEventListener("click", () => openCommandModal());
@@ -3413,6 +3415,7 @@
     updatePipButton();
     updateDirectMessageButton();
     updateGroupChatButton();
+    updateNotificationInboxButton();
     if (!state.minimized) {
       scheduleVirtualRender();
       protectHistoryEndNotice("unminimize", 8000);
@@ -9694,6 +9697,14 @@
   }
 
   function updateNotificationInboxButton() {
+    const button = document.getElementById("bmwc-notifications");
+    if (button) {
+      const hidden = !!state.minimized;
+      button.classList.toggle("bmwc-hidden", hidden);
+      button.hidden = hidden;
+      button.disabled = hidden;
+      button.setAttribute("aria-hidden", hidden ? "true" : "false");
+    }
     const badge = document.getElementById("bmwc-notification-badge");
     if (!badge) return;
     const readAt = notificationInboxReadAt();
