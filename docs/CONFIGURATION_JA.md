@@ -280,7 +280,7 @@ TikTok は公式 `player/v1` iframe を使用し、`description=0` と `music_in
 
 `browser-notifications` は、Web ページを開いている間に表示する OS レベルのブラウザー通知を制御します。ユーザーはブラウザー側で通知権限を許可する必要があります。`notify-*` 値はサーバー側の許可上限です。`true` の場合は各ユーザー/ブラウザーがチャット設定で切り替えられ、`false` の場合はユーザーが有効化してもその通知種別はブロックされます。`notify-keywords` はユーザー定義のキーワード通知を制御します。キーワード一覧はブラウザー/端末ごとに保存され、バックグラウンド判定のためその端末の Web Push 購読にのみ同期されます。
 
-`web-push` はHTTPS または localhost、通知権限、Service Worker / Push API 対応がそろうと、バックグラウンド/モバイルプッシュ通知を送信できます。iOS/iPadOS の通常のブラウザータブは Web Push に対応していないため、standalone ページをホーム画面の Web アプリとして追加した場合だけ試してください。未対応の挙動はプラットフォーム制限として扱います。`web-push` の `notify-*` 値もプッシュ配信のサーバー側許可上限です。`web-push.enabled: true` で VAPID キーが空の場合、プラグインは `web-push-vapid.properties` に永続キーを生成します。`web-push.subject` は `mailto:admin@example.com` または `https://map.example.com` のような実在する連絡先/運用者識別用の VAPID URI にしてください。任意の文字列は推奨されず、一部の push サービスで拒否または低信頼として扱われる可能性があります。モバイルの「スパムの可能性」などの警告はブラウザー/OS が表示するため、プラグインから無効化できません。安定した HTTPS ドメイン、意味のある通知タイトル/本文、控えめな通知フィルター、連続したテスト通知を避けることで発生しにくくできます。
+`web-push` はHTTPS または localhost、通知権限、Service Worker / Push API 対応がそろうと、バックグラウンド/モバイルプッシュ通知を送信できます。Android/desktop ブラウザーでは、現在の origin が Service Worker + Push API に対応していれば BlueMap addon と standalone ページのどちらからでも Push を有効化できます。iOS/iPadOS の通常のブラウザータブは Web Push に対応していないため、ホーム画面に追加して Web アプリとして開いたページでのみ試してください。未対応の挙動はプラットフォーム制限として扱います。`web-push` の `notify-*` 値もプッシュ配信のサーバー側許可上限です。`web-push.enabled: true` で VAPID キーが空の場合、プラグインは `web-push-vapid.properties` に永続キーを生成します。`web-push.subject` は `mailto:admin@example.com` または `https://map.example.com` のような実在する連絡先/運用者識別用の VAPID URI にしてください。任意の文字列は推奨されず、一部の push サービスで拒否または低信頼として扱われる可能性があります。モバイルの「スパムの可能性」などの警告はブラウザー/OS が表示するため、プラグインから無効化できません。安定した HTTPS ドメイン、意味のある通知タイトル/本文、控えめな通知フィルター、連続したテスト通知を避けることで発生しにくくできます。
 
 ## PIP
 

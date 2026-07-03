@@ -78,6 +78,7 @@ public class WebPushManager {
         boolean notifyKeywords;
         List<String> keywords = new ArrayList<>();
         String language = "";
+        String openUrl = "";
         boolean notifyOwnMessages;
         boolean showMessagePreview;
         long updatedAt;
@@ -134,6 +135,7 @@ public class WebPushManager {
         s.notifyKeywords = (c == null || c.webPushNotifyKeywords) && readBool(body, "notifyKeywords", c == null || c.webPushNotifyKeywords);
         s.keywords = normalizeKeywords(body == null ? "" : body.get("keywords"));
         s.language = clean(body == null ? "" : body.get("language"), 40);
+        s.openUrl = clean(body == null ? "" : body.get("openUrl"), 2048);
         s.notifyOwnMessages = (c == null || c.webPushNotifyOwnMessages) && readBool(body, "notifyOwnMessages", c != null && c.webPushNotifyOwnMessages);
         s.showMessagePreview = (c == null || c.webPushShowMessagePreview) && readBool(body, "showMessagePreview", c == null || c.webPushShowMessagePreview);
         s.updatedAt = System.currentTimeMillis();
@@ -329,9 +331,88 @@ public class WebPushManager {
             m.put("type", clean(p.type, 40));
             m.put("tag", clean(p.tag, 120));
         }
-        m.put("url", clean(p.url, 2048));
+        m.put("url", notificationOpenUrl(sub, p == null ? "" : p.url));
         m.put("time", System.currentTimeMillis());
         return JsonUtil.obj(m);
+    }
+
+    private String notificationOpenUrl(Subscription sub, String payloadUrl) {
+        String payload = clean(payloadUrl, 2048);
+        String base = sub == null ? "" : clean(sub.openUrl, 2048);
+        if (base.isBlank()) return payload;
+        Map<String, String> nav = extractNavigationParams(payload);
+        if (nav.isEmpty()) return payload.isBlank() ? base : payload;
+        return withNavigationParams(base, nav);
+    }
+
+    private Map<String, String> extractNavigationParams(String value) {
+        Map<String, String> out = new LinkedHashMap<>();
+        String raw = clean(value, 2048);
+        if (raw.isBlank()) return out;
+        try {
+            URI uri;
+            if (raw.startsWith("http://") || raw.startsWith("https://")) uri = URI.create(raw);
+            else uri = URI.create("https://bmwc.local" + (raw.startsWith("/") ? raw : "/" + raw));
+            String q = uri.getRawQuery();
+            if (q == null || q.isBlank()) return out;
+            for (String part : q.split("&")) {
+                if (part == null || part.isBlank()) continue;
+                int eq = part.indexOf('=');
+                String k = eq >= 0 ? part.substring(0, eq) : part;
+                String v = eq >= 0 ? part.substring(eq + 1) : "";
+                k = java.net.URLDecoder.decode(k, StandardCharsets.UTF_8);
+                if (!isNavigationParam(k)) continue;
+                v = java.net.URLDecoder.decode(v, StandardCharsets.UTF_8);
+                if (!v.isBlank()) out.put(k, v);
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    private boolean isNavigationParam(String key) {
+        return "bmwcMessage".equals(key) || "bmwcDmThread".equals(key) || "bmwcDmMessage".equals(key)
+                || "bmwcGroupRoom".equals(key) || "bmwcGroupMessage".equals(key);
+    }
+
+    private String withNavigationParams(String baseUrl, Map<String, String> nav) {
+        String base = clean(baseUrl, 2048);
+        if (base.isBlank() || nav == null || nav.isEmpty()) return base;
+        try {
+            String hash = "";
+            int hashIdx = base.indexOf('#');
+            if (hashIdx >= 0) {
+                hash = base.substring(hashIdx);
+                base = base.substring(0, hashIdx);
+            }
+            String path = base;
+            String query = "";
+            int qIdx = base.indexOf('?');
+            if (qIdx >= 0) {
+                path = base.substring(0, qIdx);
+                query = base.substring(qIdx + 1);
+            }
+            List<String> parts = new ArrayList<>();
+            if (!query.isBlank()) {
+                for (String part : query.split("&")) {
+                    if (part == null || part.isBlank()) continue;
+                    String k = part;
+                    int eq = part.indexOf('=');
+                    if (eq >= 0) k = part.substring(0, eq);
+                    try { k = java.net.URLDecoder.decode(k, StandardCharsets.UTF_8); } catch (Exception ignored) {}
+                    if (!isNavigationParam(k)) parts.add(part);
+                }
+            }
+            for (Map.Entry<String, String> e : nav.entrySet()) {
+                String k = e.getKey() == null ? "" : e.getKey();
+                String v = e.getValue() == null ? "" : e.getValue();
+                if (!isNavigationParam(k) || v.isBlank()) continue;
+                parts.add(java.net.URLEncoder.encode(k, StandardCharsets.UTF_8) + "=" + java.net.URLEncoder.encode(v, StandardCharsets.UTF_8));
+            }
+            return path + (parts.isEmpty() ? "" : "?" + String.join("&", parts)) + hash;
+        } catch (Exception ignored) {
+            return base;
+        }
     }
 
     private void sendOne(Subscription sub, String jsonPayload, int ttlSeconds) throws Exception {
@@ -606,6 +687,7 @@ public class WebPushManager {
                 s.notifyKeywords = (c == null || c.webPushNotifyKeywords) && readBool(m, "notifyKeywords", c == null || c.webPushNotifyKeywords);
                 s.keywords = normalizeKeywords(m.get("keywords"));
                 s.language = clean(m.get("language"), 40);
+                s.openUrl = clean(m.get("openUrl"), 2048);
                 s.notifyOwnMessages = (c == null || c.webPushNotifyOwnMessages) && readBool(m, "notifyOwnMessages", c != null && c.webPushNotifyOwnMessages);
                 s.showMessagePreview = (c == null || c.webPushShowMessagePreview) && readBool(m, "showMessagePreview", c == null || c.webPushShowMessagePreview);
                 try { s.updatedAt = Long.parseLong(String.valueOf(m.getOrDefault("updatedAt", "0"))); } catch (Exception ignored) {}
@@ -637,6 +719,7 @@ public class WebPushManager {
                 m.put("notifyKeywords", s.notifyKeywords);
                 m.put("keywords", String.join("\n", s.keywords == null ? Collections.emptyList() : s.keywords));
                 m.put("language", s.language);
+                m.put("openUrl", s.openUrl);
                 m.put("notifyOwnMessages", s.notifyOwnMessages);
                 m.put("showMessagePreview", s.showMessagePreview);
                 m.put("updatedAt", s.updatedAt);

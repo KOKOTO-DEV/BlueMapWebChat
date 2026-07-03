@@ -1,11 +1,23 @@
 # Changelog
 
-## 4.5.1
+4.5.1
+Fixed Web Push notification click navigation so subscriptions remember the actual page URL where push was enabled, including BlueMap web-addon pages and standalone chat pages.
+Fixed notification click handling so public chat, reply, keyword, DM, and group notifications can reopen/focus an existing chat page and jump to the target message, thread, or room when available.
+Fixed mobile Web Push support in BlueMap web-addon mode by registering the Service Worker from the parent BlueMap page instead of the embedded addon iframe.
+Removed the unnecessary standalone-page requirement for Web Push on supported browsers. iOS/iPadOS still requires the site to be added to the Home Screen as a PWA before Web Push can be enabled.
+Added parent-page forwarding for Service Worker notification navigation so notification clicks can reach the embedded chat iframe on BlueMap web-addon pages.
+Fixed minimized chat pill controls so the minimized area only shows the title and restore button. DM, group, notification inbox, login, PIP, and other controls remain available only in the expanded chat window.
+Added emoji folder moving in the admin emoji manager, including single/multi-select moves, conflict checks, PNG sidecar movement, path validation, and audit logging.
+Added reply notifications for public replies to the current user's messages.
+Added a browser-local notification inbox so recent notification-worthy events can be reviewed from the same browser.
+Improved notification language handling so Web Push subscriptions remember browser language and notification text uses language resources more consistently.
+Improved chat settings layout so saved-setting controls and notification-related labels are not clipped in the settings modal.
 
-- Added notification click navigation for browser/Web Push notifications. Public chat/reply/keyword notifications can open and jump to the message; DM notifications can open the DM thread and target message when available; group chat notifications can open the room and target message when available.
-- Added service-worker notification click forwarding to already-open chat windows so mobile/background pushes focus the existing page instead of only opening the standalone page.
-- Added emoji folder moving from the admin emoji manager. Admins can select a destination folder and move one emoji or multiple selected emojis without re-uploading files.
-- Added server-side `/admin/emojis/move` handling with path validation, conflict checks, PNG sidecar movement, and audit logging as `admin.emoji-move`.
+Upgrade notes:
+
+Existing Web Push subscriptions should be turned off and on again so the corrected open URL and language values are saved.
+BlueMap web-addon mobile push requires HTTPS and a browser that supports Service Workers, Push API, and Notifications.
+iOS/iPadOS Web Push requires launching the site from the Home Screen PWA.
 
 
 ## 4.5.0

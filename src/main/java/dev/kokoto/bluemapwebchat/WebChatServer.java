@@ -445,7 +445,7 @@ public class WebChatServer {
                 + "<body data-bmwc-version=\"" + htmlEsc(version) + "\">\n"
                 + "  <noscript>JavaScript is required to use the web chat.</noscript>\n"
                 + "  <div class=\"bmwc-standalone-note\">" + htmlEsc(appName) + " standalone mode</div>\n"
-                + "  <script>window.BlueMapWebChatConfig={apiBase:" + apiBaseJs + ",apiBaseUrl:" + apiBaseJs + ",standalone:true,standalonePath:" + JsonUtil.quote(config.standaloneWebPath) + "};</script>\n"
+                + "  <script>window.BlueMapWebChatConfig={apiBase:" + apiBaseJs + ",apiBaseUrl:" + apiBaseJs + ",standalone:true,standalonePath:" + JsonUtil.quote(config.standaloneWebPath) + ",standalonePublicUrl:" + JsonUtil.quote(publicStandaloneOpenUrl(ex)) + "};</script>\n"
                 + "  <script>\n" + standaloneScript + "\n  </script>\n"
                 + "</body>\n"
                 + "</html>\n";
@@ -489,7 +489,9 @@ public class WebChatServer {
                 + "event.notification.close();var url=(event.notification.data&&event.notification.data.url)||'/';"
                 + "event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(function(list){"
                 + "var target;try{target=new URL(url,self.location.origin);}catch(e){target=new URL('/',self.location.origin);}"
-                + "for(var i=0;i<list.length;i++){var c=list[i];try{var cu=new URL(c.url);if(cu.origin===target.origin&&cu.pathname===target.pathname){c.postMessage({source:'BlueMapWebChat',type:'notificationNavigate',url:target.href});return c.focus();}}catch(e){}}"
+                + "var samePath=null,sameOrigin=null;"
+                + "for(var i=0;i<list.length;i++){var c=list[i];try{var cu=new URL(c.url);if(cu.origin!==target.origin)continue;if(cu.pathname===target.pathname&&!samePath)samePath=c;if(!sameOrigin)sameOrigin=c;}catch(e){}}"
+                + "var chosen=samePath||sameOrigin;if(chosen){try{chosen.postMessage({source:'BlueMapWebChat',type:'notificationNavigate',url:target.href});}catch(e){}return chosen.focus();}"
                 + "return clients.openWindow(target.href);" 
                 + "}));"
                 + "});";
@@ -675,6 +677,9 @@ public class WebChatServer {
         m.put("webPushEnabled", c.webPushEnabled);
         m.put("webPushAvailable", c.webPushEnabled && webPush.available());
         m.put("webPushVapidPublicKey", c.webPushEnabled ? webPush.vapidPublicKey() : "");
+        m.put("standaloneWebEnabled", c.standaloneWebEnabled);
+        m.put("standaloneWebPath", c.standaloneWebPath);
+        m.put("standaloneWebPublicUrl", c.standaloneWebEnabled ? publicStandaloneOpenUrl(ex) : "");
         m.put("standaloneWebAppName", configuredStandaloneAppName());
         m.put("standaloneWebAppShortName", configuredStandaloneAppShortName());
         m.put("webPushNotificationTitle", configuredWebPushTitle());
@@ -3587,6 +3592,51 @@ public class WebChatServer {
 
         return trimTrailingSlash(proto + "://" + host + config.pathPrefix);
     }
+
+    private String publicStandaloneOpenUrl(HttpExchange ex) {
+        ConfigValues config = plugin.configValues();
+        if (config == null) return "/";
+        String standalonePath = normalizeContextPrefix(config.standaloneWebPath, "/chat");
+        String proto = forwardedProto(ex);
+        String host = forwardedHost(ex, config);
+        String origin = configuredCorsOrigin(config);
+        if (origin.isBlank()) origin = trimTrailingSlash(proto + "://" + host);
+
+        String apiBase = publicApiBaseUrl(ex);
+        boolean apiBaseHasOrigin = apiBase.startsWith("http://") || apiBase.startsWith("https://") || apiBase.startsWith("//");
+        String publicPrefix = "";
+        try {
+            URI uri = URI.create(apiBaseHasOrigin || apiBase.startsWith("/") ? apiBase : "/" + apiBase);
+            String apiPath = uri.getPath() == null ? "" : trimTrailingSlash(uri.getPath());
+            String internalPrefix = trimTrailingSlash(normalizeContextPrefix(config.pathPrefix, "/api"));
+            if (!apiPath.isBlank() && !internalPrefix.isBlank()) {
+                if (apiPath.equals(internalPrefix)) publicPrefix = "";
+                else if (apiPath.endsWith(internalPrefix)) publicPrefix = trimTrailingSlash(apiPath.substring(0, apiPath.length() - internalPrefix.length()));
+            }
+            if (origin.isBlank() && uri.getScheme() != null && uri.getHost() != null) {
+                StringBuilder o = new StringBuilder(uri.getScheme()).append("://").append(uri.getHost());
+                if (uri.getPort() >= 0) o.append(':').append(uri.getPort());
+                origin = trimTrailingSlash(o.toString());
+            }
+        } catch (Exception ignored) {
+        }
+
+        String publicPath;
+        if (!publicPrefix.isBlank() && (standalonePath.equals(publicPrefix) || standalonePath.startsWith(publicPrefix + "/"))) {
+            publicPath = standalonePath;
+        } else {
+            publicPath = trimTrailingSlash(publicPrefix) + standalonePath;
+        }
+        if (publicPath.isBlank()) publicPath = "/";
+        if (!publicPath.startsWith("/")) publicPath = "/" + publicPath;
+        // When the public API base is configured as a same-origin path (for
+        // example /bmwc/api), return a same-origin standalone path too. This
+        // lets the browser resolve it against the actual HTTPS origin instead
+        // of trusting possibly-missing reverse-proxy headers from the backend.
+        if (!apiBaseHasOrigin) return publicPath;
+        return trimTrailingSlash(origin) + publicPath;
+    }
+
 
     private String inferPublicApiBasePath(HttpExchange ex, ConfigValues config) {
         String requestPath = ex.getRequestURI().getPath();

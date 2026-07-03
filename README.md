@@ -2,8 +2,6 @@
 
 A web chat plugin for Bukkit/Paper/Spigot-compatible Minecraft servers. It can run as a BlueMap web addon, as a standalone `/chat` page served by the plugin, or both at the same time.
 
-<img width="1057" height="682" alt="Image" src="https://github.com/user-attachments/assets/722761ea-94a4-4da9-be79-3cd04997c166" />
-
 ## Features
 
 - BlueMap embedded chat panel and standalone web chat page
@@ -242,7 +240,7 @@ Set `private-chat-super-admins` in `config.yml` to exact UUIDs or Minecraft name
 Administrative actions are also appended to date-based text audit files under `plugins/BlueMapWebChat/audit` by default. The audit log is intended for server operators and is not shown in the web UI.
 
 
-Note: `standalone-web.app-name` / `standalone-web.app-short-name` can change the mobile Home Screen web app name, and `web-push.notification-title` can change the default push title. If `web-push.notification-title` is empty, `standalone-web.app-name` is used. On iOS/iPadOS, use the standalone page added to the Home Screen rather than a normal browser tab.
+Note: `standalone-web.app-name` / `standalone-web.app-short-name` can change the mobile Home Screen web app name, and `web-push.notification-title` can change the default push title. If `web-push.notification-title` is empty, `standalone-web.app-name` is used. Android/desktop browsers can enable push from either the BlueMap addon or the standalone page when HTTPS and Push API support are available. On iOS/iPadOS, use a page added to the Home Screen and opened as a web app rather than a normal browser tab.
 
 
 Existing configs that still contain old generated display names such as `BlueMapWebChat` or `BM WebChat` are treated as legacy placeholders so they no longer appear as push titles by default.

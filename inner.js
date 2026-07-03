@@ -274,6 +274,12 @@
     webPushAvailable: false,
     webPushVapidPublicKey: "",
     webPushNotificationTitle: "",
+    standaloneWebEnabled: false,
+    standaloneWebPath: "",
+    standaloneWebPublicUrl: "",
+    standaloneWebAppName: "",
+    standaloneWebAppShortName: "",
+    parentPageUrl: String(cfg.parentPageUrl || cfg.pageUrl || ""),
     webPushNotifyNormalChat: true,
     webPushNotifyDm: true,
     webPushNotifyGroupChat: true,
@@ -6696,6 +6702,9 @@
       state.webPushEnabled = data.webPushEnabled === true;
       state.webPushAvailable = data.webPushAvailable === true;
       state.webPushVapidPublicKey = data.webPushVapidPublicKey || "";
+      state.standaloneWebEnabled = data.standaloneWebEnabled === true;
+      state.standaloneWebPath = String(data.standaloneWebPath || "");
+      state.standaloneWebPublicUrl = String(data.standaloneWebPublicUrl || "");
       state.standaloneWebAppName = String(data.standaloneWebAppName || "");
       state.standaloneWebAppShortName = String(data.standaloneWebAppShortName || "");
       state.webPushNotificationTitle = String(data.webPushNotificationTitle || "");
@@ -10082,11 +10091,36 @@
     return prefStatusLabel(labels, "notificationsNotRequestedStatus", "Permission is not requested yet.");
   }
 
+  function webPushIsIosLike() {
+    try {
+      const ua = String(navigator.userAgent || "");
+      const platform = String(navigator.platform || "");
+      return /iPad|iPhone|iPod/i.test(ua) || (platform === "MacIntel" && Number(navigator.maxTouchPoints || 0) > 1);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function webPushIsInstalledWebApp() {
+    try { if (state.isStandalone) return true; } catch (_) {}
+    try { if (navigator.standalone === true) return true; } catch (_) {}
+    try { if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) return true; } catch (_) {}
+    try { if (window.matchMedia && window.matchMedia("(display-mode: fullscreen)").matches) return true; } catch (_) {}
+    return false;
+  }
+
+  function webPushRequiresInstalledWebApp() {
+    // Android/desktop browsers can subscribe from the BlueMap addon when the
+    // current origin supports Service Worker + Push API. iOS/iPadOS Web Push is
+    // the special case: it must run as an installed Home Screen web app.
+    return webPushIsIosLike() && !webPushIsInstalledWebApp();
+  }
+
   function webPushUnavailableReason(labels = {}) {
     if (!state.webPushEnabled) return prefStatusLabel(labels, "webPushServerDisabled", "Web Push is disabled by server configuration.");
     if (!state.webPushAvailable || !state.webPushVapidPublicKey) return prefStatusLabel(labels, "webPushUnsupported", "Web Push is not available in this server configuration.");
     if (!state.token) return t("error.not_logged_in", "Not logged in.");
-    if (!state.isStandalone) return prefStatusLabel(labels, "webPushStandaloneRequired", "Open the standalone chat page to use mobile/background push.");
+    if (webPushRequiresInstalledWebApp()) return prefStatusLabel(labels, "webPushStandaloneRequired", "On iOS/iPadOS, add this chat page to the Home Screen and open it as a web app to use mobile/background push.");
     if (typeof window !== "undefined" && window.isSecureContext === false) return prefStatusLabel(labels, "webPushInsecure", "Web Push requires HTTPS or localhost.");
     if (!("serviceWorker" in navigator)) return prefStatusLabel(labels, "webPushNoServiceWorker", "This browser does not support Service Worker.");
     if (!("PushManager" in window)) return prefStatusLabel(labels, "webPushNoPushManager", "This browser does not support Push API.");
@@ -10304,7 +10338,81 @@
   }
 
   function webPushScopeUrl() {
-    return apiBase + "/push/";
+    // Keep the service worker scope wide enough to see/focus the page where the
+    // user enabled push. In addon mode the chat app itself runs in an about:blank
+    // iframe, so using window.location would incorrectly fall back to /api/push/.
+    // Prefer the parent BlueMap URL that was captured at mount time.
+    try {
+      const pageHref = currentPageOpenUrl() || (window.location.href === "about:blank" ? window.location.origin + "/" : window.location.href);
+      const api = new URL(apiBase + "/push/", pageHref);
+      const current = new URL(pageHref, window.location.href === "about:blank" ? window.location.origin + "/" : window.location.href);
+      if (api.origin !== current.origin) return apiBase + "/push/";
+      const a = api.pathname.split("/").filter(Boolean);
+      const b = current.pathname.split("/").filter(Boolean);
+      const out = [];
+      for (let i = 0; i < Math.min(a.length, b.length); i++) {
+        if (a[i] !== b[i]) break;
+        out.push(a[i]);
+      }
+      return current.origin + "/" + (out.length ? out.join("/") + "/" : "");
+    } catch (_) {
+      try { return new URL("/", currentPageOpenUrl() || window.location.href).href; } catch (__) { return apiBase + "/push/"; }
+    }
+  }
+
+  function cleanNavigationBaseUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw || raw === "about:blank") return "";
+    try { return new URL(raw, window.location.href === "about:blank" ? window.location.origin + "/" : window.location.href).href; } catch (_) { return ""; }
+  }
+
+  function currentPageOpenUrl() {
+    const cfg = typeof window !== "undefined" && window.BlueMapWebChatConfig ? window.BlueMapWebChatConfig : {};
+    const candidates = [
+      cfg.parentPageUrl,
+      cfg.pageUrl,
+      state.parentPageUrl,
+      window.location.href
+    ];
+    for (const item of candidates) {
+      const url = cleanNavigationBaseUrl(item);
+      if (url) return url;
+    }
+    return "";
+  }
+
+  function configuredStandaloneOpenUrl() {
+    const cfg = typeof window !== "undefined" && window.BlueMapWebChatConfig ? window.BlueMapWebChatConfig : {};
+    const standaloneEnabled = state.isStandalone || state.standaloneWebEnabled === true || (state.config && state.config.standaloneWebEnabled === true) || cfg.standalone === true;
+    if (!standaloneEnabled) return "";
+    const candidates = [
+      state.standaloneWebPublicUrl,
+      state.config && state.config.standaloneWebPublicUrl,
+      cfg.standalonePublicUrl,
+      state.standaloneWebPath,
+      state.config && state.config.standaloneWebPath,
+      cfg.standalonePath
+    ];
+    for (const item of candidates) {
+      const url = cleanNavigationBaseUrl(item);
+      if (url) return url;
+    }
+    return "";
+  }
+
+  function notificationOpenUrl() {
+    try {
+      // A push subscription belongs to the page where the user enabled it.
+      // Therefore the open URL must prefer that current/parent page, regardless
+      // of standalone-web settings. Standalone URLs are only a fallback for
+      // standalone pages that cannot expose a clean current URL.
+      const base = currentPageOpenUrl() || configuredStandaloneOpenUrl() || window.location.href;
+      const url = new URL(base, window.location.href === "about:blank" ? window.location.origin + "/" : window.location.href);
+      ["bmwcMessage", "bmwcDmThread", "bmwcDmMessage", "bmwcGroupRoom", "bmwcGroupMessage"].forEach(k => url.searchParams.delete(k));
+      return url.href;
+    } catch (_) {
+      return currentPageOpenUrl() || configuredStandaloneOpenUrl() || String(window.location.href || "");
+    }
   }
 
   function waitForServiceWorkerActive(reg, timeoutMs = 8000) {
@@ -10329,6 +10437,50 @@
     });
   }
 
+  let webPushParentRequestSeq = 0;
+
+  function webPushNeedsParentRegistration() {
+    try {
+      if (state.isStandalone || state.isPip) return false;
+      if (!window.parent || window.parent === window) return false;
+      // Addon mode runs the chat app in a script-written about:blank iframe.
+      // That document can read the parent origin, but Chromium rejects Service
+      // Worker registration from it with InvalidStateError. Register from the
+      // real BlueMap parent document instead, then keep the same subscribe API.
+      return String(window.location.href || "") === "about:blank" || !!state.parentPageUrl;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function requestParentWebPush(action, payload = {}, timeoutMs = 15000) {
+    return new Promise((resolve, reject) => {
+      if (!webPushNeedsParentRegistration()) {
+        reject(new Error("parent_web_push_unavailable"));
+        return;
+      }
+      const requestId = "bmwc-webpush-" + Date.now() + "-" + (++webPushParentRequestSeq);
+      let timer = null;
+      const cleanup = () => {
+        try { window.removeEventListener("message", onMessage); } catch (_) {}
+        if (timer) clearTimeout(timer);
+      };
+      const onMessage = event => {
+        const data = event && event.data || {};
+        if (!data || data.source !== "BlueMapWebChatParent" || data.type !== "webPushParentResult" || data.requestId !== requestId) return;
+        cleanup();
+        if (data.ok === true) resolve(data.result || {});
+        else reject(new Error(String(data.error || "parent_web_push_failed")));
+      };
+      window.addEventListener("message", onMessage);
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error("parent_web_push_timeout"));
+      }, Math.max(3000, Math.min(45000, Number(timeoutMs) || 15000)));
+      postFrame("webPushParentRequest", {requestId, action, payload});
+    });
+  }
+
   async function registerWebPushServiceWorker() {
     const swUrl = apiBase + "/push/sw.js?v=" + encodeURIComponent(String(state.serverVersion || Date.now()));
     const scope = webPushScopeUrl();
@@ -10338,13 +10490,48 @@
     return reg;
   }
 
+  async function createWebPushSubscriptionJson() {
+    if (webPushNeedsParentRegistration()) {
+      const result = await requestParentWebPush("subscribe", {
+        apiBase,
+        serverVersion: state.serverVersion || "",
+        vapidPublicKey: state.webPushVapidPublicKey || "",
+        scope: webPushScopeUrl(),
+        openUrl: notificationOpenUrl()
+      });
+      if (!result || !result.subscription) throw new Error("parent_web_push_empty_subscription");
+      return result.subscription;
+    }
+    const reg = await registerWebPushServiceWorker();
+    const existing = await reg.pushManager.getSubscription();
+    const sub = existing || await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: base64UrlToUint8Array(state.webPushVapidPublicKey)});
+    return sub.toJSON();
+  }
+
+  async function unsubscribeWebPushBrowserSubscription() {
+    if (webPushNeedsParentRegistration()) {
+      const result = await requestParentWebPush("unsubscribe", {apiBase, scope: webPushScopeUrl()}).catch(e => ({error: e && e.message ? e.message : String(e || "")}));
+      return result && result.endpoint ? String(result.endpoint || "") : "";
+    }
+    if (!("serviceWorker" in navigator)) return "";
+    const reg = await navigator.serviceWorker.getRegistration(webPushScopeUrl()).catch(() => null);
+    if (!reg || !reg.pushManager) return "";
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) return "";
+    const endpoint = sub.endpoint || "";
+    await sub.unsubscribe().catch(() => false);
+    return endpoint;
+  }
+
   function webPushErrorText(error) {
     const message = error && (error.message || error.name) ? String(error.message || error.name) : "";
     if (error && error.status) return t("preferences.webPushFailedHttp", "Web Push failed: HTTP {status}").replace("{status}", String(error.status));
     if (/permission/i.test(message)) return t("preferences.notificationsPermissionDenied", "Notification permission is blocked in this browser.");
     if (/secure|ssl|https/i.test(message)) return t("preferences.webPushInsecure", "Web Push requires HTTPS or localhost.");
     if (/VAPID|applicationServerKey/i.test(message)) return t("preferences.webPushInvalidVapid", "Web Push failed: invalid VAPID key.");
-    if (/AbortError/i.test(message)) return t("preferences.webPushTimeout", "Web Push failed: request timed out.");
+    if (/AbortError|timeout/i.test(message)) return t("preferences.webPushTimeout", "Web Push failed: request timed out.");
+    if (/invalid state/i.test(message)) return t("preferences.webPushInvalidDocument", "Web Push failed: the addon iframe document cannot register a Service Worker directly. Update chat.js so the BlueMap parent page performs the registration.");
+    if (/parent_web_push_unavailable/i.test(message)) return t("preferences.webPushParentUnavailable", "Web Push failed: addon parent registration bridge is not available.");
     return message ? t("preferences.webPushFailedWithMessage", "Web Push failed: {message}").replace("{message}", message) : t("preferences.webPushFailed", "Web Push failed.");
   }
 
@@ -10367,16 +10554,13 @@
     state.webPushRegistering = true;
     state.webPushLastError = "";
     try {
-      const ok = await requestBrowserNotifications();
+      const ok = webPushNeedsParentRegistration() ? true : await requestBrowserNotifications();
       if (!ok) {
         state.webPushLastError = t("preferences.notificationsPermissionDenied", "Notification permission is blocked in this browser.");
         return false;
       }
       localStorage.setItem("bmwc.notifications.enabled", "1");
-      const reg = await registerWebPushServiceWorker();
-      const existing = await reg.pushManager.getSubscription();
-      const sub = existing || await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: base64UrlToUint8Array(state.webPushVapidPublicKey)});
-      const json = sub.toJSON();
+      const json = await createWebPushSubscriptionJson();
       const opts = currentNotificationOptions();
       await api("/push/subscribe", {method: "POST", body: JSON.stringify({
         token: state.token,
@@ -10392,6 +10576,7 @@
         notifyKeywords: opts.keywords === true,
         keywords: notificationKeywordsText(),
         language: selectedLocale(),
+        openUrl: notificationOpenUrl(),
         notifyOwnMessages: opts.ownMessages === true,
         showMessagePreview: opts.preview === true
       })});
@@ -10410,17 +10595,8 @@
 
   async function disableWebPush() {
     try {
-      if ("serviceWorker" in navigator) {
-        const reg = await navigator.serviceWorker.getRegistration(webPushScopeUrl()).catch(() => null);
-        if (reg && reg.pushManager) {
-          const sub = await reg.pushManager.getSubscription();
-          if (sub) {
-            const endpoint = sub.endpoint || "";
-            await sub.unsubscribe().catch(() => false);
-            if (state.token && endpoint) await api("/push/unsubscribe", {method: "POST", body: JSON.stringify({token: state.token, endpoint})}).catch(() => {});
-          }
-        }
-      }
+      const endpoint = await unsubscribeWebPushBrowserSubscription();
+      if (state.token && endpoint) await api("/push/unsubscribe", {method: "POST", body: JSON.stringify({token: state.token, endpoint})}).catch(() => {});
     } catch (_) {
     } finally {
       localStorage.setItem("bmwc.webPush.enabled", "0");
@@ -10518,19 +10694,19 @@
         notificationsAllowedDisabledStatus: t("preferences.notificationsAllowedDisabledStatus", "Allowed by browser, disabled in chat settings."),
         notificationsNotRequestedStatus: t("preferences.notificationsNotRequestedStatus", "Permission is not requested yet."),
         webPush: t("preferences.webPush", "Mobile/background push"),
-        webPushHelp: t("preferences.webPushHelp", "Requires HTTPS, service worker support, browser permission, and a supported browser."),
+        webPushHelp: t("preferences.webPushHelp", "Requires HTTPS, service worker support, browser permission, and a supported browser. Android/desktop can use addon or standalone; iOS/iPadOS requires adding the page to the Home Screen."),
         webPushEnable: t("preferences.webPushEnable", "Enable mobile push"),
         webPushDisable: t("preferences.webPushDisable", "Disable mobile push"),
         webPushTest: t("preferences.webPushTest", "Test mobile push"),
         webPushTestSent: t("preferences.webPushTestSent", "Test push sent. Check this device's notification area."),
-        webPushHowToTest: t("preferences.webPushHowToTest", "To test mobile push: open the standalone HTTPS page on the mobile browser, log in, enable mobile push, allow notifications, tap Test mobile push, then lock the screen or leave the browser and send a DM/group message from another account."),
+        webPushHowToTest: t("preferences.webPushHowToTest", "To test mobile push: open this HTTPS chat page, log in, enable mobile push, allow notifications, tap Test mobile push, then lock the screen or leave the browser and send a DM/group message from another account. On iOS/iPadOS, first add the page to the Home Screen and open it as a web app."),
         advancedSettings: t("preferences.advancedSettings", "Advanced settings"),
         webPushUnsupported: t("preferences.webPushUnsupported", "Web Push is not available in this browser or server configuration."),
         webPushServerDisabled: t("preferences.webPushServerDisabled", "Web Push is disabled by server configuration."),
         webPushInsecure: t("preferences.webPushInsecure", "Web Push requires HTTPS or localhost."),
         webPushNoServiceWorker: t("preferences.webPushNoServiceWorker", "This browser does not support Service Worker."),
         webPushNoPushManager: t("preferences.webPushNoPushManager", "This browser does not support Push API."),
-        webPushStandaloneRequired: t("preferences.webPushStandaloneRequired", "Open the standalone chat page to use mobile/background push."),
+        webPushStandaloneRequired: t("preferences.webPushStandaloneRequired", "On iOS/iPadOS, add this chat page to the Home Screen and open it as a web app to use mobile/background push."),
         webPushEnabledStatus: t("preferences.webPushEnabledStatus", "Enabled on this browser."),
         webPushDisabledStatus: t("preferences.webPushDisabledStatus", "Disabled on this browser."),
         notifyTypes: t("preferences.notifyTypes", "Notification types"),
@@ -10880,8 +11056,8 @@
             <button class="bmwc-button" id="bmwc-prefs-notifications-test" type="button">${esc(labels.notificationsTest || "Test notification")}</button>
           </div>
           <p class="bmwc-pref-font-help" id="bmwc-prefs-notifications-status" aria-live="polite">${esc(notificationStatusText(labels))}</p>
-          <p class="bmwc-pref-font-help">${esc(labels.webPushHelp || "Requires HTTPS, service worker support, browser permission, and a supported browser.")}</p>
-          <p class="bmwc-pref-font-help">${esc(labels.webPushHowToTest || "To test mobile push: open the standalone HTTPS page on the mobile browser, log in, enable mobile push, allow notifications, tap Test mobile push, then lock the screen or leave the browser and send a DM/group message from another account.")}</p>
+          <p class="bmwc-pref-font-help">${esc(labels.webPushHelp || "Requires HTTPS, service worker support, browser permission, and a supported browser. Android/desktop can use addon or standalone; iOS/iPadOS requires adding the page to the Home Screen.")}</p>
+          <p class="bmwc-pref-font-help">${esc(labels.webPushHowToTest || "To test mobile push: open this HTTPS chat page, log in, enable mobile push, allow notifications, tap Test mobile push, then lock the screen or leave the browser and send a DM/group message from another account. On iOS/iPadOS, first add the page to the Home Screen and open it as a web app.")}</p>
           <div class="bmwc-pref-button-row">
             <button class="bmwc-button" id="bmwc-prefs-web-push-toggle" type="button">${esc(localStorage.getItem("bmwc.webPush.enabled") === "1" ? (labels.webPushDisable || "Disable mobile push") : (labels.webPushEnable || "Enable mobile push"))}</button>
             <button class="bmwc-button" id="bmwc-prefs-web-push-test" type="button">${esc(labels.webPushTest || "Test mobile push")}</button>
