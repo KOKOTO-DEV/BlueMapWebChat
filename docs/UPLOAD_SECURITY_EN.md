@@ -86,7 +86,7 @@ upload:
     - flac
 ```
 
-BlueMapWebChat limits by extension and size, but it is still recommended to serve uploads from a constrained directory and use HTTPS for public deployment.
+BlueMapWebChat limits by extension and size, but it is still recommended to serve uploads from a constrained directory and use HTTPS for public deployment. `upload.max-total-size-mb` can additionally cap the total size of regular files stored directly in `upload.directory`; `0` disables the quota. When enabled, the server deletes the oldest unreferenced uploads first, and rejects the new upload if protected/referenced files still keep the folder over the limit.
 
 Archive formats such as `zip` are not included in the default public-server example. Add them manually only when you intentionally want general file sharing.
 

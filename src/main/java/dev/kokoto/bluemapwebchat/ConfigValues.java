@@ -260,6 +260,7 @@ public class ConfigValues {
     public int uploadCooldownSeconds;
     public int uploadMaxUploadsPerMinute;
     public int uploadMaxFileSizeMb;
+    public int uploadMaxTotalSizeMb;
     public int uploadMaxFilesPerMessage;
     public String uploadDirectory;
     public String uploadPublicBaseUrl;
@@ -675,6 +676,7 @@ public class ConfigValues {
         v.uploadCooldownSeconds = c.getInt("upload.cooldown-seconds", 5);
         v.uploadMaxUploadsPerMinute = Math.max(0, c.getInt("upload.max-uploads-per-minute", 4));
         v.uploadMaxFileSizeMb = Math.max(0, c.getInt("upload.max-file-size-mb", 20));
+        v.uploadMaxTotalSizeMb = Math.max(0, c.getInt("upload.max-total-size-mb", 0));
         v.uploadMaxFilesPerMessage = Math.max(0, c.getInt("upload.max-files-per-message", 3));
         v.uploadDirectory = c.getString("upload.directory", "uploads");
         v.uploadPublicBaseUrl = c.getString("upload.public-base-url", "");

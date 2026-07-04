@@ -1,5 +1,19 @@
 # Changelog
 
+## 4.5.2
+
+- Fixed BlueMap web-addon mobile Web Push registration by moving Service Worker registration/subscription work to the parent BlueMap page when the embedded chat runs inside the script-written addon iframe. Standalone chat pages still register directly.
+- Removed the unnecessary standalone-page requirement for Web Push on supported browsers. iOS/iPadOS still requires launching the site from the Home Screen PWA before Web Push can be enabled.
+- Fixed Web Push notification click URLs so subscriptions keep the exact page URL where push was enabled, including BlueMap web-addon pages and standalone chat pages.
+- Added `upload.max-total-size-mb` to cap total files stored directly in `upload.directory`; `0` keeps the previous unlimited behavior.
+- When the upload quota is enabled and a new upload would exceed it, the server deletes the oldest unreferenced uploads first. Files still referenced by chat history, SQLite history, DM/group messages, or preserved pinned messages are not removed.
+- If quota cleanup cannot free enough space, the upload is rejected with `upload_storage_quota_exceeded` instead of writing beyond the configured limit.
+
+Upgrade notes:
+- Existing Web Push subscriptions should be turned off and on again from the intended page so the corrected `openUrl` is saved.
+- Set `upload.max-total-size-mb` manually to enable upload-folder quota enforcement; the default is `0` for compatibility.
+
+
 4.5.1
 Fixed Web Push notification click navigation so subscriptions remember the actual page URL where push was enabled, including BlueMap web-addon pages and standalone chat pages.
 Fixed notification click handling so public chat, reply, keyword, DM, and group notifications can reopen/focus an existing chat page and jump to the target message, thread, or room when available.

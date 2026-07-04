@@ -23,7 +23,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-4.5.1.jar
+target/BlueMapWebChat-4.5.2.jar
 ```
 
 ## 기본 설치
@@ -94,6 +94,8 @@ upload:
   # 권장값은 빈 값입니다. 업로드 URL은 자동으로 /bmwc/api를 따라갑니다.
   # 기존 명시 방식도 동작합니다: "/bmwc/api" 또는 "/bmwc/api/uploads"
   public-base-url: ""
+  # 0 = 무제한. 양수는 upload.directory 전체 파일 용량을 제한합니다.
+  max-total-size-mb: 0
 
 emoji:
   # 권장값은 빈 값입니다. 이모지 URL은 자동으로 /bmwc/api를 따라갑니다.

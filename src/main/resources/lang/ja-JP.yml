@@ -416,6 +416,7 @@ web:
     file_too_large: ファイルが大きすぎます
     total_size_exceeded: 絵文字の合計容量制限を超えました
     total_size_exceededWithUsage: 絵文字の合計容量制限を超えました。現在 {current}、選択ファイル {file}、最大 {max}。
+    upload_storage_quota_exceeded: アップロード保存容量の上限を超えました。古いアップロードを削除するか upload.max-total-size-mb を増やしてください。
     file_missing: アップロードされたファイルがありません
     upload_permission_denied: ファイルをアップロードする権限がありません
     extension_not_allowed: 許可されていないファイル形式です

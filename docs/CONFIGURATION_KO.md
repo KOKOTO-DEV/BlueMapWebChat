@@ -72,6 +72,10 @@ emoji:
 - 선행 `/`가 없는 상대값, 예: `bmwc/api`, `bmwc/api/uploads`, `bmwc/api/emojis`는 `http.cors-origin`이 실제 origin일 때 그 origin을 앞에 붙입니다. `cors-origin: "*"`이면 같은 origin 절대경로처럼 `/bmwc/api...`로 처리합니다.
 - `https://map.example.com/bmwc/api` 같은 전체 URL은 그대로 사용합니다.
 
+### 업로드 저장 용량 제한
+
+`upload.max-total-size-mb`는 `upload.directory` 바로 아래 일반 파일의 총 용량을 제한합니다. 기본값 `0`은 무제한입니다. 새 업로드로 제한을 넘게 되면 BlueMapWebChat은 오래된 미참조 업로드부터 삭제합니다. 채팅 기록, SQLite 기록, DM/그룹 메시지, 보존 대상 고정 메시지에서 참조 중인 파일은 유지됩니다. 정리 후에도 공간이 부족하면 업로드가 거부됩니다.
+
 ### 이모지 용량 표시
 
 `emoji.max-total-size-mb`는 커스텀 이모지 전체 용량을 제한합니다. 제한을 초과하면 관리자 업로드 화면에서 경고가 표시됩니다. `emoji.show-storage-usage`는 현재 이모지 용량 표시 여부, `emoji.show-storage-limit`는 전체 용량 제한 표시 여부를 제어합니다.

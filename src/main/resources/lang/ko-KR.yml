@@ -416,6 +416,7 @@ web:
     file_too_large: 파일이 너무 큽니다
     total_size_exceeded: 이모지 전체 용량 제한을 초과했습니다
     total_size_exceededWithUsage: 이모지 전체 용량 제한을 초과했습니다. 현재 {current}, 선택 파일 {file}, 최대 {max}.
+    upload_storage_quota_exceeded: 업로드 저장 용량 제한을 초과했습니다. 오래된 업로드를 삭제하거나 upload.max-total-size-mb 값을 늘리세요.
     file_missing: 업로드된 파일이 없습니다
     upload_permission_denied: 파일 업로드 권한이 없습니다
     extension_not_allowed: 허용되지 않은 파일 형식입니다

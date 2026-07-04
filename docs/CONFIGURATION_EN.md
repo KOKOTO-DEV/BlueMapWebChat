@@ -72,6 +72,10 @@ emoji:
 - Relative values without a leading `/`, such as `bmwc/api`, `bmwc/api/uploads`, or `bmwc/api/emojis`, are resolved against `http.cors-origin` when it is a real origin. If `cors-origin` is `*`, they fall back to same-origin absolute paths such as `/bmwc/api...`.
 - Full URLs such as `https://map.example.com/bmwc/api` are used as-is.
 
+### Upload storage quota
+
+`upload.max-total-size-mb` limits the total size of regular files stored directly in `upload.directory`. The default `0` keeps upload storage unlimited. When a new upload would exceed the limit, BlueMapWebChat deletes the oldest unreferenced uploads first; files still referenced by chat history, SQLite history, DM/group messages, or preserved pinned messages are kept. If cleanup cannot free enough space, the upload is rejected.
+
 ### Emoji storage display
 
 `emoji.max-total-size-mb` limits total custom emoji storage. When the limit is exceeded, admin uploads show a localized warning instead of failing silently. `emoji.show-storage-usage` controls whether current emoji storage is shown in the admin emoji manager, and `emoji.show-storage-limit` controls whether the total limit is shown.

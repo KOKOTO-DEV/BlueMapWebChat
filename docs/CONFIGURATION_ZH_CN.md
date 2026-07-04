@@ -300,6 +300,10 @@ ui:
 `auth.link-code-cooldown-seconds` 和 `auth.link-code-max-per-minute` 用于限制 Web UI 按远程 IP 生成 `/bmchat auth <code>` 链接代码的频率。将任一值设为 `0` 可禁用对应限制。
 
 
+### 上传存储容量上限
+
+`upload.max-total-size-mb` 用于限制 `upload.directory` 直属普通文件的总容量。默认值 `0` 表示不限制。新的上传会超过限制时，BlueMapWebChat 会先删除最旧的未引用上传文件；仍被聊天记录、SQLite 历史、DM/群聊消息或保留的置顶消息引用的文件会被保留。清理后仍空间不足时，上传会被拒绝。
+
 ### 表情容量显示
 
 `emoji.max-total-size-mb` 用于限制自定义表情的总容量。超过限制时，管理员上传界面会显示警告。`emoji.show-storage-usage` 控制是否显示当前表情容量，`emoji.show-storage-limit` 控制是否显示总容量限制。

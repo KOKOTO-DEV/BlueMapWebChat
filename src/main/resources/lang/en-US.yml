@@ -416,6 +416,7 @@ web:
     file_too_large: File is too large
     total_size_exceeded: Total emoji storage limit exceeded
     total_size_exceededWithUsage: Total emoji storage limit exceeded. Current {current}, selected {file}, maximum {max}.
+    upload_storage_quota_exceeded: Upload storage quota exceeded. Delete old uploads or raise upload.max-total-size-mb.
     file_missing: No file was uploaded
     upload_permission_denied: You do not have permission to upload files
     extension_not_allowed: This file type is not allowed

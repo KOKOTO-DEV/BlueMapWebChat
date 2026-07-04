@@ -300,6 +300,10 @@ ui:
 `auth.link-code-cooldown-seconds` と `auth.link-code-max-per-minute` は、Web UI が `/bmchat auth <code>` 用のリンクコードをリモート IP ごとに発行できる頻度を制限します。各値を `0` にすると、その制限を無効化できます。
 
 
+### アップロード保存容量の上限
+
+`upload.max-total-size-mb` は `upload.directory` 直下の通常ファイルの合計容量を制限します。既定値 `0` は無制限です。新しいアップロードで上限を超える場合、BlueMapWebChat は古い未参照アップロードから削除します。チャット履歴、SQLite 履歴、DM/グループメッセージ、保持対象の固定メッセージで参照されているファイルは残します。整理しても容量が足りない場合、アップロードは拒否されます。
+
 ### 絵文字容量表示
 
 `emoji.max-total-size-mb` はカスタム絵文字の合計容量を制限します。制限を超えると、管理者アップロード画面に警告が表示されます。`emoji.show-storage-usage` は現在の絵文字容量表示、`emoji.show-storage-limit` は合計容量制限の表示を制御します。

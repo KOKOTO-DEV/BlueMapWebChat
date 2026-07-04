@@ -25,7 +25,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-4.5.1.jar
+target/BlueMapWebChat-4.5.2.jar
 ```
 
 ## Install
@@ -95,6 +95,8 @@ upload:
   # Recommended: keep empty so uploads follow /bmwc/api automatically.
   # Legacy explicit forms also work: "/bmwc/api" or "/bmwc/api/uploads".
   public-base-url: ""
+  # 0 = unlimited. Positive values cap total files in upload.directory.
+  max-total-size-mb: 0
 
 emoji:
   # Recommended: keep empty so emoji files follow /bmwc/api automatically.

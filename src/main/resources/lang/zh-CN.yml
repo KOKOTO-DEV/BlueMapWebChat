@@ -416,6 +416,7 @@ web:
     file_too_large: 文件过大
     total_size_exceeded: 已超过表情总容量限制
     total_size_exceededWithUsage: 已超过表情总容量限制。当前 {current}，所选文件 {file}，最大 {max}。
+    upload_storage_quota_exceeded: 已超过上传存储容量上限。请删除旧上传文件或提高 upload.max-total-size-mb。
     file_missing: 没有上传文件
     upload_permission_denied: 你没有上传文件的权限
     extension_not_allowed: 不允许的文件类型

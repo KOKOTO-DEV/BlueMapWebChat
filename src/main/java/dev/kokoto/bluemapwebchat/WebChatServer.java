@@ -39,6 +39,7 @@ public class WebChatServer {
     private final CaptchaManager captcha;
     private final WebPushManager webPush;
     private final RateLimiter rateLimiter = new RateLimiter();
+    private final Object uploadQuotaLock = new Object();
     private final Deque<ChatMessage> history = new ArrayDeque<>();
     private SqliteHistoryStore sqliteHistory;
     private final Set<SseClient> clients = ConcurrentHashMap.newKeySet();
@@ -535,7 +536,7 @@ public class WebChatServer {
         p.type = "test";
         p.title = configuredWebPushTitle();
         p.body = "";
-        p.url = standaloneOpenUrl();
+        p.url = "";
         p.tag = "bmwc-test";
         p.senderUuid = "";
         webPush.sendToUser(ctx.account.uuid, p);
@@ -758,6 +759,7 @@ public class WebChatServer {
         m.put("uploadAllowModerator", c.uploadAllowModerator);
         m.put("uploadAllowAdmin", c.uploadAllowAdmin);
         m.put("uploadMaxFileSizeMb", c.uploadMaxFileSizeMb);
+        m.put("uploadMaxTotalSizeMb", c.uploadMaxTotalSizeMb);
         m.put("uploadMaxFilesPerMessage", c.uploadMaxFilesPerMessage);
         m.put("uploadAllowedExtensions", c.uploadAllowedExtensions);
         m.put("uploadClipboardEnabled", c.uploadClipboardEnabled);
@@ -2043,7 +2045,13 @@ public class WebChatServer {
         }
 
         Files.createDirectories(dir);
-        Files.write(target, file.data, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        synchronized (uploadQuotaLock) {
+            if (!ensureUploadQuotaAvailable(dir, file.data.length, config)) {
+                sendJson(ex, 507, "{\"ok\":false,\"error\":\"upload_storage_quota_exceeded\"}");
+                return;
+            }
+            Files.write(target, file.data, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        }
 
         String url = publicUploadBaseUrl(ex) + "/" + stored;
         Map<String, Object> res = new LinkedHashMap<>();
@@ -3352,6 +3360,84 @@ public class WebChatServer {
             });
         } catch (IOException ex) {
             plugin.getLogger().warning("Failed to cleanup uploaded files: " + ex.getMessage());
+        }
+    }
+
+    private boolean ensureUploadQuotaAvailable(Path dir, long incomingBytes, ConfigValues config) {
+        long quotaBytes = uploadQuotaBytes(config);
+        if (quotaBytes <= 0L) return true;
+        long needed = Math.max(0L, incomingBytes);
+        if (needed > quotaBytes) return false;
+
+        List<UploadQuotaFile> files = uploadQuotaFiles(dir);
+        long total = 0L;
+        for (UploadQuotaFile file : files) total += Math.max(0L, file.size);
+        if (total + needed <= quotaBytes) return true;
+
+        Set<String> protectedPinnedUploads = config != null && config.pinnedPreserveUploads
+                ? protectedPinnedUploadNames() : Collections.emptySet();
+        files.sort(Comparator.comparingLong((UploadQuotaFile f) -> f.modified).thenComparing(f -> f.name));
+
+        int deleted = 0;
+        long freed = 0L;
+        for (UploadQuotaFile file : files) {
+            if (total + needed <= quotaBytes) break;
+            if (protectedPinnedUploads.contains(file.name)) continue;
+            if (uploadNameReferencedAnywhere(file.name, "", "")) continue;
+            try {
+                if (Files.deleteIfExists(file.path)) {
+                    total -= Math.max(0L, file.size);
+                    freed += Math.max(0L, file.size);
+                    deleted++;
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        if (deleted > 0) {
+            plugin.getLogger().info("Cleaned " + deleted + " unreferenced upload(s) (" + freed + " bytes) to satisfy upload.max-total-size-mb quota.");
+        }
+        return total + needed <= quotaBytes;
+    }
+
+    private long uploadQuotaBytes(ConfigValues config) {
+        if (config == null || config.uploadMaxTotalSizeMb <= 0) return 0L;
+        long mb = Math.max(0L, (long) config.uploadMaxTotalSizeMb);
+        if (mb > Long.MAX_VALUE / 1024L / 1024L) return Long.MAX_VALUE;
+        return mb * 1024L * 1024L;
+    }
+
+    private List<UploadQuotaFile> uploadQuotaFiles(Path dir) {
+        List<UploadQuotaFile> out = new ArrayList<>();
+        if (dir == null || !Files.isDirectory(dir)) return out;
+        try (java.util.stream.Stream<Path> stream = Files.list(dir)) {
+            stream.filter(Files::isRegularFile).forEach(path -> {
+                try {
+                    out.add(new UploadQuotaFile(
+                            path,
+                            path.getFileName().toString(),
+                            Files.size(path),
+                            Files.getLastModifiedTime(path).toMillis()
+                    ));
+                } catch (IOException ignored) {
+                }
+            });
+        } catch (IOException ex) {
+            plugin.getLogger().warning("Failed to inspect uploaded files for quota cleanup: " + ex.getMessage());
+        }
+        return out;
+    }
+
+    private static final class UploadQuotaFile {
+        final Path path;
+        final String name;
+        final long size;
+        final long modified;
+
+        UploadQuotaFile(Path path, String name, long size, long modified) {
+            this.path = path;
+            this.name = name;
+            this.size = size;
+            this.modified = modified;
         }
     }
 
@@ -5976,7 +6062,7 @@ public class WebChatServer {
         p.type = system ? "system" : "chat";
         p.title = configuredWebPushTitle();
         p.body = system ? String.valueOf(msg.message == null ? "" : msg.message) : notificationSender(msg.sender) + (msg.message == null || msg.message.isBlank() ? "" : ": " + msg.message);
-        p.url = system ? standaloneOpenUrl() : standaloneOpenUrlWithParams(Map.of("bmwcMessage", String.valueOf(msg.id == null ? "" : msg.id)));
+        p.url = system ? "" : webPushNavigationUrlWithParams(Map.of("bmwcMessage", String.valueOf(msg.id == null ? "" : msg.id)));
         p.tag = system ? "bmwc-system" : "bmwc-chat";
         p.senderUuid = msg.playerUuid == null ? "" : msg.playerUuid;
         String replyTargetUuid = replyTargetUuidFor(msg);
@@ -6002,7 +6088,7 @@ public class WebChatServer {
         p.type = "reply";
         p.title = notificationSender(msg.sender);
         p.body = msg.message == null ? "" : msg.message;
-        p.url = standaloneOpenUrlWithParams(Map.of("bmwcMessage", String.valueOf(msg.id == null ? "" : msg.id)));
+        p.url = webPushNavigationUrlWithParams(Map.of("bmwcMessage", String.valueOf(msg.id == null ? "" : msg.id)));
         p.tag = "bmwc-reply-" + targetUuid.replaceAll("[^A-Za-z0-9_-]", "");
         p.senderUuid = msg.playerUuid == null ? "" : msg.playerUuid;
         p.replyTargetUuid = targetUuid;
@@ -6016,7 +6102,7 @@ public class WebChatServer {
         p.type = "dm";
         p.title = notificationSender(senderName);
         p.body = body == null ? "" : body;
-        p.url = standaloneOpenUrlWithParams(Map.of("bmwcDmThread", String.valueOf(threadId == null ? "" : threadId), "bmwcDmMessage", String.valueOf(messageId > 0 ? messageId : 0)));
+        p.url = webPushNavigationUrlWithParams(Map.of("bmwcDmThread", String.valueOf(threadId == null ? "" : threadId), "bmwcDmMessage", String.valueOf(messageId > 0 ? messageId : 0)));
         p.tag = "bmwc-dm-" + String.valueOf(targetUuid == null ? "" : targetUuid).replaceAll("[^A-Za-z0-9_-]", "");
         p.senderUuid = senderUuid == null ? "" : senderUuid;
         webPush.sendToUser(targetUuid, p);
@@ -6036,7 +6122,7 @@ public class WebChatServer {
         p.type = "group";
         p.title = roomName + " · " + notificationSender(senderName);
         p.body = body == null ? "" : body;
-        p.url = standaloneOpenUrlWithParams(Map.of("bmwcGroupRoom", roomId, "bmwcGroupMessage", String.valueOf(message == null || message.id <= 0 ? 0 : message.id)));
+        p.url = webPushNavigationUrlWithParams(Map.of("bmwcGroupRoom", roomId, "bmwcGroupMessage", String.valueOf(message == null || message.id <= 0 ? 0 : message.id)));
         p.tag = "bmwc-group-" + roomId.replaceAll("[^A-Za-z0-9_-]", "");
         p.senderUuid = senderUuid == null ? (message == null ? "" : message.senderUuid) : senderUuid;
         webPush.sendToUsers(members, p);
@@ -6048,9 +6134,8 @@ public class WebChatServer {
         return "/";
     }
 
-    private String standaloneOpenUrlWithParams(Map<String, String> params) {
-        String base = standaloneOpenUrl();
-        if (params == null || params.isEmpty()) return base;
+    private String webPushNavigationUrlWithParams(Map<String, String> params) {
+        if (params == null || params.isEmpty()) return "";
         StringBuilder query = new StringBuilder();
         for (Map.Entry<String, String> e : params.entrySet()) {
             String k = e.getKey() == null ? "" : e.getKey().trim();
@@ -6061,9 +6146,12 @@ public class WebChatServer {
             query.append('=');
             query.append(java.net.URLEncoder.encode(v, StandardCharsets.UTF_8));
         }
-        if (query.length() == 0) return base;
-        String sep = base.contains("?") ? (base.endsWith("?") || base.endsWith("&") ? "" : "&") : "?";
-        return base + sep + query;
+        if (query.length() == 0) return "";
+        // Web Push subscriptions already store the actual page URL. Keep server
+        // payloads pathless so addon subscriptions are not accidentally forced
+        // back to the standalone /chat path. The push sender merges these params
+        // into the subscription openUrl.
+        return "?" + query;
     }
 
     private String notificationSender(String value) {

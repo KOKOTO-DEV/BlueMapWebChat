@@ -1,4 +1,4 @@
-# BlueMapWebChat 4.5.1 configuration
+# BlueMapWebChat 4.5.2 configuration
 
 # Master switch for BlueMapWebChat.
 # New generated configs default to false so the plugin creates config.yml first
@@ -604,6 +604,10 @@ upload:
   # 0 = unlimited for max-* upload limits.
   max-uploads-per-minute: 4
   max-file-size-mb: 20
+  # Total storage quota for files inside upload.directory.
+  # 0 = unlimited. When exceeded, the oldest unreferenced uploads are deleted first.
+  # If the quota still cannot fit the new file, the upload is rejected.
+  max-total-size-mb: 0
   max-files-per-message: 3
   directory: "uploads"
   # Public URL base for uploaded files.

@@ -22,7 +22,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-4.5.1.jar
+target/BlueMapWebChat-4.5.2.jar
 ```
 
 ## 安装
@@ -66,6 +66,8 @@ upload:
   # 推荐留空。上传 URL 会自动跟随 /bmwc/api。
   # 旧式显式写法也可用: "/bmwc/api" 或 "/bmwc/api/uploads"
   public-base-url: ""
+  # 0 = 不限制。正数会限制 upload.directory 的总文件容量。
+  max-total-size-mb: 0
 
 emoji:
   # 推荐留空。表情 URL 会自动跟随 /bmwc/api。

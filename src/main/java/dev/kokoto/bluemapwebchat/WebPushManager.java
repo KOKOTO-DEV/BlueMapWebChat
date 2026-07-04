@@ -341,7 +341,12 @@ public class WebPushManager {
         String base = sub == null ? "" : clean(sub.openUrl, 2048);
         if (base.isBlank()) return payload;
         Map<String, String> nav = extractNavigationParams(payload);
-        if (nav.isEmpty()) return payload.isBlank() ? base : payload;
+        // The subscription openUrl is the canonical page where the user enabled
+        // Web Push. Payload URLs are kept only as navigation hints/fallbacks.
+        // Without this, no-target notifications such as test/system pushes could
+        // still open the configured standalone path (/chat) even for BlueMap addon
+        // subscriptions.
+        if (nav.isEmpty()) return base;
         return withNavigationParams(base, nav);
     }
 
