@@ -278,9 +278,9 @@ TikTok 使用官方 `player/v1` iframe，并应用 `description=0`、`music_info
 
 ## 浏览器通知和 Web Push
 
-`browser-notifications` 控制网页打开期间由浏览器显示的系统通知。用户仍需要在浏览器中允许通知权限。`notify-*` 值是服务器端允许上限：保持 `true` 时每个用户/浏览器可在聊天设置中自行开关；设为 `false` 时，即使用户启用，该通知类型也会被阻止。`notify-keywords` 控制用户自定义关键词提醒；关键词列表按浏览器/设备保存，并且仅同步到该设备的 Web Push 订阅用于后台匹配。
+`notifications` 控制浏览器系统通知和移动/后台 Web Push 共用的服务器端默认值/允许上限。用户仍需要在浏览器中允许通知权限。`notify-*` 保持 `true` 时每个用户/浏览器可在聊天设置中自行开关；设为 `false` 时，即使用户启用，该通知类型也会被阻止。旧的 `browser-notifications.*`、`web-push.enabled`、`web-push.notify-*` 仅在对应 `notifications.*` 不存在时作为兼容输入读取；新的默认配置只使用 `notifications.*`。
 
-`web-push` 当 HTTPS 或 localhost、浏览器通知权限以及 Service Worker / Push API 支持都满足时，可发送后台/移动推送通知。Android/desktop 浏览器在当前 origin 支持 Service Worker + Push API 时，可从 BlueMap addon 或 standalone 页面启用推送。普通 iOS/iPadOS 浏览器标签页不支持 Web Push；只能在把页面添加到主屏幕后作为 Web App 打开时尝试使用，未支持的行为应视为平台限制。`web-push` 的 `notify-*` 值同样是推送投递的服务器端允许上限。若 `web-push.enabled: true` 且 VAPID key 留空，插件会在 `web-push-vapid.properties` 中生成持久 key。`web-push.subject` 建议使用真实的 VAPID 联系/运营者识别 URI，例如 `mailto:admin@example.com` 或 `https://map.example.com`。不建议使用任意文本；某些 push 服务可能拒绝或降低信任度。移动端“可能是垃圾信息”等警告由浏览器/操作系统控制，插件无法关闭。使用稳定的 HTTPS 域名、有意义的通知标题/正文、保守的通知过滤设置，并避免频繁测试通知，可降低出现概率。
+`web-push` 仅包含移动/后台 Web Push 传输设置。当 HTTPS 或 localhost、浏览器通知权限以及 Service Worker / Push API 支持都满足时，可发送后台/移动推送通知。Android/desktop 浏览器在当前 origin 支持 Service Worker + Push API 时，可从 BlueMap addon 或 standalone 页面启用推送。普通 iOS/iPadOS 浏览器标签页不支持 Web Push；只能在把页面添加到主屏幕后作为 Web App 打开时尝试使用。若 `notifications.enabled: true` 且 VAPID key 留空，插件会在 `web-push-vapid.properties` 中生成持久 key。`web-push.subject` 建议使用真实的 VAPID 联系/运营者识别 URI。
 
 ## PIP
 

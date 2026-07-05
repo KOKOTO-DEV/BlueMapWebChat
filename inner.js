@@ -1435,6 +1435,9 @@
       }
       return r.json();
     }).catch(err => {
+      if (isAuthExpiredApiError(err)) {
+        handleAuthExpired("api");
+      }
       if (controller && err && err.name === "AbortError") {
         err.bmwcTimeout = true;
       }
@@ -2417,7 +2420,7 @@
     if (source === "event" || source === "system" || source === "server") {
       if (senderKey === "server") return t("sender.server", "Server");
       if (senderKey === "command") return t("sender.command", "Command");
-      if (senderKey === "system") return t("sender.system", "System");
+      if (senderKey === "system") return t("sender.system", "Server");
     }
     if (source === "discord" && senderKey === "discord") return t("sender.discord", "Discord");
     return sender;
@@ -2871,7 +2874,16 @@
             showBrowserNotification(configuredNotificationTitle(), t("preferences.notificationsTest", "Test notification"), {tag: "bmwc-test", force: true});
           } else if (action === "setNotificationOptions") {
             const opts = data.options && typeof data.options === "object" ? data.options : {};
-            Object.keys(opts).forEach(name => setNotificationOption(name, opts[name] === true));
+            const hasSystemMode = Object.prototype.hasOwnProperty.call(opts, "systemMode");
+            if (hasSystemMode) setNotificationSystemMode(opts.systemMode);
+            Object.keys(opts).forEach(name => {
+              if (name === "systemMode") return;
+              // The legacy system boolean is only the on/off companion for
+              // notifySystemMode. When a concrete mode is sent, applying the
+              // boolean afterwards would change join-leave back to all.
+              if (hasSystemMode && name === "system") return;
+              setNotificationOption(name, opts[name] === true);
+            });
             if (localStorage.getItem("bmwc.webPush.enabled") === "1") await enableWebPush();
           } else if (action === "setKeywords") {
             setNotificationKeywordsText(data.keywords || "");
@@ -2883,7 +2895,15 @@
             if (localStorage.getItem("bmwc.webPush.enabled") === "1") await enableWebPush();
           } else if (action === "enableWebPush") {
             const opts = data.options && typeof data.options === "object" ? data.options : null;
-            if (opts) Object.keys(opts).forEach(name => setNotificationOption(name, opts[name] === true));
+            if (opts) {
+              const hasSystemMode = Object.prototype.hasOwnProperty.call(opts, "systemMode");
+              if (hasSystemMode) setNotificationSystemMode(opts.systemMode);
+              Object.keys(opts).forEach(name => {
+                if (name === "systemMode") return;
+                if (hasSystemMode && name === "system") return;
+                setNotificationOption(name, opts[name] === true);
+              });
+            }
             await enableWebPush();
           } else if (action === "disableWebPush") {
             await disableWebPush();
@@ -3430,6 +3450,81 @@
     }
   }
 
+
+  function clearLoginStorage() {
+    state.token = "";
+    state.username = "";
+    state.role = "";
+    try {
+      localStorage.removeItem("bmwc.token");
+      localStorage.removeItem("bmwc.username");
+      localStorage.removeItem("bmwc.role");
+    } catch (_) {}
+  }
+
+  function resetPrivateChatState() {
+    state.dmUnread = 0;
+    state.dmThreads = [];
+    state.dmAdminThreads = [];
+    state.dmMessages = [];
+    state.dmActiveThreadId = "";
+    state.dmActiveThread = null;
+    state.dmCleanupPreview = null;
+    state.groupUnread = 0;
+    state.groupRooms = [];
+    state.groupInvites = [];
+    state.groupHiddenRooms = [];
+    state.groupAdminRooms = [];
+    state.groupMessages = [];
+    state.groupActiveRoomId = "";
+    state.groupActiveRoom = null;
+    state.groupCleanupPreview = null;
+    state.privateChatSuperAdmin = false;
+  }
+
+  function clearVisibleChatForLoggedOutHidden(reason = "auth-expired") {
+    if (!guestChatHidden()) return;
+    state.messages = [];
+    state.nextLocalMessageId = 1;
+    state.replyTarget = null;
+    state.pins = [];
+    state.historyHasMore = false;
+    state.historyHasAfter = false;
+    state.historyOldestId = "";
+    state.historyNewestId = "";
+    state.historyLoading = false;
+    state.historyLoadSeq++;
+    try { document.querySelectorAll(".bmwc-modal-backdrop, .bmwc-modal-wrap").forEach(el => el.remove()); } catch (_) {}
+    try { if (state.eventSource) state.eventSource.close(); } catch (_) {}
+    state.eventSource = null;
+    clearStreamReconnectTimer();
+    resetPrivateChatState();
+    renderPinnedBar();
+    renderVirtualMessages({stickToBottom: true, ignoreVisibleRangeProtection: true});
+    updateDirectMessageButton();
+    updateGroupChatButton();
+    updateNotificationInboxButton();
+    updateGuestVisibility();
+    updateFrameSize();
+  }
+
+  function handleAuthExpired(reason = "expired") {
+    const hadToken = !!state.token;
+    clearLoginStorage();
+    setLoginRequiredUntilLogin(true);
+    updateLoginState();
+    updateGuestVisibility();
+    clearVisibleChatForLoggedOutHidden(reason);
+    if (!guestChatHidden() && hadToken) connectStream({refreshAfterOpen: true, reason: "auth-" + reason});
+  }
+
+  function isAuthExpiredApiError(err) {
+    if (!err || !state.token) return false;
+    const status = Number(err.status || 0);
+    const code = err.response && err.response.error ? String(err.response.error) : "";
+    if (code === "not_logged_in" || code === "auth_expired" || code === "invalid_token") return true;
+    return (status === 401 || status === 403) && /(?:token|auth|logged|permission)/i.test(code || String(err.message || ""));
+  }
 
   function setLoginRequiredUntilLogin(required) {
     state.loginRequiredUntilLogin = required === true;
@@ -7063,6 +7158,7 @@
   }
 
   async function loadHistory(older = false, options = {}) {
+    if (guestChatHidden()) return;
     if (state.historyLoading) return;
     if (older && !state.historyHasMore) return;
     if (older && isScrollInteractionActive() && !options.forceDuringScroll) {
@@ -7481,6 +7577,14 @@
           if (state.messages && state.messages.length) scheduleVirtualRender({preserveScroll: true});
         }
       } catch (_) {}
+    });
+    es.addEventListener("auth", e => {
+      try {
+        const data = JSON.parse(e.data || "{}");
+        handleAuthExpired(data.reason || "expired");
+      } catch (_) {
+        handleAuthExpired("expired");
+      }
     });
     es.addEventListener("clear", () => {
       state.messages = [];
@@ -9959,7 +10063,47 @@
     return readStoredBool(def.key, def.fallback());
   }
 
+  const NOTIFICATION_SYSTEM_MODE_KEY = "bmwc.notify.systemMode";
+
+  function normalizeNotificationSystemMode(value, fallback = "all") {
+    const v = String(value || "").trim().toLowerCase().replace(/_/g, "-");
+    if (v === "all" || v === "join-leave" || v === "off") return v;
+    const f = String(fallback || "all").trim().toLowerCase().replace(/_/g, "-");
+    return (f === "all" || f === "join-leave" || f === "off") ? f : "all";
+  }
+
+  function notificationSystemMode() {
+    if (!notificationServerAllows("system")) return "off";
+    try {
+      const stored = localStorage.getItem(NOTIFICATION_SYSTEM_MODE_KEY);
+      if (stored !== null) return normalizeNotificationSystemMode(stored, "all");
+    } catch (_) {}
+    const def = notificationOptionDef("system");
+    return readStoredBool(def && def.key || "bmwc.notify.system", notificationServerDefault("system")) ? "all" : "off";
+  }
+
+  function setNotificationSystemMode(mode) {
+    const value = notificationServerAllows("system") ? normalizeNotificationSystemMode(mode, "all") : "off";
+    try { localStorage.setItem(NOTIFICATION_SYSTEM_MODE_KEY, value); } catch (_) {}
+    const def = notificationOptionDef("system");
+    if (def) writeStoredBool(def.key, value !== "off");
+  }
+
+  function isJoinLeaveSystemMessage(msg) {
+    if (!msg) return false;
+    const key = String(msg.i18nKey || "").trim().toLowerCase();
+    return key.endsWith("minecraft-join") || key.endsWith("minecraft-quit") || key.endsWith("first-join");
+  }
+
+  function systemNotificationAllowedForMessage(msg) {
+    const mode = notificationSystemMode();
+    if (mode === "off") return false;
+    if (mode === "join-leave") return isJoinLeaveSystemMessage(msg);
+    return true;
+  }
+
   function setNotificationOption(name, value) {
+    if (name === "system") { setNotificationSystemMode(value ? "all" : "off"); return; }
     const def = notificationOptionDef(name);
     if (!def) return;
     if (!notificationServerAllows(name)) {
@@ -9971,7 +10115,8 @@
 
   function currentNotificationOptions() {
     const out = {};
-    NOTIFICATION_OPTION_DEFS.forEach(def => { out[def.name] = notificationOption(def.name); });
+    NOTIFICATION_OPTION_DEFS.forEach(def => { out[def.name] = def.name === "system" ? notificationSystemMode() !== "off" : notificationOption(def.name); });
+    out.systemMode = notificationSystemMode();
     return out;
   }
 
@@ -10044,6 +10189,44 @@
   }
 
 
+  function notifyLocaleShortLabel(kind) {
+    const navLang = (typeof navigator !== "undefined" && navigator.language) ? navigator.language : "";
+    const lang = String(state.selectedLanguage || navLang || "").toLowerCase();
+    const ko = lang.startsWith("ko");
+    const ja = lang.startsWith("ja");
+    const zh = lang.startsWith("zh");
+    if (kind === "server") return ko ? "서버" : ja ? "サーバー" : zh ? "服务器" : "Server";
+    if (kind === "all") return ko ? "전체" : ja ? "すべて" : zh ? "全部" : "All";
+    if (kind === "joinLeave") return ko ? "입장/퇴장만" : ja ? "参加/退出のみ" : zh ? "仅加入/退出" : "Join/leave only";
+    if (kind === "off") return ko ? "끄기" : ja ? "オフ" : zh ? "关闭" : "Off";
+    return "";
+  }
+
+  function normalizeNotifySystemLabel(value) {
+    const s = String(value || "").trim();
+    if (!s) return notifyLocaleShortLabel("server");
+    if (/시스템\s*[\/]\s*서버/i.test(s) || /system\s*[\/]\s*server/i.test(s)) return notifyLocaleShortLabel("server");
+    return s;
+  }
+
+  function normalizeNotifySystemModeLabel(mode, value) {
+    const s = String(value || "").trim();
+    const hasServerWord = /시스템|서버|system|server|サーバー|服务器/i.test(s);
+    if (mode === "all") {
+      if (!s || hasServerWord || /^(?:all|전체|すべて|全部)$/i.test(s)) return notifyLocaleShortLabel("all");
+      return s;
+    }
+    if (mode === "join-leave") {
+      if (!s || hasServerWord) return notifyLocaleShortLabel("joinLeave");
+      return s;
+    }
+    if (mode === "off") {
+      if (!s || hasServerWord) return notifyLocaleShortLabel("off");
+      return s;
+    }
+    return s;
+  }
+
   function notificationOptionsHtml(prefix, labels = {}) {
     const row = (name, fallback) => {
       const def = notificationOptionDef(name);
@@ -10054,13 +10237,21 @@
       const text = labels[def && def.label] || fallback;
       return `<label class="bmwc-notify-option${allowed ? "" : " bmwc-notify-option-disabled"}"${title}><input id="${prefix}-${name}" type="checkbox" data-bmwc-notify-option="${name}"${checked}${disabled}> <span>${esc(text)}</span></label>`;
     };
+    const systemAllowed = notificationServerAllows("system");
+    const systemMode = notificationSystemMode();
+    const systemTitle = systemAllowed ? "" : ` title="${esc(labels.notifyDisabledByServer || "Disabled by server configuration.")}"`;
+    const systemLabel = normalizeNotifySystemLabel(labels.notifySystem || "");
+    const systemAllLabel = normalizeNotifySystemModeLabel("all", labels.notifySystemAll || "");
+    const systemJoinLeaveLabel = normalizeNotifySystemModeLabel("join-leave", labels.notifySystemJoinLeave || "");
+    const systemOffLabel = normalizeNotifySystemModeLabel("off", labels.notifySystemOff || "");
+    const systemSelect = `<label class="bmwc-notify-option${systemAllowed ? "" : " bmwc-notify-option-disabled"}"${systemTitle}><span>${esc(systemLabel)}</span><select id="${prefix}-system-mode" data-bmwc-notify-system-mode ${systemAllowed ? "" : "disabled"}><option value="all"${systemMode === "all" ? " selected" : ""}>${esc(systemAllLabel)}</option><option value="join-leave"${systemMode === "join-leave" ? " selected" : ""}>${esc(systemJoinLeaveLabel)}</option><option value="off"${systemMode === "off" ? " selected" : ""}>${esc(systemOffLabel)}</option></select></label>`;
     return `<div class="bmwc-notify-options">
       ${row("normalChat", "Normal chat")}
       ${row("dm", "DM")}
       ${row("groupChat", "Group chat")}
       ${row("mentions", "Mentions")}
       ${row("replies", "Replies")}
-      ${row("system", "System/server")}
+      ${systemSelect}
       ${row("keywords", "Keyword alerts")}
       ${row("ownMessages", "Own messages")}
       ${row("preview", "Message preview")}
@@ -10069,6 +10260,13 @@
 
   function bindNotificationOptionInputs(container, onChange) {
     if (!container) return;
+    container.querySelectorAll("[data-bmwc-notify-system-mode]").forEach(select => {
+      if (select.disabled) { select.value = "off"; return; }
+      select.addEventListener("change", () => {
+        setNotificationSystemMode(select.value);
+        if (typeof onChange === "function") onChange(currentNotificationOptions());
+      });
+    });
     container.querySelectorAll("[data-bmwc-notify-option]").forEach(input => {
       if (input.disabled) { input.checked = false; return; }
       input.addEventListener("change", () => {
@@ -10160,12 +10358,12 @@
 
   function showBrowserNotification(title, body, options = {}) {
     if (!state.browserNotificationsEnabled || localStorage.getItem("bmwc.notifications.enabled") !== "1") return false;
-    const finalTitle = title || configuredNotificationTitle();
-    const finalBody = String(body || "");
+    const finalTitle = plainNotificationText(title || configuredNotificationTitle(), 120);
+    const finalBody = plainNotificationText(body || "", 240);
     const navUrl = options.url || notificationNavigationUrl(options);
     if (options.store !== false) addNotificationInboxItem({title: finalTitle, body: finalBody, type: options.type || "notification", tag: options.tag || "", messageId: options.messageId || "", dmThreadId: options.dmThreadId || "", dmMessageId: options.dmMessageId || "", groupRoomId: options.groupRoomId || "", groupMessageId: options.groupMessageId || "", url: navUrl || ""});
     if (!attentionNeededForNotification(options.force === true)) return false;
-    const visibleBody = browserNotificationOption("preview") ? String(body || "") : "";
+    const visibleBody = browserNotificationOption("preview") ? finalBody : "";
     if (window.parent && window.parent !== window && !state.isPip) {
       postFrame("showNotification", {
         title: finalTitle,
@@ -10203,7 +10401,9 @@
   function plainNotificationText(value, limit = 180) {
     let text = String(value || "");
     text = text.replace(/[§&]x(?:[§&][0-9a-fA-F]){6}/g, "");
+    text = text.replace(/&#[0-9a-fA-F]{6}/g, "");
     text = text.replace(/[§&][0-9a-fA-Fk-oK-OrR]/g, "");
+    text = text.replace(/<\/?(?:#[0-9a-fA-F]{6}|[a-zA-Z][a-zA-Z0-9_-]*)(?::[^<>]*)?>/g, "");
     text = text.replace(/<[^>]+>/g, "");
     text = text.replace(/\s+/g, " ").trim();
     if (limit > 0 && text.length > limit) text = text.slice(0, Math.max(0, limit - 1)) + "…";
@@ -10247,8 +10447,9 @@
     const source = String(msg.source || "").toLowerCase();
     const system = source === "event" || source === "system" || source === "server";
     const sender = plainNotificationText(msg.sender || configuredNotificationTitle(), 80);
-    const body = plainNotificationText(msg.message || "", 180);
-    const keyword = notificationKeywordMatch(sender + " " + body);
+    const body = plainNotificationText(displayMessageText(msg) || msg.message || "", 180);
+    const systemAllowed = !system || systemNotificationAllowedForMessage(msg);
+    const keyword = systemAllowed ? notificationKeywordMatch(sender + " " + body) : "";
     if (keyword && browserNotificationOption("keywords")) {
       showBrowserNotification(keywordNotificationTitle(keyword), (system ? configuredNotificationTitle() : sender) + (body ? ": " + body : ""), {tag: "bmwc-keyword-" + keyword, type: "keyword", messageId: msg.id || ""});
       return;
@@ -10260,7 +10461,7 @@
     }
     const mention = messageMentionsCurrentUser(msg.message || "");
     if (system) {
-      if (!browserNotificationOption("system")) return;
+      if (!systemAllowed) return;
     } else if (mention) {
       if (!browserNotificationOption("mentions")) return;
     } else if (!browserNotificationOption("normalChat")) {
@@ -10573,6 +10774,7 @@
         notifyMentions: opts.mentions === true,
         notifyReplies: opts.replies === true,
         notifySystem: opts.system === true,
+        notifySystemMode: opts.systemMode || (opts.system === true ? "all" : "off"),
         notifyKeywords: opts.keywords === true,
         keywords: notificationKeywordsText(),
         language: selectedLocale(),
@@ -10715,7 +10917,10 @@
         notifyGroupChat: t("preferences.notifyGroupChat", "Group chat"),
         notifyMentions: t("preferences.notifyMentions", "Mentions"),
         notifyReplies: t("preferences.notifyReplies", "Replies"),
-        notifySystem: t("preferences.notifySystem", "System/server"),
+        notifySystem: t("preferences.notifySystem", "Server"),
+        notifySystemAll: t("preferences.notifySystemAll", "All"),
+        notifySystemJoinLeave: t("preferences.notifySystemJoinLeave", "Join/leave only"),
+        notifySystemOff: t("preferences.notifySystemOff", "Off"),
         notifyKeywords: t("preferences.notifyKeywords", "Keyword alerts"),
         notifyKeywordsList: t("preferences.notifyKeywordsList", "Keyword alert words"),
         notifyKeywordsHelp: t("preferences.notifyKeywordsHelp", "Comma or line separated. Stored in this browser; mobile/background push syncs them only with this device's push subscription."),
@@ -14428,29 +14633,9 @@
     wrap.querySelector("#bmwc-set-pw").onclick = () => { wrap.remove(); openSetPasswordModal(); };
     wrap.querySelector("#bmwc-logout").onclick = async () => {
       try { await api("/auth/logout", {method: "POST", body: JSON.stringify({token: state.token})}); } catch (_) {}
-      state.token = ""; state.username = ""; state.role = "";
-      localStorage.removeItem("bmwc.token");
-      localStorage.removeItem("bmwc.username");
-      localStorage.removeItem("bmwc.role");
-      setLoginRequiredUntilLogin(true);
-      updateLoginState();
-      await loadPins();
-      state.dmUnread = 0;
-      state.dmThreads = [];
-      state.groupUnread = 0;
-      state.groupRooms = [];
-      state.groupInvites = [];
-      state.groupHiddenRooms = [];
-      state.groupAdminRooms = [];
-      state.dmAdminThreads = [];
-      state.dmCleanupPreview = null;
-      state.groupCleanupPreview = null;
-      state.privateChatSuperAdmin = false;
-      updateDirectMessageButton();
-      updateGroupChatButton();
+      handleAuthExpired("logout");
       await loadCommands();
       await refreshCaptcha();
-      connectStream({refreshAfterOpen: true, reason: "logout"});
       wrap.remove();
     };
   }
@@ -14478,11 +14663,8 @@
     try {
       const res = await api("/auth/me?token=" + encodeURIComponent(state.token));
       if (!res.ok) {
-        state.token = ""; state.username = ""; state.role = "";
-        localStorage.removeItem("bmwc.token");
-        localStorage.removeItem("bmwc.username");
-        localStorage.removeItem("bmwc.role");
-        setLoginRequiredUntilLogin(true);
+        handleAuthExpired("verify");
+        return;
       } else {
         state.username = res.username;
         state.role = res.role;
@@ -14531,7 +14713,7 @@
     await loadCommands();
     await loadDirectMessageThreads(true);
     await loadGroupChatRooms(true);
-    await loadHistory();
+    if (!guestChatHidden()) await loadHistory();
     await navigateFromNotification(window.location.href);
     connectStream();
   }

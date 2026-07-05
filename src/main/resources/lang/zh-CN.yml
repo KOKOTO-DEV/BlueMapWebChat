@@ -314,7 +314,10 @@ web:
     notifyGroupChat: '群聊'
     notifyReplies: '回复'
     notifyMentions: '提及'
-    notifySystem: '系统/服务器'
+    notifySystem: '服务器'
+    notifySystemAll: '全部'
+    notifySystemJoinLeave: '仅加入/退出'
+    notifySystemOff: '关闭'
     notifyKeywords: '关键词提醒'
     notifyKeywordsList: '关键词提醒词'
     notifyKeywordsHelp: '用逗号或换行分隔。保存在此浏览器中；移动/后台推送仅同步到当前设备的推送订阅。'
@@ -563,15 +566,15 @@ web:
     originalId: '原始ID: {name}'
     displayName: '显示名称: {name}'
     command: 命令
-    system: 系统
+    system: 服务器
   source:
     game: 游戏
     web: 网页
     guest: 访客
     discord: Discord
-    system: 系统
+    system: 服务器
     server: 服务器
-    event: 系统
+    event: 服务器
   command:
     onlyPlayers: 此命令只能由玩家使用。
     noPermission: 你没有权限。

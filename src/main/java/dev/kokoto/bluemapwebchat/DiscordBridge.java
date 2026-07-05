@@ -20,6 +20,8 @@ public class DiscordBridge {
     private Object jdaListener;
     private Thread jdaRetryThread;
     private volatile boolean started;
+    private static final Map<String, Long> GLOBAL_DISCORD_EVENT_IDS = new ConcurrentHashMap<>();
+    private static final Map<String, Long> GLOBAL_DISCORD_INBOUND_KEYS = new ConcurrentHashMap<>();
     private final Map<String, Long> recentDiscordInbound = new ConcurrentHashMap<>();
     private final Map<String, Long> recentDiscordEventIds = new ConcurrentHashMap<>();
     private final Map<String, Long> recentDirectDiscordOutbound = new ConcurrentHashMap<>();
@@ -202,6 +204,8 @@ public class DiscordBridge {
             Object message = call(event, "getMessage");
 
             String eventId = callString(message, "getId");
+            if (!eventId.isBlank() && seenRecentlyGlobal(GLOBAL_DISCORD_EVENT_IDS, eventId, 120_000L)) return;
+            if (!eventId.isBlank()) GLOBAL_DISCORD_EVENT_IDS.put(eventId, System.currentTimeMillis());
             if (!eventId.isBlank() && seenRecently(recentDiscordEventIds, eventId, 60_000L)) return;
             if (!eventId.isBlank()) recentDiscordEventIds.put(eventId, System.currentTimeMillis());
 
@@ -217,6 +221,10 @@ public class DiscordBridge {
             rememberDiscordInbound(content);
 
             String sender = discordSender(event, author);
+            String inboundKey = normalizeEcho(callString(channel, "getId") + "|" + sender + "|" + content);
+            if (!inboundKey.isBlank() && seenRecentlyGlobal(GLOBAL_DISCORD_INBOUND_KEYS, inboundKey, 5_000L)) return;
+            if (!inboundKey.isBlank()) GLOBAL_DISCORD_INBOUND_KEYS.put(inboundKey, System.currentTimeMillis());
+
             String webSender = format(c.discordToWebSenderFormat, sender, "DISCORD", "discord", content, c.discordChannel);
             String webMessage = format(c.discordToWebMessageFormat, sender, "DISCORD", "discord", content, c.discordChannel);
 
@@ -450,6 +458,32 @@ public class DiscordBridge {
         pruneRecent(System.currentTimeMillis(), Math.max(1, c.discordSuppressGameEchoSeconds) * 1000L);
     }
 
+    private static boolean seenRecentlyGlobal(Map<String, Long> map, String key, long ttlMillis) {
+        long now = System.currentTimeMillis();
+        String k = key == null ? "" : key.trim();
+        if (k.isBlank()) return false;
+
+        // JDA listeners can survive /reload or plugin re-enable cycles. A static map
+        // only de-duplicates listeners loaded by the same classloader, so also use a
+        // JVM-wide System property marker to suppress duplicate Discord -> web relay
+        // attempts from stale listeners in older classloaders.
+        String propKey = "dev.kokoto.bmwc.discord.dedupe." + Integer.toHexString(k.hashCode()) + "." + k.length();
+        synchronized (System.getProperties()) {
+            String raw = System.getProperty(propKey, "");
+            try {
+                long old = raw.isBlank() ? 0L : Long.parseLong(raw);
+                if (old > 0L && now - old <= ttlMillis) return true;
+            } catch (NumberFormatException ignored) {
+            }
+            System.setProperty(propKey, String.valueOf(now));
+        }
+
+        Long old = map.get(k);
+        if (old != null && now - old <= ttlMillis) return true;
+        map.entrySet().removeIf(e -> now - e.getValue() > ttlMillis);
+        return false;
+    }
+
     private boolean seenRecently(Map<String, Long> map, String key, long ttlMillis) {
         long now = System.currentTimeMillis();
         Long old = map.get(key);
@@ -462,6 +496,8 @@ public class DiscordBridge {
         recentDiscordInbound.entrySet().removeIf(e -> now - e.getValue() > ttlMillis);
         recentDiscordEventIds.entrySet().removeIf(e -> now - e.getValue() > 60_000L);
         recentDirectDiscordOutbound.entrySet().removeIf(e -> now - e.getValue() > 60_000L);
+        GLOBAL_DISCORD_EVENT_IDS.entrySet().removeIf(e -> now - e.getValue() > 120_000L);
+        GLOBAL_DISCORD_INBOUND_KEYS.entrySet().removeIf(e -> now - e.getValue() > 5_000L);
     }
 
     private String normalizeEcho(String value) {

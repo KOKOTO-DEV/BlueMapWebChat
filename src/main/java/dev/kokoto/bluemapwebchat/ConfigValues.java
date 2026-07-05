@@ -561,19 +561,31 @@ public class ConfigValues {
         v.uiFontFamily = c.getString("ui.font-family", "");
         v.uiPictureInPictureEnabled = c.getBoolean("ui.picture-in-picture.enabled", false);
 
-        v.browserNotificationsEnabled = c.getBoolean("browser-notifications.enabled", true);
-        v.browserNotificationsOnlyWhenHidden = c.getBoolean("browser-notifications.only-when-hidden", true);
-        v.browserNotificationsNotifyNormalChat = c.getBoolean("browser-notifications.notify-normal-chat", true);
-        v.browserNotificationsNotifyDm = c.getBoolean("browser-notifications.notify-dm", true);
-        v.browserNotificationsNotifyGroupChat = c.getBoolean("browser-notifications.notify-group-chat", true);
-        v.browserNotificationsNotifyMentions = c.getBoolean("browser-notifications.notify-mentions", true);
-        v.browserNotificationsNotifyReplies = c.getBoolean("browser-notifications.notify-replies", true);
-        v.browserNotificationsNotifySystem = c.getBoolean("browser-notifications.notify-system", true);
-        v.browserNotificationsNotifyKeywords = c.getBoolean("browser-notifications.notify-keywords", true);
-        v.browserNotificationsNotifyOwnMessages = c.getBoolean("browser-notifications.notify-own-messages", true);
-        v.browserNotificationsShowMessagePreview = c.getBoolean("browser-notifications.show-message-preview", true);
+        boolean notificationsEnabled = getBooleanCompat(c, "notifications.enabled", true, "browser-notifications.enabled", "web-push.enabled");
+        boolean notificationsOnlyWhenHidden = getBooleanCompat(c, "notifications.only-when-hidden", true, "browser-notifications.only-when-hidden");
+        boolean notifyNormalChat = getBooleanCompat(c, "notifications.notify-normal-chat", true, "browser-notifications.notify-normal-chat", "web-push.notify-normal-chat");
+        boolean notifyDm = getBooleanCompat(c, "notifications.notify-dm", true, "browser-notifications.notify-dm", "web-push.notify-dm");
+        boolean notifyGroupChat = getBooleanCompat(c, "notifications.notify-group-chat", true, "browser-notifications.notify-group-chat", "web-push.notify-group-chat");
+        boolean notifyMentions = getBooleanCompat(c, "notifications.notify-mentions", true, "browser-notifications.notify-mentions", "web-push.notify-mentions");
+        boolean notifyReplies = getBooleanCompat(c, "notifications.notify-replies", true, "browser-notifications.notify-replies", "web-push.notify-replies");
+        boolean notifySystem = getBooleanCompat(c, "notifications.notify-system", true, "browser-notifications.notify-system", "web-push.notify-system");
+        boolean notifyKeywords = getBooleanCompat(c, "notifications.notify-keywords", true, "browser-notifications.notify-keywords", "web-push.notify-keywords");
+        boolean notifyOwnMessages = getBooleanCompat(c, "notifications.notify-own-messages", true, "browser-notifications.notify-own-messages", "web-push.notify-own-messages");
+        boolean notifyPreview = getBooleanCompat(c, "notifications.show-message-preview", true, "browser-notifications.show-message-preview", "web-push.show-message-preview");
 
-        v.webPushEnabled = c.getBoolean("web-push.enabled", true);
+        v.browserNotificationsEnabled = notificationsEnabled;
+        v.browserNotificationsOnlyWhenHidden = notificationsOnlyWhenHidden;
+        v.browserNotificationsNotifyNormalChat = notifyNormalChat;
+        v.browserNotificationsNotifyDm = notifyDm;
+        v.browserNotificationsNotifyGroupChat = notifyGroupChat;
+        v.browserNotificationsNotifyMentions = notifyMentions;
+        v.browserNotificationsNotifyReplies = notifyReplies;
+        v.browserNotificationsNotifySystem = notifySystem;
+        v.browserNotificationsNotifyKeywords = notifyKeywords;
+        v.browserNotificationsNotifyOwnMessages = notifyOwnMessages;
+        v.browserNotificationsShowMessagePreview = notifyPreview;
+
+        v.webPushEnabled = notificationsEnabled;
         v.webPushVapidPublicKey = c.getString("web-push.vapid-public-key", "");
         v.webPushVapidPrivateKey = c.getString("web-push.vapid-private-key", "");
         v.webPushSubject = c.getString("web-push.subject", "mailto:admin@example.com");
@@ -582,15 +594,15 @@ public class ConfigValues {
         if (v.webPushNotificationTitle == null || v.webPushNotificationTitle.isBlank()) v.webPushNotificationTitle = "Web Chat";
         v.webPushSubscriptionsFile = c.getString("web-push.subscriptions-file", "web-push-subscriptions.jsonl");
         v.webPushTtlSeconds = Math.max(30, Math.min(86400, c.getInt("web-push.ttl-seconds", 300)));
-        v.webPushNotifyNormalChat = c.getBoolean("web-push.notify-normal-chat", true);
-        v.webPushNotifyDm = c.getBoolean("web-push.notify-dm", true);
-        v.webPushNotifyGroupChat = c.getBoolean("web-push.notify-group-chat", true);
-        v.webPushNotifyMentions = c.getBoolean("web-push.notify-mentions", true);
-        v.webPushNotifyReplies = c.getBoolean("web-push.notify-replies", true);
-        v.webPushNotifySystem = c.getBoolean("web-push.notify-system", true);
-        v.webPushNotifyKeywords = c.getBoolean("web-push.notify-keywords", true);
-        v.webPushNotifyOwnMessages = c.getBoolean("web-push.notify-own-messages", true);
-        v.webPushShowMessagePreview = c.getBoolean("web-push.show-message-preview", true);
+        v.webPushNotifyNormalChat = notifyNormalChat;
+        v.webPushNotifyDm = notifyDm;
+        v.webPushNotifyGroupChat = notifyGroupChat;
+        v.webPushNotifyMentions = notifyMentions;
+        v.webPushNotifyReplies = notifyReplies;
+        v.webPushNotifySystem = notifySystem;
+        v.webPushNotifyKeywords = notifyKeywords;
+        v.webPushNotifyOwnMessages = notifyOwnMessages;
+        v.webPushShowMessagePreview = notifyPreview;
 
         v.playerNameMode = c.getString("player-display.mode", "name");
         if (v.playerNameMode == null) v.playerNameMode = "name";
@@ -855,6 +867,17 @@ public class ConfigValues {
         return out;
     }
 
+
+
+    private static boolean getBooleanCompat(FileConfiguration c, String primary, boolean fallback, String... legacyPaths) {
+        if (c != null && c.contains(primary)) return c.getBoolean(primary, fallback);
+        if (legacyPaths != null) {
+            for (String path : legacyPaths) {
+                if (path != null && !path.isBlank() && c != null && c.contains(path)) return c.getBoolean(path, fallback);
+            }
+        }
+        return fallback;
+    }
 
     private static String normalizeDisplayName(String value, String fallback) {
         String v = String.valueOf(value == null ? "" : value).trim();

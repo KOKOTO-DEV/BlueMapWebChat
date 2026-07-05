@@ -1,5 +1,53 @@
 # Changelog
 
+## 4.5.3
+
+- When chat is hidden from logged-out users, expired or revoked sessions now immediately clear visible chat history, pinned messages, DM/group state, and chat-related modals.
+- Connected browsers now receive an auth-expired SSE event when a session expires, is logged out from another tab, or is revoked from web/admin or `/bmchat revoke`.
+
+- Added a dedicated server notification mode in user notification settings: all server notifications, join/leave only, or off.
+
+
+Notification configuration migration
+
+In 4.5.3, browser notification defaults and mobile/background Web Push notification defaults were consolidated into a single notifications: section.
+
+Use the following block as the new default notification configuration:
+
+# Browser/system notifications and mobile/background Web Push notification defaults.
+# These server-side allow limits apply to both the browser web notification path
+# and the mobile/background Web Push path. Users can still narrow these in Chat settings.
+# Existing browser-notifications.* and web-push.notify-* keys are still read as
+# legacy compatibility inputs when notifications.* is missing, but new default
+# configs should use only this notifications.* block.
+notifications:
+  enabled: true
+  # true = notify only when the tab/window is hidden, minimized, or not focused.
+  only-when-hidden: true
+  notify-normal-chat: true
+  notify-dm: true
+  notify-group-chat: true
+  notify-mentions: true
+  notify-replies: true
+  # true = allow users to receive server notifications.
+  # Users can still choose all, join/leave only, or off in Chat settings.
+  notify-system: true
+  notify-keywords: true
+  notify-own-messages: true
+  show-message-preview: true
+
+The old configuration keys below are still read only for migration and backward compatibility:
+
+browser-notifications.*
+web-push.enabled
+web-push.notify-*
+web-push.show-message-preview
+
+For new installations and updated configs, move notification category preferences into notifications:. The web-push: section should now be used only for Web Push transport settings such as VAPID keys, subject, notification title, subscription file, and TTL.
+
+Existing configs do not have to be rewritten immediately. However, if both the new notifications.* values and old legacy values are present, the new notifications.* values should be treated as the intended configuration. Server owners who want a clean config can replace the old browser notification and Web Push notification preference blocks with the new notifications: block above, then keep only the Web Push transport settings under web-push:.
+
+
 ## 4.5.2
 
 - Fixed BlueMap web-addon mobile Web Push registration by moving Service Worker registration/subscription work to the parent BlueMap page when the embedded chat runs inside the script-written addon iframe. Standalone chat pages still register directly.

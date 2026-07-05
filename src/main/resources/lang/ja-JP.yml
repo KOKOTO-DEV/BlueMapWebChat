@@ -314,7 +314,10 @@ web:
     notifyGroupChat: 'グループチャット'
     notifyReplies: '返信'
     notifyMentions: 'メンション'
-    notifySystem: 'システム/サーバー'
+    notifySystem: 'サーバー'
+    notifySystemAll: 'すべて'
+    notifySystemJoinLeave: '参加/退出のみ'
+    notifySystemOff: 'オフ'
     notifyKeywords: 'キーワード通知'
     notifyKeywordsList: 'キーワード通知ワード'
     notifyKeywordsHelp: 'カンマまたは改行で区切ります。このブラウザに保存され、モバイル/バックグラウンドプッシュはこの端末のプッシュ購読にのみ同期されます。'
@@ -563,15 +566,15 @@ web:
     originalId: '元のID: {name}'
     displayName: '表示名: {name}'
     command: コマンド
-    system: システム
+    system: サーバー
   source:
     game: ゲーム
     web: Web
     guest: ゲスト
     discord: Discord
-    system: システム
+    system: サーバー
     server: サーバー
-    event: システム
+    event: サーバー
   command:
     onlyPlayers: このコマンドはプレイヤーのみ使用できます。
     noPermission: 権限がありません。

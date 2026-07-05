@@ -314,7 +314,10 @@ web:
     notifyGroupChat: 'Group chat'
     notifyReplies: 'Replies'
     notifyMentions: 'Mentions'
-    notifySystem: 'System/server'
+    notifySystem: 'Server'
+    notifySystemAll: 'All'
+    notifySystemJoinLeave: 'Join/leave only'
+    notifySystemOff: 'Off'
     notifyKeywords: 'Keyword alerts'
     notifyKeywordsList: 'Keyword alert words'
     notifyKeywordsHelp: 'Comma or line separated. Stored in this browser; mobile/background push syncs them only with this device''s push subscription.'
@@ -563,15 +566,15 @@ web:
     originalId: 'Original ID: {name}'
     displayName: 'Display name: {name}'
     command: Command
-    system: System
+    system: Server
   source:
     game: game
     web: web
     guest: guest
     discord: discord
-    system: system
+    system: server
     server: server
-    event: system
+    event: server
   command:
     onlyPlayers: This command can only be used by players.
     noPermission: You do not have permission.

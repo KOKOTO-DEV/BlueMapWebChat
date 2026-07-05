@@ -314,7 +314,10 @@ web:
     notifyGroupChat: '그룹채팅'
     notifyReplies: '답글'
     notifyMentions: '멘션'
-    notifySystem: '시스템/서버'
+    notifySystem: '서버'
+    notifySystemAll: '전체'
+    notifySystemJoinLeave: '입장/퇴장만'
+    notifySystemOff: '끄기'
     notifyKeywords: '키워드 알림'
     notifyKeywordsList: '키워드 알림 단어'
     notifyKeywordsHelp: '쉼표 또는 줄바꿈으로 구분합니다. 이 브라우저에 저장되며, 모바일/백그라운드 푸시는 현재 기기의 푸시 구독에만 동기화됩니다.'
@@ -563,15 +566,15 @@ web:
     originalId: '원래 ID: {name}'
     displayName: '표시 이름: {name}'
     command: 명령어
-    system: 시스템
+    system: 서버
   source:
     game: 게임
     web: 웹
     guest: 게스트
     discord: 디스코드
-    system: 시스템
+    system: 서버
     server: 서버
-    event: 시스템
+    event: 서버
   command:
     onlyPlayers: 이 명령어는 플레이어만 사용할 수 있습니다.
     noPermission: 권한이 없습니다.

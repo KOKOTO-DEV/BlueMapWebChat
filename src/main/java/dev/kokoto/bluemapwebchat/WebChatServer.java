@@ -1033,6 +1033,7 @@ public class WebChatServer {
 
         Map<String, String> streamQuery = JsonUtil.parseQuery(ex.getRequestURI().getRawQuery());
         SessionContext streamContext = storage.getSession(streamQuery.get("token"));
+        String streamToken = streamQuery.get("token");
         String streamAccountUuid = streamContext == null || streamContext.account == null || streamContext.account.uuid == null ? "" : streamContext.account.uuid.trim().toLowerCase(Locale.ROOT);
         boolean streamPrivateChatSuperAdmin = isPrivateChatSuperAdmin(streamContext);
 
@@ -1044,14 +1045,23 @@ public class WebChatServer {
         h.set("Connection", "keep-alive");
         ex.sendResponseHeaders(200, 0);
 
-        SseClient client = new SseClient(ex.getResponseBody(), ip, streamAccountUuid, streamPrivateChatSuperAdmin);
+        SseClient client = new SseClient(ex.getResponseBody(), ip, streamAccountUuid, streamToken, streamPrivateChatSuperAdmin);
         clients.add(client);
         try {
             client.sendRaw("event: ready\ndata: {\"ok\":true}\n\n");
+            long lastPing = System.currentTimeMillis();
             while (running && client.open) {
                 try {
-                    Thread.sleep(25_000L);
-                    client.sendRaw(": ping\n\n");
+                    Thread.sleep(1_000L);
+                    if (client.hasToken() && storage.getSession(client.token) == null) {
+                        sendAuthExpired(client, "expired");
+                        break;
+                    }
+                    long now = System.currentTimeMillis();
+                    if (now - lastPing >= 25_000L) {
+                        client.sendRaw(": ping\n\n");
+                        lastPing = now;
+                    }
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     break;
@@ -4073,8 +4083,10 @@ public class WebChatServer {
     private void handleLogout(HttpExchange ex) throws IOException {
         if (preflight(ex)) return;
         Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
-        SessionContext ctx = storage.getSession(body.get("token"));
-        boolean ok = storage.revokeSession(body.get("token"));
+        String logoutToken = body.get("token");
+        SessionContext ctx = storage.getSession(logoutToken);
+        boolean ok = storage.revokeSession(logoutToken);
+        if (ok) broadcastAuthExpiredForToken(logoutToken, "logout");
         if (ok && ctx != null && ctx.account != null) {
             String name = ctx.account.safeUsername();
             if (name == null) name = "";
@@ -4158,7 +4170,10 @@ public class WebChatServer {
         if (ctx == null) return;
         Map<String, String> body = JsonUtil.parseFlatObject(JsonUtil.readBody(ex.getRequestBody()));
         String username = body.get("username");
+        Account revokedAccount = storage.findAccountByUsername(username);
+        String revokedUuid = revokedAccount == null || revokedAccount.uuid == null ? "" : revokedAccount.uuid.trim().toLowerCase(Locale.ROOT);
         int removed = storage.revokeSessionsForUsername(username);
+        if (removed > 0 && !revokedUuid.isBlank()) broadcastAuthExpired(revokedUuid, "revoked");
         audit(ctx, "admin.revoke-sessions", Map.of("username", username == null ? "" : username, "removed", removed));
         sendJson(ex, 200, "{\"ok\":true,\"removed\":" + removed + "}");
     }
@@ -6065,10 +6080,59 @@ public class WebChatServer {
         p.url = system ? "" : webPushNavigationUrlWithParams(Map.of("bmwcMessage", String.valueOf(msg.id == null ? "" : msg.id)));
         p.tag = system ? "bmwc-system" : "bmwc-chat";
         p.senderUuid = msg.playerUuid == null ? "" : msg.playerUuid;
+        p.i18nKey = msg.i18nKey == null ? "" : msg.i18nKey;
+        p.i18nArgs = msg.i18nArgs == null ? "" : msg.i18nArgs;
+        p.systemKind = systemKindFor(msg);
         String replyTargetUuid = replyTargetUuidFor(msg);
         p.replyTargetUuid = replyTargetUuid;
         webPush.sendToAll(p);
         dispatchWebPushReply(msg, replyTargetUuid);
+    }
+
+
+    private String systemKindFor(ChatMessage msg) {
+        if (msg == null) return "";
+        String key = String.valueOf(msg.i18nKey == null ? "" : msg.i18nKey).trim().toLowerCase(Locale.ROOT);
+        if (key.endsWith("minecraft-join")) return "minecraft-join";
+        if (key.endsWith("minecraft-quit")) return "minecraft-quit";
+        if (key.endsWith("first-join")) return "first-join";
+        return "";
+    }
+
+    public void broadcastAuthExpired(String accountUuid, String reason) {
+        String uuid = String.valueOf(accountUuid == null ? "" : accountUuid).trim().toLowerCase(Locale.ROOT);
+        if (uuid.isBlank()) return;
+        for (SseClient client : new ArrayList<>(clients)) {
+            if (!uuid.equals(client.accountUuid)) continue;
+            try {
+                sendAuthExpired(client, reason);
+            } catch (IOException ignored) {
+            } finally {
+                clients.remove(client);
+                client.close();
+            }
+        }
+    }
+
+    public void broadcastAuthExpiredForToken(String token, String reason) {
+        String targetToken = String.valueOf(token == null ? "" : token).trim();
+        if (targetToken.isBlank()) return;
+        for (SseClient client : new ArrayList<>(clients)) {
+            if (!targetToken.equals(client.token)) continue;
+            try {
+                sendAuthExpired(client, reason);
+            } catch (IOException ignored) {
+            } finally {
+                clients.remove(client);
+                client.close();
+            }
+        }
+    }
+
+    private void sendAuthExpired(SseClient client, String reason) throws IOException {
+        if (client == null) return;
+        String safeReason = String.valueOf(reason == null || reason.isBlank() ? "expired" : reason);
+        client.sendRaw("event: auth\ndata: {\"ok\":false,\"reason\":" + JsonUtil.quote(safeReason) + "}\n\n");
     }
 
     private String replyTargetUuidFor(ChatMessage msg) {
@@ -6430,14 +6494,20 @@ public class WebChatServer {
         private final OutputStream out;
         private final String ip;
         private final String accountUuid;
+        private final String token;
         private final boolean privateChatSuperAdmin;
         private volatile boolean open = true;
 
-        private SseClient(OutputStream out, String ip, String accountUuid, boolean privateChatSuperAdmin) {
+        private SseClient(OutputStream out, String ip, String accountUuid, String token, boolean privateChatSuperAdmin) {
             this.out = out;
             this.ip = ip == null ? "" : ip;
             this.accountUuid = accountUuid == null ? "" : accountUuid;
+            this.token = token == null ? "" : token;
             this.privateChatSuperAdmin = privateChatSuperAdmin;
+        }
+
+        boolean hasToken() {
+            return token != null && !token.isBlank();
         }
 
         synchronized void sendRaw(String s) throws IOException {

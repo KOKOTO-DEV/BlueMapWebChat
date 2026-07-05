@@ -1,4 +1,4 @@
-# BlueMapWebChat 4.5.2 configuration
+# BlueMapWebChat 4.5.3 configuration
 
 # Master switch for BlueMapWebChat.
 # New generated configs default to false so the plugin creates config.yml first
@@ -388,54 +388,48 @@ ui:
     skip-unchanged: true
 
 
-# Browser/system notifications. These are shown by Chrome/Edge/Firefox as OS notifications
-# while the web chat page is open. Users must allow browser notification permission.
-browser-notifications:
+# Browser/system notifications and mobile/background Web Push notification defaults.
+# These server-side allow limits apply to both the browser web notification path
+# and the mobile/background Web Push path. Users can still narrow these in Chat settings.
+# Existing browser-notifications.* and web-push.notify-* keys are still read as
+# legacy compatibility inputs when notifications.* is missing, but new default
+# configs should use only this notifications.* block.
+notifications:
   enabled: true
   # true = notify only when the tab/window is hidden, minimized, or not focused.
   only-when-hidden: true
-  # These notify-* values are server-side allow limits. Set false to block that type even if a user enables it.
   notify-normal-chat: true
   notify-dm: true
   notify-group-chat: true
   notify-mentions: true
   notify-replies: true
+  # true = allow users to receive server notifications. Users can still choose all, join/leave only, or off in Chat settings.
   notify-system: true
   notify-keywords: true
   notify-own-messages: true
   show-message-preview: true
 
-# Mobile/background Web Push.
+# Mobile/background Web Push transport settings.
 # Requirements: HTTPS or localhost, browser notification permission, service worker support,
 # and push support in the browser. iOS/iPadOS does not support ordinary browser-tab
 # Web Push; only try it from the standalone Home Screen web app, and treat unsupported
 # iOS behavior as a platform limitation.
-# If VAPID keys are empty and this is enabled, the plugin generates persistent keys in
-# plugins/BlueMapWebChat/web-push-vapid.properties.
+# If VAPID keys are empty and notifications.enabled is true, the plugin generates
+# persistent keys in plugins/BlueMapWebChat/web-push-vapid.properties.
 # subject is VAPID contact information. Use a real mailto: or https: URI that can identify
 # the server operator, for example "mailto:admin@example.com" or "https://map.example.com".
 # Do not use arbitrary text here; some push services may reject or distrust it.
 # Browser/OS warnings such as "may be spam" are controlled by the browser/device and cannot
 # be disabled by this plugin. Use a stable HTTPS domain and avoid excessive/test notifications.
 web-push:
-  enabled: true
   vapid-public-key: ""
   vapid-private-key: ""
   subject: "mailto:admin@example.com"
-  # Default notification title for test/system/background push messages.
+  # Default notification title for test/server/background push messages.
   # Empty = use standalone-web.app-name.
   notification-title: ""
   subscriptions-file: "web-push-subscriptions.jsonl"
   ttl-seconds: 300
-  notify-normal-chat: true
-  notify-dm: true
-  notify-group-chat: true
-  notify-mentions: true
-  notify-replies: true
-  notify-system: true
-  notify-keywords: true
-  notify-own-messages: true
-  show-message-preview: true
 
 # Player name shown for Minecraft-origin messages and announcements.
 # name = real Minecraft username, display-name = Bukkit displayName used by nickname plugins,

@@ -916,7 +916,12 @@ public class BmChatCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(yellow("/bmchat revoke <username>"));
             return true;
         }
+        Account revokedAccount = plugin.storage().findAccountByUsername(args[1]);
+        String revokedUuid = revokedAccount == null || revokedAccount.uuid == null ? "" : revokedAccount.uuid.trim().toLowerCase(java.util.Locale.ROOT);
         int removed = plugin.storage().revokeSessionsForUsername(args[1]);
+        if (removed > 0 && plugin.webServer() != null && !revokedUuid.isBlank()) {
+            plugin.webServer().broadcastAuthExpired(revokedUuid, "revoked");
+        }
         AuditLogger.log(plugin, "command.revoke-sessions", sender.getName(), Map.of("username", args[1], "removed", removed));
         sender.sendMessage(green(msg("revokeDone", "Revoked {count} session(s) for {username}.",
                 "count", Integer.toString(removed),

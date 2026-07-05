@@ -197,7 +197,7 @@ public class LangManager {
         m.put("message.deleted", "[deleted]");
         m.put("sender.server", "Server");
         m.put("sender.command", "Command");
-        m.put("sender.system", "System");
+        m.put("sender.system", "Server");
         m.put("system.command-executed", "{executor} executed web command: {label}");
         m.put("system.command-executed-by", "{executor} executed web command: {label}");
         m.put("error.unknown", "Unknown error");

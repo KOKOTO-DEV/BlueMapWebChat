@@ -61,6 +61,9 @@ public class WebPushManager {
         public String tag = "bmwc";
         public String senderUuid = "";
         public String replyTargetUuid = "";
+        public String systemKind = "";
+        public String i18nKey = "";
+        public String i18nArgs = "";
     }
 
     private static class Subscription {
@@ -75,6 +78,7 @@ public class WebPushManager {
         boolean notifyMentions;
         boolean notifyReplies;
         boolean notifySystem;
+        String notifySystemMode = "all";
         boolean notifyKeywords;
         List<String> keywords = new ArrayList<>();
         String language = "";
@@ -131,7 +135,8 @@ public class WebPushManager {
         s.notifyGroupChat = (c == null || c.webPushNotifyGroupChat) && readBool(body, "notifyGroupChat", c == null || c.webPushNotifyGroupChat);
         s.notifyMentions = (c == null || c.webPushNotifyMentions) && readBool(body, "notifyMentions", c == null || c.webPushNotifyMentions);
         s.notifyReplies = (c == null || c.webPushNotifyReplies) && readBool(body, "notifyReplies", c == null || c.webPushNotifyReplies);
-        s.notifySystem = (c == null || c.webPushNotifySystem) && readBool(body, "notifySystem", c == null || c.webPushNotifySystem);
+        s.notifySystemMode = readSystemMode(body, "notifySystemMode", readBool(body, "notifySystem", c == null || c.webPushNotifySystem) ? "all" : "off");
+        s.notifySystem = (c == null || c.webPushNotifySystem) && !"off".equals(s.notifySystemMode);
         s.notifyKeywords = (c == null || c.webPushNotifyKeywords) && readBool(body, "notifyKeywords", c == null || c.webPushNotifyKeywords);
         s.keywords = normalizeKeywords(body == null ? "" : body.get("keywords"));
         s.language = clean(body == null ? "" : body.get("language"), 40);
@@ -206,6 +211,7 @@ public class WebPushManager {
         if (!sender.isBlank() && sender.equalsIgnoreCase(s.userUuid)) {
             if (!c.webPushNotifyOwnMessages || !s.notifyOwnMessages) return false;
         }
+        if (isSystemType(type) && !allowsSystemMode(s, payload, c)) return false;
         if (c.webPushNotifyKeywords && s.notifyKeywords && !matchedKeyword(s, payload).isBlank()) return true;
         String replyTarget = payload.replyTargetUuid == null ? "" : payload.replyTargetUuid.trim().toLowerCase(Locale.ROOT);
         boolean isReplyTarget = !replyTarget.isBlank() && replyTarget.equalsIgnoreCase(s.userUuid);
@@ -217,12 +223,46 @@ public class WebPushManager {
             if (!c.webPushNotifyDm || !s.notifyDm) return false;
         } else if ("group".equals(type) || "group-chat".equals(type)) {
             if (!c.webPushNotifyGroupChat || !s.notifyGroupChat) return false;
-        } else if ("system".equals(type) || "server".equals(type)) {
-            if (!c.webPushNotifySystem || !s.notifySystem) return false;
+        } else if (isSystemType(type)) {
+            if (!allowsSystemMode(s, payload, c)) return false;
         } else {
             if (!c.webPushNotifyNormalChat || !s.notifyNormalChat) return false;
         }
         return true;
+    }
+
+
+    private boolean isSystemType(String type) {
+        String t = type == null ? "" : type.trim().toLowerCase(Locale.ROOT);
+        return t.equals("system") || t.equals("server");
+    }
+
+    private boolean allowsSystemMode(Subscription s, Payload payload, ConfigValues c) {
+        if (s == null || payload == null || c == null || !c.webPushNotifySystem || !s.notifySystem) return false;
+        String mode = normalizeSystemMode(s.notifySystemMode, s.notifySystem ? "all" : "off");
+        if ("off".equals(mode)) return false;
+        if ("join-leave".equals(mode)) return isJoinLeaveSystemPayload(payload);
+        return true;
+    }
+
+    private boolean isJoinLeaveSystemPayload(Payload payload) {
+        if (payload == null) return false;
+        String key = clean(payload.i18nKey, 120).toLowerCase(Locale.ROOT);
+        if (key.endsWith("minecraft-join") || key.endsWith("minecraft-quit") || key.endsWith("first-join")) return true;
+        String kind = clean(payload.systemKind, 80).toLowerCase(Locale.ROOT);
+        return kind.equals("minecraft-join") || kind.equals("minecraft-quit") || kind.equals("first-join") || kind.equals("join") || kind.equals("quit") || kind.equals("leave");
+    }
+
+    private String normalizeSystemMode(String value, String fallback) {
+        String v = clean(value, 40).toLowerCase(Locale.ROOT).replace('_', '-');
+        if (v.equals("all") || v.equals("join-leave") || v.equals("off")) return v;
+        String f = clean(fallback, 40).toLowerCase(Locale.ROOT).replace('_', '-');
+        if (f.equals("all") || f.equals("join-leave") || f.equals("off")) return f;
+        return "all";
+    }
+
+    private String readSystemMode(Map<String, String> body, String key, String fallback) {
+        return normalizeSystemMode(body == null ? "" : String.valueOf(body.getOrDefault(key, "")), fallback);
     }
 
     private List<String> normalizeKeywords(String raw) {
@@ -242,7 +282,8 @@ public class WebPushManager {
 
     private String matchedKeyword(Subscription s, Payload payload) {
         if (s == null || payload == null || s.keywords == null || s.keywords.isEmpty()) return "";
-        String haystack = (String.valueOf(payload.title == null ? "" : payload.title) + " " + String.valueOf(payload.body == null ? "" : payload.body)).toLowerCase(Locale.ROOT);
+        String body = stripNotificationFormatting(localizedPayloadBody(s, payload));
+        String haystack = (stripNotificationFormatting(payload.title == null ? "" : payload.title) + " " + String.valueOf(body == null ? "" : body)).toLowerCase(Locale.ROOT);
         for (String keyword : s.keywords) {
             String kw = String.valueOf(keyword == null ? "" : keyword).trim();
             if (kw.isBlank()) continue;
@@ -301,39 +342,67 @@ public class WebPushManager {
         }
     }
 
+
+    private String localizedPayloadBody(Subscription sub, Payload p) {
+        if (p == null) return "";
+        String fallback = p.body == null ? "" : p.body;
+        String key = clean(p.i18nKey, 160);
+        if (key.isBlank()) return fallback;
+        String value = subscriptionText(sub, key, fallback);
+        Map<String, String> vars = JsonUtil.parseFlatObject(p.i18nArgs);
+        for (Map.Entry<String, String> entry : vars.entrySet()) {
+            value = value.replace("{" + entry.getKey() + "}", entry.getValue() == null ? "" : entry.getValue());
+        }
+        return value;
+    }
+
     private String payloadJson(Subscription sub, Payload p, boolean preview, String matchedKeyword) {
         Map<String, Object> m = new LinkedHashMap<>();
         String keyword = clean(matchedKeyword, 80);
         boolean keywordHit = !keyword.isBlank();
-        String baseTitle = configuredNotificationTitle();
+        String baseTitle = stripNotificationFormatting(configuredNotificationTitle());
         String type = clean(p.type, 40).toLowerCase(Locale.ROOT);
-        String title = p.title == null || p.title.isBlank() ? baseTitle : p.title;
-        String rawBody = p.body == null ? "" : p.body;
-        if ("test".equals(type) && rawBody.isBlank()) rawBody = subscriptionText(sub, "notification.testBody", "Test push sent.");
+        String title = stripNotificationFormatting(p.title == null || p.title.isBlank() ? baseTitle : p.title);
+        String rawBody = stripNotificationFormatting(localizedPayloadBody(sub, p));
+        if ("test".equals(type) && rawBody.isBlank()) rawBody = stripNotificationFormatting(subscriptionText(sub, "notification.testBody", "Test push sent."));
         String body = preview ? clean(rawBody, 240) : "";
         if (keywordHit) {
-            String keywordLabel = subscriptionText(sub, "notification.keyword", "Keyword");
-            m.put("title", baseTitle);
+            String keywordLabel = stripNotificationFormatting(subscriptionText(sub, "notification.keyword", "Keyword"));
+            m.put("title", stripNotificationFormatting(baseTitle));
             m.put("body", preview ? clean(keywordLabel + ": " + keyword + " · " + title + (body.isBlank() ? "" : " · " + body), 240) : clean(keywordLabel + ": " + keyword + " · " + title, 120));
             m.put("type", "keyword");
             m.put("tag", clean("bmwc-keyword-" + keyword.replaceAll("[^A-Za-z0-9가-힣ぁ-んァ-ン一-龥_-]", ""), 120));
         } else {
-            m.put("title", baseTitle);
+            m.put("title", stripNotificationFormatting(baseTitle));
             String detailPrefix = title.equals(baseTitle) ? "" : title;
             if ("reply".equals(type)) {
-                String replyLabel = subscriptionText(sub, "notification.reply", "Reply");
+                String replyLabel = stripNotificationFormatting(subscriptionText(sub, "notification.reply", "Reply"));
                 detailPrefix = replyLabel + (detailPrefix.isBlank() ? "" : ": " + detailPrefix);
             }
             if ("dm".equals(type) && !detailPrefix.isBlank()) {
-                detailPrefix = subscriptionText(sub, "notification.dm", "DM") + ": " + detailPrefix;
+                detailPrefix = stripNotificationFormatting(subscriptionText(sub, "notification.dm", "DM")) + ": " + detailPrefix;
             }
-            m.put("body", preview ? clean(detailPrefix + (detailPrefix.isBlank() || body.isBlank() ? "" : " · ") + body, 240) : "");
+            m.put("body", preview ? clean(stripNotificationFormatting(detailPrefix) + (detailPrefix.isBlank() || body.isBlank() ? "" : " · ") + body, 240) : "");
             m.put("type", clean(p.type, 40));
             m.put("tag", clean(p.tag, 120));
         }
         m.put("url", notificationOpenUrl(sub, p == null ? "" : p.url));
         m.put("time", System.currentTimeMillis());
         return JsonUtil.obj(m);
+    }
+
+    private String stripNotificationFormatting(String value) {
+        String out = String.valueOf(value == null ? "" : value);
+        // OS/browser notifications cannot render Minecraft formatting. Strip
+        // section-sign codes, configured ampersand legacy codes, RGB forms, and
+        // MiniMessage/HTML-like tags from every notification title/body.
+        out = out.replaceAll("(?i)[§&]x(?:[§&][0-9a-f]){6}", "");
+        out = out.replaceAll("(?i)&#[0-9a-f]{6}", "");
+        out = out.replaceAll("(?i)[§&][0-9a-fk-or]", "");
+        out = out.replaceAll("(?i)</?(?:#[0-9a-f]{6}|[a-z][a-z0-9_-]*)(?::[^<>]*)?>", "");
+        out = out.replaceAll("<[^>]+>", "");
+        out = out.replace("§", "");
+        return out.replaceAll("\\s+", " ").trim();
     }
 
     private String notificationOpenUrl(Subscription sub, String payloadUrl) {
@@ -688,7 +757,8 @@ public class WebPushManager {
                 s.notifyGroupChat = (c == null || c.webPushNotifyGroupChat) && readBool(m, "notifyGroupChat", c == null || c.webPushNotifyGroupChat);
                 s.notifyMentions = (c == null || c.webPushNotifyMentions) && readBool(m, "notifyMentions", c == null || c.webPushNotifyMentions);
                 s.notifyReplies = (c == null || c.webPushNotifyReplies) && readBool(m, "notifyReplies", c == null || c.webPushNotifyReplies);
-                s.notifySystem = (c == null || c.webPushNotifySystem) && readBool(m, "notifySystem", c == null || c.webPushNotifySystem);
+                s.notifySystemMode = readSystemMode(m, "notifySystemMode", readBool(m, "notifySystem", c == null || c.webPushNotifySystem) ? "all" : "off");
+                s.notifySystem = (c == null || c.webPushNotifySystem) && !"off".equals(s.notifySystemMode);
                 s.notifyKeywords = (c == null || c.webPushNotifyKeywords) && readBool(m, "notifyKeywords", c == null || c.webPushNotifyKeywords);
                 s.keywords = normalizeKeywords(m.get("keywords"));
                 s.language = clean(m.get("language"), 40);
@@ -721,6 +791,7 @@ public class WebPushManager {
                 m.put("notifyMentions", s.notifyMentions);
                 m.put("notifyReplies", s.notifyReplies);
                 m.put("notifySystem", s.notifySystem);
+                m.put("notifySystemMode", s.notifySystemMode);
                 m.put("notifyKeywords", s.notifyKeywords);
                 m.put("keywords", String.join("\n", s.keywords == null ? Collections.emptyList() : s.keywords));
                 m.put("language", s.language);
