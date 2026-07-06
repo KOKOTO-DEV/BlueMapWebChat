@@ -561,20 +561,19 @@ public class ConfigValues {
         v.uiFontFamily = c.getString("ui.font-family", "");
         v.uiPictureInPictureEnabled = c.getBoolean("ui.picture-in-picture.enabled", false);
 
-        boolean notificationsEnabled = getBooleanCompat(c, "notifications.enabled", true, "browser-notifications.enabled", "web-push.enabled");
-        boolean notificationsOnlyWhenHidden = getBooleanCompat(c, "notifications.only-when-hidden", true, "browser-notifications.only-when-hidden");
-        boolean notifyNormalChat = getBooleanCompat(c, "notifications.notify-normal-chat", true, "browser-notifications.notify-normal-chat", "web-push.notify-normal-chat");
-        boolean notifyDm = getBooleanCompat(c, "notifications.notify-dm", true, "browser-notifications.notify-dm", "web-push.notify-dm");
-        boolean notifyGroupChat = getBooleanCompat(c, "notifications.notify-group-chat", true, "browser-notifications.notify-group-chat", "web-push.notify-group-chat");
-        boolean notifyMentions = getBooleanCompat(c, "notifications.notify-mentions", true, "browser-notifications.notify-mentions", "web-push.notify-mentions");
-        boolean notifyReplies = getBooleanCompat(c, "notifications.notify-replies", true, "browser-notifications.notify-replies", "web-push.notify-replies");
-        boolean notifySystem = getBooleanCompat(c, "notifications.notify-system", true, "browser-notifications.notify-system", "web-push.notify-system");
-        boolean notifyKeywords = getBooleanCompat(c, "notifications.notify-keywords", true, "browser-notifications.notify-keywords", "web-push.notify-keywords");
-        boolean notifyOwnMessages = getBooleanCompat(c, "notifications.notify-own-messages", true, "browser-notifications.notify-own-messages", "web-push.notify-own-messages");
-        boolean notifyPreview = getBooleanCompat(c, "notifications.show-message-preview", true, "browser-notifications.show-message-preview", "web-push.show-message-preview");
+        boolean notificationsEnabled = notificationBool(c, "enabled", legacyPairBool(c, "browser-notifications.enabled", "web-push.enabled", true));
+        boolean notifyNormalChat = notificationBool(c, "notify-normal-chat", legacyPairBool(c, "browser-notifications.notify-normal-chat", "web-push.notify-normal-chat", true));
+        boolean notifyDm = notificationBool(c, "notify-dm", legacyPairBool(c, "browser-notifications.notify-dm", "web-push.notify-dm", true));
+        boolean notifyGroupChat = notificationBool(c, "notify-group-chat", legacyPairBool(c, "browser-notifications.notify-group-chat", "web-push.notify-group-chat", true));
+        boolean notifyMentions = notificationBool(c, "notify-mentions", legacyPairBool(c, "browser-notifications.notify-mentions", "web-push.notify-mentions", true));
+        boolean notifyReplies = notificationBool(c, "notify-replies", legacyPairBool(c, "browser-notifications.notify-replies", "web-push.notify-replies", true));
+        boolean notifySystem = notificationBool(c, "notify-system", legacyPairBool(c, "browser-notifications.notify-system", "web-push.notify-system", true));
+        boolean notifyKeywords = notificationBool(c, "notify-keywords", legacyPairBool(c, "browser-notifications.notify-keywords", "web-push.notify-keywords", true));
+        boolean notifyOwnMessages = notificationBool(c, "notify-own-messages", legacyPairBool(c, "browser-notifications.notify-own-messages", "web-push.notify-own-messages", true));
+        boolean showMessagePreview = notificationBool(c, "show-message-preview", legacyPairBool(c, "browser-notifications.show-message-preview", "web-push.show-message-preview", true));
 
         v.browserNotificationsEnabled = notificationsEnabled;
-        v.browserNotificationsOnlyWhenHidden = notificationsOnlyWhenHidden;
+        v.browserNotificationsOnlyWhenHidden = notificationBool(c, "only-when-hidden", configBool(c, "browser-notifications.only-when-hidden", true));
         v.browserNotificationsNotifyNormalChat = notifyNormalChat;
         v.browserNotificationsNotifyDm = notifyDm;
         v.browserNotificationsNotifyGroupChat = notifyGroupChat;
@@ -583,7 +582,7 @@ public class ConfigValues {
         v.browserNotificationsNotifySystem = notifySystem;
         v.browserNotificationsNotifyKeywords = notifyKeywords;
         v.browserNotificationsNotifyOwnMessages = notifyOwnMessages;
-        v.browserNotificationsShowMessagePreview = notifyPreview;
+        v.browserNotificationsShowMessagePreview = showMessagePreview;
 
         v.webPushEnabled = notificationsEnabled;
         v.webPushVapidPublicKey = c.getString("web-push.vapid-public-key", "");
@@ -602,7 +601,7 @@ public class ConfigValues {
         v.webPushNotifySystem = notifySystem;
         v.webPushNotifyKeywords = notifyKeywords;
         v.webPushNotifyOwnMessages = notifyOwnMessages;
-        v.webPushShowMessagePreview = notifyPreview;
+        v.webPushShowMessagePreview = showMessagePreview;
 
         v.playerNameMode = c.getString("player-display.mode", "name");
         if (v.playerNameMode == null) v.playerNameMode = "name";
@@ -868,15 +867,20 @@ public class ConfigValues {
     }
 
 
+    private static boolean configBool(FileConfiguration c, String path, boolean def) {
+        return c != null && c.contains(path) ? c.getBoolean(path) : def;
+    }
 
-    private static boolean getBooleanCompat(FileConfiguration c, String primary, boolean fallback, String... legacyPaths) {
-        if (c != null && c.contains(primary)) return c.getBoolean(primary, fallback);
-        if (legacyPaths != null) {
-            for (String path : legacyPaths) {
-                if (path != null && !path.isBlank() && c != null && c.contains(path)) return c.getBoolean(path, fallback);
-            }
-        }
-        return fallback;
+    private static boolean notificationBool(FileConfiguration c, String key, boolean def) {
+        return configBool(c, "notifications." + key, def);
+    }
+
+    private static boolean legacyPairBool(FileConfiguration c, String browserPath, String webPushPath, boolean def) {
+        // Legacy compatibility only: 4.5.2 and older had separate browser-notifications.*
+        // and web-push.* switches. In 4.5.3+, notifications.* is the single default source.
+        // If an old config still contains either legacy switch as false, keep the safer
+        // blocked result for both delivery paths.
+        return configBool(c, browserPath, def) && configBool(c, webPushPath, def);
     }
 
     private static String normalizeDisplayName(String value, String fallback) {

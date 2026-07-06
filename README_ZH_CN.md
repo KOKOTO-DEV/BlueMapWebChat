@@ -22,7 +22,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-4.5.3.jar
+target/BlueMapWebChat-4.5.4.jar
 ```
 
 ## 安装
@@ -204,4 +204,4 @@ DM 使用独立于公开聊天历史的专用存储。`direct-message.storage: a
 会影响管理状态的操作默认会按日期追加到 `plugins/BlueMapWebChat/audit` 下的文本审计日志中。审计日志供服务器运营者查看，不会显示在 Web UI 中。
 
 
-Note: `standalone-web.app-name` / `standalone-web.app-short-name` 可更改移动端主屏幕 Web App 名称，`web-push.notification-title` 可更改默认推送标题。`web-push.notification-title` 留空时使用 `standalone-web.app-name`。Android/desktop browsers can enable push from either the BlueMap addon or the standalone page when HTTPS and Push API support are available. iOS/iPadOS 请使用添加到主屏幕并作为 Web App 打开的页面，而不是普通浏览器标签页。
+注意：`standalone-web.app-name` / `standalone-web.app-short-name` 可更改移动端主屏幕 Web App 名称，`web-push.notification-title` 可更改默认推送标题。`web-push.notification-title` 留空时使用 `standalone-web.app-name`。Android/桌面浏览器在 HTTPS 与 Push API 可用时，可从 BlueMap addon 或 standalone 页面启用推送。iOS/iPadOS 请使用已添加到主屏幕并作为 Web App 打开的页面，而不是普通浏览器标签页。

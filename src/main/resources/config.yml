@@ -1,4 +1,4 @@
-# BlueMapWebChat 4.5.3 configuration
+# BlueMapWebChat 4.5.4 configuration
 
 # Master switch for BlueMapWebChat.
 # New generated configs default to false so the plugin creates config.yml first
@@ -388,22 +388,21 @@ ui:
     skip-unchanged: true
 
 
-# Browser/system notifications and mobile/background Web Push notification defaults.
-# These server-side allow limits apply to both the browser web notification path
-# and the mobile/background Web Push path. Users can still narrow these in Chat settings.
-# Existing browser-notifications.* and web-push.notify-* keys are still read as
-# legacy compatibility inputs when notifications.* is missing, but new default
-# configs should use only this notifications.* block.
+# Notification defaults and server-side allow limits shared by browser notifications
+# and mobile/background Web Push. Users still choose the same notification options
+# once in Chat settings; these values only define what the server allows by default.
 notifications:
   enabled: true
   # true = notify only when the tab/window is hidden, minimized, or not focused.
+  # This only affects browser notifications while a page is open.
   only-when-hidden: true
   notify-normal-chat: true
   notify-dm: true
   notify-group-chat: true
   notify-mentions: true
   notify-replies: true
-  # true = allow users to receive server notifications. Users can still choose all, join/leave only, or off in Chat settings.
+  # true = allow users to receive server notifications. Users can still choose all,
+  # join/leave only, or off in Chat settings.
   notify-system: true
   notify-keywords: true
   notify-own-messages: true

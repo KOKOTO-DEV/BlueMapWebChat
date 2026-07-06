@@ -144,9 +144,35 @@ public class WebPushManager {
         s.notifyOwnMessages = (c == null || c.webPushNotifyOwnMessages) && readBool(body, "notifyOwnMessages", c != null && c.webPushNotifyOwnMessages);
         s.showMessagePreview = (c == null || c.webPushShowMessagePreview) && readBool(body, "showMessagePreview", c == null || c.webPushShowMessagePreview);
         s.updatedAt = System.currentTimeMillis();
+        syncNotificationPreferencesForAccount(s);
         byEndpoint.put(endpoint, s);
         saveSubscriptions();
         return true;
+    }
+
+    private void syncNotificationPreferencesForAccount(Subscription source) {
+        if (source == null || source.userUuid == null || source.userUuid.isBlank()) return;
+        String user = source.userUuid.trim().toLowerCase(Locale.ROOT);
+        for (Subscription target : byEndpoint.values()) {
+            if (target == null || target.userUuid == null || !user.equals(target.userUuid.trim().toLowerCase(Locale.ROOT))) continue;
+            copyNotificationPreferences(source, target);
+            target.updatedAt = System.currentTimeMillis();
+        }
+    }
+
+    private void copyNotificationPreferences(Subscription source, Subscription target) {
+        if (source == null || target == null) return;
+        target.notifyNormalChat = source.notifyNormalChat;
+        target.notifyDm = source.notifyDm;
+        target.notifyGroupChat = source.notifyGroupChat;
+        target.notifyMentions = source.notifyMentions;
+        target.notifyReplies = source.notifyReplies;
+        target.notifySystem = source.notifySystem;
+        target.notifySystemMode = source.notifySystemMode;
+        target.notifyKeywords = source.notifyKeywords;
+        target.keywords = source.keywords == null ? new ArrayList<>() : new ArrayList<>(source.keywords);
+        target.notifyOwnMessages = source.notifyOwnMessages;
+        target.showMessagePreview = source.showMessagePreview;
     }
 
     public synchronized boolean unsubscribe(Account account, String endpoint) {
@@ -215,10 +241,14 @@ public class WebPushManager {
         if (c.webPushNotifyKeywords && s.notifyKeywords && !matchedKeyword(s, payload).isBlank()) return true;
         String replyTarget = payload.replyTargetUuid == null ? "" : payload.replyTargetUuid.trim().toLowerCase(Locale.ROOT);
         boolean isReplyTarget = !replyTarget.isBlank() && replyTarget.equalsIgnoreCase(s.userUuid);
+        boolean isMentionTarget = "chat".equals(type) && mentionsSubscription(s, payload);
         if ("reply".equals(type)) {
             return c.webPushNotifyReplies && s.notifyReplies;
         }
         if (isReplyTarget && c.webPushNotifyReplies && s.notifyReplies) return false;
+        if (isMentionTarget) {
+            return c.webPushNotifyMentions && s.notifyMentions;
+        }
         if ("dm".equals(type)) {
             if (!c.webPushNotifyDm || !s.notifyDm) return false;
         } else if ("group".equals(type) || "group-chat".equals(type)) {
@@ -231,6 +261,44 @@ public class WebPushManager {
         return true;
     }
 
+
+    private boolean mentionsSubscription(Subscription s, Payload payload) {
+        if (s == null || payload == null || s.userUuid == null || s.userUuid.isBlank()) return false;
+        String text = mobileNotificationText(payload.body, 0).toLowerCase(Locale.ROOT);
+        if (text.isBlank()) return false;
+        for (String candidate : mentionCandidatesFor(s.userUuid)) {
+            String name = mobileNotificationText(candidate, 0).toLowerCase(Locale.ROOT).trim();
+            if (name.isBlank()) continue;
+            if (text.contains("@" + name) || text.contains(name)) return true;
+        }
+        return false;
+    }
+
+    private List<String> mentionCandidatesFor(String userUuid) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        String uuid = String.valueOf(userUuid == null ? "" : userUuid).trim().toLowerCase(Locale.ROOT);
+        if (uuid.isBlank()) return new ArrayList<>();
+        try {
+            Account account = plugin.storage() == null ? null : plugin.storage().findAccountById("uuid:" + uuid);
+            if (account != null) {
+                if (account.username != null) out.add(account.username);
+                if (account.lastDisplayName != null) out.add(account.lastDisplayName);
+                String safe = account.safeUsername();
+                if (safe != null) out.add(safe);
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            PlayerIdentity player = plugin.storage() == null ? null : plugin.storage().findKnownPlayerByUuid(uuid);
+            if (player != null) {
+                if (player.username != null) out.add(player.username);
+                if (player.displayName != null) out.add(player.displayName);
+            }
+        } catch (Exception ignored) {
+        }
+        out.removeIf(v -> v == null || mobileNotificationText(v, 0).isBlank());
+        return new ArrayList<>(out);
+    }
 
     private boolean isSystemType(String type) {
         String t = type == null ? "" : type.trim().toLowerCase(Locale.ROOT);
@@ -282,8 +350,8 @@ public class WebPushManager {
 
     private String matchedKeyword(Subscription s, Payload payload) {
         if (s == null || payload == null || s.keywords == null || s.keywords.isEmpty()) return "";
-        String body = stripNotificationFormatting(localizedPayloadBody(s, payload));
-        String haystack = (stripNotificationFormatting(payload.title == null ? "" : payload.title) + " " + String.valueOf(body == null ? "" : body)).toLowerCase(Locale.ROOT);
+        String body = localizedPayloadBody(s, payload);
+        String haystack = (mobileNotificationText(payload.title, 0) + " " + mobileNotificationText(body, 0)).toLowerCase(Locale.ROOT);
         for (String keyword : s.keywords) {
             String kw = String.valueOf(keyword == null ? "" : keyword).trim();
             if (kw.isBlank()) continue;
@@ -360,29 +428,31 @@ public class WebPushManager {
         Map<String, Object> m = new LinkedHashMap<>();
         String keyword = clean(matchedKeyword, 80);
         boolean keywordHit = !keyword.isBlank();
-        String baseTitle = stripNotificationFormatting(configuredNotificationTitle());
+        String baseTitle = mobileNotificationText(configuredNotificationTitle(), 80);
         String type = clean(p.type, 40).toLowerCase(Locale.ROOT);
-        String title = stripNotificationFormatting(p.title == null || p.title.isBlank() ? baseTitle : p.title);
-        String rawBody = stripNotificationFormatting(localizedPayloadBody(sub, p));
-        if ("test".equals(type) && rawBody.isBlank()) rawBody = stripNotificationFormatting(subscriptionText(sub, "notification.testBody", "Test push sent."));
-        String body = preview ? clean(rawBody, 240) : "";
+        String rawTitle = p.title == null || p.title.isBlank() ? baseTitle : p.title;
+        String title = mobileNotificationText(rawTitle, 120);
+        if (title.isBlank()) title = baseTitle;
+        String rawBody = localizedPayloadBody(sub, p);
+        if ("test".equals(type) && rawBody.isBlank()) rawBody = subscriptionText(sub, "notification.testBody", "Test push sent.");
+        String body = preview ? mobileNotificationText(rawBody, 240) : "";
         if (keywordHit) {
-            String keywordLabel = stripNotificationFormatting(subscriptionText(sub, "notification.keyword", "Keyword"));
-            m.put("title", stripNotificationFormatting(baseTitle));
-            m.put("body", preview ? clean(keywordLabel + ": " + keyword + " · " + title + (body.isBlank() ? "" : " · " + body), 240) : clean(keywordLabel + ": " + keyword + " · " + title, 120));
+            String keywordLabel = subscriptionText(sub, "notification.keyword", "Keyword");
+            m.put("title", baseTitle);
+            m.put("body", preview ? mobileNotificationText(keywordLabel + ": " + keyword + " · " + title + (body.isBlank() ? "" : " · " + body), 240) : mobileNotificationText(keywordLabel + ": " + keyword + " · " + title, 120));
             m.put("type", "keyword");
             m.put("tag", clean("bmwc-keyword-" + keyword.replaceAll("[^A-Za-z0-9가-힣ぁ-んァ-ン一-龥_-]", ""), 120));
         } else {
-            m.put("title", stripNotificationFormatting(baseTitle));
+            m.put("title", baseTitle);
             String detailPrefix = title.equals(baseTitle) ? "" : title;
             if ("reply".equals(type)) {
-                String replyLabel = stripNotificationFormatting(subscriptionText(sub, "notification.reply", "Reply"));
+                String replyLabel = subscriptionText(sub, "notification.reply", "Reply");
                 detailPrefix = replyLabel + (detailPrefix.isBlank() ? "" : ": " + detailPrefix);
             }
             if ("dm".equals(type) && !detailPrefix.isBlank()) {
-                detailPrefix = stripNotificationFormatting(subscriptionText(sub, "notification.dm", "DM")) + ": " + detailPrefix;
+                detailPrefix = subscriptionText(sub, "notification.dm", "DM") + ": " + detailPrefix;
             }
-            m.put("body", preview ? clean(stripNotificationFormatting(detailPrefix) + (detailPrefix.isBlank() || body.isBlank() ? "" : " · ") + body, 240) : "");
+            m.put("body", preview ? mobileNotificationText(detailPrefix + (detailPrefix.isBlank() || body.isBlank() ? "" : " · ") + body, 240) : "");
             m.put("type", clean(p.type, 40));
             m.put("tag", clean(p.tag, 120));
         }
@@ -391,18 +461,21 @@ public class WebPushManager {
         return JsonUtil.obj(m);
     }
 
-    private String stripNotificationFormatting(String value) {
-        String out = String.valueOf(value == null ? "" : value);
-        // OS/browser notifications cannot render Minecraft formatting. Strip
-        // section-sign codes, configured ampersand legacy codes, RGB forms, and
-        // MiniMessage/HTML-like tags from every notification title/body.
+    private String mobileNotificationText(String value, int limit) {
+        String out = value == null ? "" : String.valueOf(value);
+        // OS/mobile Web Push notifications cannot render Minecraft legacy color
+        // codes, ampersand color codes, MiniMessage tags, or raw hex markers.
+        // Strip them here while leaving in-page web rendering untouched.
         out = out.replaceAll("(?i)[§&]x(?:[§&][0-9a-f]){6}", "");
         out = out.replaceAll("(?i)&#[0-9a-f]{6}", "");
         out = out.replaceAll("(?i)[§&][0-9a-fk-or]", "");
-        out = out.replaceAll("(?i)</?(?:#[0-9a-f]{6}|[a-z][a-z0-9_-]*)(?::[^<>]*)?>", "");
         out = out.replaceAll("<[^>]+>", "");
         out = out.replace("§", "");
-        return out.replaceAll("\\s+", " ").trim();
+        out = out.replaceAll("[\\r\\n\\t]+", " ").replaceAll("\\s+", " ").trim();
+        if (limit > 0 && out.length() > limit) {
+            out = out.substring(0, Math.max(0, limit - 1)).trim() + "…";
+        }
+        return out;
     }
 
     private String notificationOpenUrl(Subscription sub, String payloadUrl) {

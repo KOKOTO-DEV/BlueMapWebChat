@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.5.4
+
+- Fixed Web Push notification filter drift when the same account has multiple saved browser/mobile subscriptions. Updating notification options now also synchronizes the same account's existing Web Push subscriptions, so older endpoints do not keep sending notifications with stale settings such as `notifySystemMode=all` after the user changes the current device to `join-leave` or `off`.
+- Reduced duplicate startup refresh work after stored-token verification. The client now verifies a saved token once, then loads pins, commands, DM rooms, group rooms, history, and SSE through the normal startup path only, avoiding duplicate initial API requests that could cause slower loading, brief UI flicker after SSE reconnect, or repeated DM/group/pinned-message re-rendering on mobile and lower-powered browsers.
+- Added notification and mobile/background Web Push handling for Discord-to-web relay messages. Discord relays now use the same public-chat notification path as web/game chat, so the existing normal chat, mention, keyword, own-message, preview, and notification enable settings apply consistently.
+
+- Restored the PIP unsupported/failure popup in mobile/standalone flows by showing a parent-page modal instead of relying only on native `alert()`, and added a child-frame fallback if the parent bridge does not answer.
+- Fixed notification i18n regressions: removed the duplicated English keyword-help suffix and translated the Japanese Web Push error/failure strings.
+- Updated JA/ZH README Web Push notes so the recent addon/standalone push behavior is documented in the target language instead of mixed English.
+
+
 ## 4.5.3
 
 - When chat is hidden from logged-out users, expired or revoked sessions now immediately clear visible chat history, pinned messages, DM/group state, and chat-related modals.

@@ -596,6 +596,7 @@ public class WebChatServer {
         ChatMessage msg = new ChatMessage(System.currentTimeMillis(), "discord", safeSender, "DISCORD", text);
         addHistory(msg);
         broadcast(msg);
+        dispatchWebPushChat(msg);
     }
 
     public void publishSystemEvent(String sender, String message) {

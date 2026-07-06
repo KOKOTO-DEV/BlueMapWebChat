@@ -278,9 +278,9 @@ TikTok は公式 `player/v1` iframe を使用し、`description=0` と `music_in
 
 ## ブラウザー通知と Web Push
 
-`notifications` は、ブラウザー OS 通知とモバイル/バックグラウンド Web Push の両方で使うサーバー側の既定値/許可上限を制御します。ユーザーはブラウザー側で通知権限を許可する必要があります。`notify-*` 値を `true` にすると各ユーザー/ブラウザーがチャット設定で切り替えられ、`false` にするとユーザーが有効化してもその通知種別はブロックされます。既存の `browser-notifications.*`、`web-push.enabled`、`web-push.notify-*` は対応する `notifications.*` がない場合だけ互換入力として読み込まれ、新しい既定設定は `notifications.*` のみを使用します。
+`notifications` はブラウザー通知とモバイル/バックグラウンド Web Push の共通既定値およびサーバー側の許可上限を制御します。`notifications.enabled` が両方の配信経路に対する単一の既定 ON/OFF 値です。旧 `browser-notifications.*` と `web-push.notify-*` キーは移行/互換入力としてのみ読み取られます。`notify-*` 値を `true` にすると各ユーザー/ブラウザーがチャット設定で切り替えられ、`false` にするとユーザーが有効化してもその通知種別はブロックされます。`notify-system` が許可されている場合、ユーザーはチャット設定でサーバー通知をすべて、参加/退出のみ、オフから選べます。`notify-keywords` はユーザー定義のキーワード通知を制御します。キーワード一覧はブラウザー/端末ごとに保存され、バックグラウンド判定のためその端末の Web Push 購読にのみ同期されます。
 
-`web-push` はモバイル/バックグラウンド Web Push の転送設定のみを含みます。HTTPS または localhost、通知権限、Service Worker / Push API 対応がそろうと、バックグラウンド/モバイルプッシュ通知を送信できます。Android/desktop ブラウザーでは、現在の origin が Service Worker + Push API に対応していれば BlueMap addon と standalone ページのどちらからでも Push を有効化できます。iOS/iPadOS の通常のブラウザータブは Web Push に対応していないため、ホーム画面に追加して Web アプリとして開いたページでのみ試してください。`notifications.enabled: true` で VAPID キーが空の場合、プラグインは `web-push-vapid.properties` に永続キーを生成します。`web-push.subject` は実在する連絡先/運用者識別用の VAPID URI にしてください。
+`web-push` は VAPID キー、subject、購読ファイル、TTL、既定の Push タイトルなどの Web Push 配信設定を保存します。HTTPS または localhost、通知権限、Service Worker / Push API 対応がそろうと、バックグラウンド/モバイルプッシュ通知を送信できます。Android/desktop ブラウザーでは、現在の origin が Service Worker + Push API に対応していれば BlueMap addon と standalone ページのどちらからでも Push を有効化できます。iOS/iPadOS の通常のブラウザータブは Web Push に対応していないため、ホーム画面に追加して Web アプリとして開いたページでのみ試してください。未対応の挙動はプラットフォーム制限として扱います。`notifications.enabled: true` で VAPID キーが空の場合、プラグインは `web-push-vapid.properties` に永続キーを生成します。`web-push.subject` は `mailto:admin@example.com` または `https://map.example.com` のような実在する連絡先/運用者識別用の VAPID URI にしてください。任意の文字列は推奨されず、一部の push サービスで拒否または低信頼として扱われる可能性があります。モバイルの「スパムの可能性」などの警告はブラウザー/OS が表示するため、プラグインから無効化できません。安定した HTTPS ドメイン、意味のある通知タイトル/本文、控えめな通知フィルター、連続したテスト通知を避けることで発生しにくくできます。
 
 ## PIP
 

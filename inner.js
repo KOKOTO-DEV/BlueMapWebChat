@@ -2865,12 +2865,15 @@
         (async () => {
           const action = String(data.action || "");
           if (action === "togglePage") {
-            if (localStorage.getItem("bmwc.notifications.enabled") === "1") localStorage.setItem("bmwc.notifications.enabled", "0");
-            else localStorage.setItem("bmwc.notifications.enabled", "1");
+            if (notificationsEnabledLocal()) setNotificationsEnabledLocal(false);
+            else setNotificationsEnabledLocal(true);
           } else if (action === "setPage") {
-            localStorage.setItem("bmwc.notifications.enabled", data.enabled === false ? "0" : "1");
+            setNotificationsEnabledLocal(data.enabled !== false);
+            if (data.enabled === false) await disableWebPush();
+            else if (canUseWebPush()) await enableWebPush();
           } else if (action === "testPage") {
-            localStorage.setItem("bmwc.notifications.enabled", "1");
+            setNotificationsEnabledLocal(true);
+            if (canUseWebPush()) await enableWebPush();
             showBrowserNotification(configuredNotificationTitle(), t("preferences.notificationsTest", "Test notification"), {tag: "bmwc-test", force: true});
           } else if (action === "setNotificationOptions") {
             const opts = data.options && typeof data.options === "object" ? data.options : {};
@@ -2884,15 +2887,15 @@
               if (hasSystemMode && name === "system") return;
               setNotificationOption(name, opts[name] === true);
             });
-            if (localStorage.getItem("bmwc.webPush.enabled") === "1") await enableWebPush();
+            if (notificationsEnabledLocal()) await enableWebPush();
           } else if (action === "setKeywords") {
             setNotificationKeywordsText(data.keywords || "");
-            if (localStorage.getItem("bmwc.webPush.enabled") === "1") await enableWebPush();
+            if (notificationsEnabledLocal()) await enableWebPush();
           } else if (action === "applyKeywords") {
             const keywordText = String(data.keywords || "");
             setNotificationKeywordsText(keywordText);
             if (keywordText.trim() && notificationServerAllows("keywords")) setNotificationOption("keywords", true);
-            if (localStorage.getItem("bmwc.webPush.enabled") === "1") await enableWebPush();
+            if (notificationsEnabledLocal()) await enableWebPush();
           } else if (action === "enableWebPush") {
             const opts = data.options && typeof data.options === "object" ? data.options : null;
             if (opts) {
@@ -2913,8 +2916,8 @@
           postFrame("notificationStatus", {
             notificationsStatus: notificationStatusText({}),
             webPushStatus: webPushStatusText({}),
-            notificationsEnabledLocal: localStorage.getItem("bmwc.notifications.enabled") === "1",
-            webPushEnabledLocal: localStorage.getItem("bmwc.webPush.enabled") === "1",
+            notificationsEnabledLocal: notificationsEnabledLocal(),
+            webPushEnabledLocal: notificationsEnabledLocal() && canUseWebPush(),
             webPushAvailable: canUseWebPush(),
             notificationOptions: currentNotificationOptions(),
             notificationOptionsAllowed: currentNotificationOptionsAllowed(),
@@ -2969,6 +2972,8 @@
         if (!state.isPip && state.minimized) toggleMin();
         state.forceHistoryEndNoticeUntil = Math.max(Number(state.forceHistoryEndNoticeUntil || 0), Date.now() + 8000);
         scheduleScrollAffordanceRefresh("pip-closed");
+      } else if (data.type === "pipResult") {
+        state.lastPipResultAt = Date.now();
       }
     });
   }
@@ -3385,13 +3390,25 @@
         updatePipButton();
         return;
       }
+      const unsupportedMessage = t("pip.unsupported", "Document Picture-in-Picture is not supported by this browser. Try desktop Chrome or Edge.");
+      const openFailedMessage = t("pip.openFailed", "Failed to open Picture-in-Picture window: {error}");
+      if (window.parent === window) {
+        try { alert(unsupportedMessage); } catch (_) {}
+        return;
+      }
+      state.lastPipResultAt = 0;
       postFrame("togglePip", {
         pipEnabled: true,
         labels: {
-          unsupported: t("pip.unsupported", "Document Picture-in-Picture is not supported by this browser. Try desktop Chrome or Edge."),
-          openFailed: t("pip.openFailed", "Failed to open Picture-in-Picture window: {error}")
+          unsupported: unsupportedMessage,
+          openFailed: openFailedMessage
         }
       });
+      setTimeout(() => {
+        if (!state.lastPipResultAt) {
+          try { alert(unsupportedMessage); } catch (_) {}
+        }
+      }, 1200);
     });
     updatePipButton();
     document.getElementById("bmwc-min").addEventListener("click", toggleMin);
@@ -3508,14 +3525,14 @@
     updateFrameSize();
   }
 
-  function handleAuthExpired(reason = "expired") {
+  function handleAuthExpired(reason = "expired", options = {}) {
     const hadToken = !!state.token;
     clearLoginStorage();
     setLoginRequiredUntilLogin(true);
     updateLoginState();
     updateGuestVisibility();
     clearVisibleChatForLoggedOutHidden(reason);
-    if (!guestChatHidden() && hadToken) connectStream({refreshAfterOpen: true, reason: "auth-" + reason});
+    if (!guestChatHidden() && hadToken && options.reconnect !== false) connectStream({refreshAfterOpen: true, reason: "auth-" + reason});
   }
 
   function isAuthExpiredApiError(err) {
@@ -9989,6 +10006,66 @@
     return typeof window !== "undefined" && "Notification" in window;
   }
 
+  const NOTIFICATION_ENABLED_KEY = "bmwc.notify.enabled";
+  const LEGACY_NOTIFICATIONS_ENABLED_KEY = "bmwc.notifications.enabled";
+  const LEGACY_WEB_PUSH_ENABLED_KEY = "bmwc.webPush.enabled";
+
+  function readStorageValue(key) {
+    try { return localStorage.getItem(key); } catch (_) { return null; }
+  }
+
+  function writeStorageValue(key, value) {
+    try {
+      if (value === null || value === undefined) localStorage.removeItem(key);
+      else localStorage.setItem(key, String(value));
+    } catch (_) {}
+  }
+
+  function migrateNotificationEnabledStorage() {
+    const current = readStorageValue(NOTIFICATION_ENABLED_KEY);
+    if (current === "1" || current === "0") return current === "1";
+    const legacyPage = readStorageValue(LEGACY_NOTIFICATIONS_ENABLED_KEY);
+    const legacyPush = readStorageValue(LEGACY_WEB_PUSH_ENABLED_KEY);
+    let enabled = false;
+    if (legacyPage === "1" || legacyPush === "1") enabled = true;
+    else if (legacyPage === "0" || legacyPush === "0") enabled = false;
+    writeStorageValue(NOTIFICATION_ENABLED_KEY, enabled ? "1" : "0");
+    return enabled;
+  }
+
+  function notificationsEnabledLocal() {
+    return migrateNotificationEnabledStorage();
+  }
+
+  function setNotificationsEnabledLocal(enabled, options = {}) {
+    const on = enabled === true;
+    writeStorageValue(NOTIFICATION_ENABLED_KEY, on ? "1" : "0");
+    // Legacy keys are migration/compatibility inputs only. Remove them after the
+    // unified key is written so the settings UI has a single source of truth.
+    if (options.keepLegacy !== true) {
+      writeStorageValue(LEGACY_NOTIFICATIONS_ENABLED_KEY, null);
+      writeStorageValue(LEGACY_WEB_PUSH_ENABLED_KEY, null);
+    }
+  }
+
+  function readLegacyNotificationEnabledFromStorage(storage) {
+    if (!storage || typeof storage !== "object") return null;
+    if (Object.prototype.hasOwnProperty.call(storage, NOTIFICATION_ENABLED_KEY)) {
+      const value = storage[NOTIFICATION_ENABLED_KEY];
+      if (value === "1" || value === 1 || value === true) return true;
+      if (value === "0" || value === 0 || value === false) return false;
+    }
+    let seen = false;
+    let enabled = false;
+    [LEGACY_NOTIFICATIONS_ENABLED_KEY, LEGACY_WEB_PUSH_ENABLED_KEY].forEach(key => {
+      if (!Object.prototype.hasOwnProperty.call(storage, key)) return;
+      seen = true;
+      const value = storage[key];
+      if (value === "1" || value === 1 || value === true) enabled = true;
+    });
+    return seen ? enabled : null;
+  }
+
   const NOTIFICATION_OPTION_DEFS = [
     {name: "normalChat", key: "bmwc.notify.normalChat", label: "notifyNormalChat", fallback: () => notificationServerDefault("normalChat")},
     {name: "dm", key: "bmwc.notify.dm", label: "notifyDm", fallback: () => notificationServerDefault("dm")},
@@ -10284,7 +10361,7 @@
     if (!state.browserNotificationsEnabled) return prefStatusLabel(labels, "notificationsServerDisabled", "Notifications are disabled by server configuration.");
     if (!notificationApiSupported()) return prefStatusLabel(labels, "notificationsUnsupported", "This browser does not support notifications.");
     if (Notification.permission === "denied") return prefStatusLabel(labels, "notificationsPermissionDenied", "Notification permission is blocked in this browser.");
-    if (localStorage.getItem("bmwc.notifications.enabled") === "1" && Notification.permission === "granted") return prefStatusLabel(labels, "notificationsEnabledStatus", "Enabled in this browser.");
+    if (notificationsEnabledLocal() && Notification.permission === "granted") return prefStatusLabel(labels, "notificationsEnabledStatus", "Enabled in this browser.");
     if (Notification.permission === "granted") return prefStatusLabel(labels, "notificationsAllowedDisabledStatus", "Allowed by browser, disabled in chat settings.");
     return prefStatusLabel(labels, "notificationsNotRequestedStatus", "Permission is not requested yet.");
   }
@@ -10335,7 +10412,7 @@
     if (state.webPushLastError) return state.webPushLastError;
     const reason = webPushUnavailableReason(labels);
     if (reason) return reason;
-    return localStorage.getItem("bmwc.webPush.enabled") === "1" ? prefStatusLabel(labels, "webPushEnabledStatus", "Enabled in this browser.") : prefStatusLabel(labels, "webPushDisabledStatus", "Disabled in this browser.");
+    return notificationsEnabledLocal() ? prefStatusLabel(labels, "webPushEnabledStatus", "Enabled in this browser.") : prefStatusLabel(labels, "webPushDisabledStatus", "Disabled in this browser.");
   }
 
   async function requestBrowserNotifications() {
@@ -10357,13 +10434,13 @@
   }
 
   function showBrowserNotification(title, body, options = {}) {
-    if (!state.browserNotificationsEnabled || localStorage.getItem("bmwc.notifications.enabled") !== "1") return false;
-    const finalTitle = plainNotificationText(title || configuredNotificationTitle(), 120);
-    const finalBody = plainNotificationText(body || "", 240);
+    if (!state.browserNotificationsEnabled || !notificationsEnabledLocal()) return false;
+    const finalTitle = title || configuredNotificationTitle();
+    const finalBody = String(body || "");
     const navUrl = options.url || notificationNavigationUrl(options);
     if (options.store !== false) addNotificationInboxItem({title: finalTitle, body: finalBody, type: options.type || "notification", tag: options.tag || "", messageId: options.messageId || "", dmThreadId: options.dmThreadId || "", dmMessageId: options.dmMessageId || "", groupRoomId: options.groupRoomId || "", groupMessageId: options.groupMessageId || "", url: navUrl || ""});
     if (!attentionNeededForNotification(options.force === true)) return false;
-    const visibleBody = browserNotificationOption("preview") ? finalBody : "";
+    const visibleBody = browserNotificationOption("preview") ? String(body || "") : "";
     if (window.parent && window.parent !== window && !state.isPip) {
       postFrame("showNotification", {
         title: finalTitle,
@@ -10401,9 +10478,7 @@
   function plainNotificationText(value, limit = 180) {
     let text = String(value || "");
     text = text.replace(/[§&]x(?:[§&][0-9a-fA-F]){6}/g, "");
-    text = text.replace(/&#[0-9a-fA-F]{6}/g, "");
     text = text.replace(/[§&][0-9a-fA-Fk-oK-OrR]/g, "");
-    text = text.replace(/<\/?(?:#[0-9a-fA-F]{6}|[a-zA-Z][a-zA-Z0-9_-]*)(?::[^<>]*)?>/g, "");
     text = text.replace(/<[^>]+>/g, "");
     text = text.replace(/\s+/g, " ").trim();
     if (limit > 0 && text.length > limit) text = text.slice(0, Math.max(0, limit - 1)) + "…";
@@ -10748,7 +10823,7 @@
     });
     if (reason) {
       state.webPushLastError = reason;
-      localStorage.setItem("bmwc.webPush.enabled", "0");
+      writeStorageValue(LEGACY_WEB_PUSH_ENABLED_KEY, null);
       return false;
     }
     if (state.webPushRegistering) return false;
@@ -10760,7 +10835,7 @@
         state.webPushLastError = t("preferences.notificationsPermissionDenied", "Notification permission is blocked in this browser.");
         return false;
       }
-      localStorage.setItem("bmwc.notifications.enabled", "1");
+      setNotificationsEnabledLocal(true);
       const json = await createWebPushSubscriptionJson();
       const opts = currentNotificationOptions();
       await api("/push/subscribe", {method: "POST", body: JSON.stringify({
@@ -10782,13 +10857,13 @@
         notifyOwnMessages: opts.ownMessages === true,
         showMessagePreview: opts.preview === true
       })});
-      localStorage.setItem("bmwc.webPush.enabled", "1");
+      writeStorageValue(LEGACY_WEB_PUSH_ENABLED_KEY, null);
       state.webPushLastError = "";
       return true;
     } catch (e) {
       console.warn("BlueMapWebChat Web Push subscribe failed", e);
       state.webPushLastError = webPushErrorText(e);
-      localStorage.setItem("bmwc.webPush.enabled", "0");
+      writeStorageValue(LEGACY_WEB_PUSH_ENABLED_KEY, null);
       return false;
     } finally {
       state.webPushRegistering = false;
@@ -10801,7 +10876,7 @@
       if (state.token && endpoint) await api("/push/unsubscribe", {method: "POST", body: JSON.stringify({token: state.token, endpoint})}).catch(() => {});
     } catch (_) {
     } finally {
-      localStorage.setItem("bmwc.webPush.enabled", "0");
+      writeStorageValue(LEGACY_WEB_PUSH_ENABLED_KEY, null);
       state.webPushLastError = "";
     }
   }
@@ -10822,7 +10897,7 @@
   }
 
   async function ensurePreferredWebPush() {
-    if (localStorage.getItem("bmwc.webPush.enabled") === "1" && canUseWebPush()) await enableWebPush();
+    if (notificationsEnabledLocal() && canUseWebPush()) await enableWebPush();
   }
 
   function buildUserPreferencesPayload() {
@@ -10897,11 +10972,11 @@
         notificationsNotRequestedStatus: t("preferences.notificationsNotRequestedStatus", "Permission is not requested yet."),
         webPush: t("preferences.webPush", "Mobile/background push"),
         webPushHelp: t("preferences.webPushHelp", "Requires HTTPS, service worker support, browser permission, and a supported browser. Android/desktop can use addon or standalone; iOS/iPadOS requires adding the page to the Home Screen."),
-        webPushEnable: t("preferences.webPushEnable", "Enable mobile push"),
-        webPushDisable: t("preferences.webPushDisable", "Disable mobile push"),
-        webPushTest: t("preferences.webPushTest", "Test mobile push"),
+        webPushEnable: t("preferences.webPushEnable", "Enable notifications"),
+        webPushDisable: t("preferences.webPushDisable", "Disable notifications"),
+        webPushTest: t("preferences.webPushTest", "Test notification"),
         webPushTestSent: t("preferences.webPushTestSent", "Test push sent. Check this device's notification area."),
-        webPushHowToTest: t("preferences.webPushHowToTest", "To test mobile push: open this HTTPS chat page, log in, enable mobile push, allow notifications, tap Test mobile push, then lock the screen or leave the browser and send a DM/group message from another account. On iOS/iPadOS, first add the page to the Home Screen and open it as a web app."),
+        webPushHowToTest: t("preferences.webPushHowToTest", "Mobile/background push uses the same notification switch and type options. Supported browsers subscribe automatically when notifications are enabled."),
         advancedSettings: t("preferences.advancedSettings", "Advanced settings"),
         webPushUnsupported: t("preferences.webPushUnsupported", "Web Push is not available in this browser or server configuration."),
         webPushServerDisabled: t("preferences.webPushServerDisabled", "Web Push is disabled by server configuration."),
@@ -10912,6 +10987,7 @@
         webPushEnabledStatus: t("preferences.webPushEnabledStatus", "Enabled on this browser."),
         webPushDisabledStatus: t("preferences.webPushDisabledStatus", "Disabled on this browser."),
         notifyTypes: t("preferences.notifyTypes", "Notification types"),
+        notifyTypesHelp: t("preferences.notifyTypesHelp", "These type options apply to both browser notifications and mobile/background Web Push on this device."),
         notifyNormalChat: t("preferences.notifyNormalChat", "Normal chat"),
         notifyDm: t("preferences.notifyDm", "DM"),
         notifyGroupChat: t("preferences.notifyGroupChat", "Group chat"),
@@ -10923,7 +10999,7 @@
         notifySystemOff: t("preferences.notifySystemOff", "Off"),
         notifyKeywords: t("preferences.notifyKeywords", "Keyword alerts"),
         notifyKeywordsList: t("preferences.notifyKeywordsList", "Keyword alert words"),
-        notifyKeywordsHelp: t("preferences.notifyKeywordsHelp", "Comma or line separated. Stored in this browser; mobile/background push syncs them only with this device's push subscription."),
+        notifyKeywordsHelp: t("preferences.notifyKeywordsHelp", "Comma or line separated. Stored in this browser; Apply keywords also updates this device's mobile/background push subscription."),
         notifyKeywordsApply: t("preferences.notifyKeywordsApply", "Apply keywords"),
         notifyKeywordsSaved: t("preferences.notifyKeywordsSaved", "Keyword alerts saved."),
         notifyKeywordsNeedsApply: t("preferences.notifyKeywordsNeedsApply", "Keyword list changed. Tap Apply keywords to update push filtering."),
@@ -10964,8 +11040,8 @@
       textShadowCustom: effectiveUserTextShadowCustom(),
       backgroundColor: effectiveUserBackgroundColor(),
       inputBackgroundColor: effectiveUserInputBackgroundColor(),
-      notificationsEnabled: localStorage.getItem("bmwc.notifications.enabled") === "1",
-      webPushEnabledLocal: localStorage.getItem("bmwc.webPush.enabled") === "1",
+      notificationsEnabled: notificationsEnabledLocal(),
+      webPushEnabledLocal: notificationsEnabledLocal() && canUseWebPush(),
       webPushAvailable: canUseWebPush(),
       webPushNotificationTitle: configuredNotificationTitle(),
       notificationOptions: currentNotificationOptions(),
@@ -10997,7 +11073,7 @@
     "bmwc.userBackgroundColor", "bmwc.userInputBackgroundColor", "bmwc.language",
     "bmwc.senderIdentityMode", "bmwc.timeDisplayMode", "bmwc.dmConversationFocus",
     "bmwc.emojiPanelHeightPx", "bmwc.windowWidth", "bmwc.windowHeight",
-    "bmwc.resizeLocked", "bmwc.minimized", "bmwc.notifications.enabled", "bmwc.webPush.enabled",
+    "bmwc.resizeLocked", "bmwc.minimized", NOTIFICATION_ENABLED_KEY,
     "bmwc.notify.normalChat", "bmwc.notify.dm", "bmwc.notify.groupChat", "bmwc.notify.mentions",
     "bmwc.notify.system", "bmwc.notify.keywords", "bmwc.notify.keywords.list", "bmwc.notify.ownMessages", "bmwc.notify.preview",
     "bmwc.parentFramePosition", "bmwc.parentUserPrefsModalPos", "bmwc.localUserPrefsModalPos"
@@ -11045,12 +11121,10 @@
     applyWindowSizeConfig();
     updateResizeLockButton();
     updateFrameSize();
-    if (Object.prototype.hasOwnProperty.call(storage, "bmwc.webPush.enabled")) {
-      if (localStorage.getItem("bmwc.webPush.enabled") === "1") ensurePreferredWebPush().catch(() => {});
-      else disableWebPush().catch(() => {});
-    } else {
-      ensurePreferredWebPush().catch(() => {});
-    }
+    const migratedNotificationEnabled = readLegacyNotificationEnabledFromStorage(storage);
+    if (migratedNotificationEnabled !== null) setNotificationsEnabledLocal(migratedNotificationEnabled);
+    if (notificationsEnabledLocal()) ensurePreferredWebPush().catch(() => {});
+    else disableWebPush().catch(() => {});
   }
 
   function loadChatSettingPresets() {
@@ -11257,18 +11331,15 @@
           <summary>${esc(labels.notifications || "Notifications")}</summary>
           <p class="bmwc-pref-font-help">${esc(labels.notificationsPageHelp || "Shows OS notifications while this page is open.")}</p>
           <div class="bmwc-pref-button-row">
-            <button class="bmwc-button" id="bmwc-prefs-notifications-toggle" type="button">${esc(localStorage.getItem("bmwc.notifications.enabled") === "1" ? (labels.notificationsDisable || "Disable notifications") : (labels.notificationsEnable || "Enable notifications"))}</button>
+            <button class="bmwc-button" id="bmwc-prefs-notifications-toggle" type="button">${esc(notificationsEnabledLocal() ? (labels.notificationsDisable || "Disable notifications") : (labels.notificationsEnable || "Enable notifications"))}</button>
             <button class="bmwc-button" id="bmwc-prefs-notifications-test" type="button">${esc(labels.notificationsTest || "Test notification")}</button>
           </div>
           <p class="bmwc-pref-font-help" id="bmwc-prefs-notifications-status" aria-live="polite">${esc(notificationStatusText(labels))}</p>
           <p class="bmwc-pref-font-help">${esc(labels.webPushHelp || "Requires HTTPS, service worker support, browser permission, and a supported browser. Android/desktop can use addon or standalone; iOS/iPadOS requires adding the page to the Home Screen.")}</p>
-          <p class="bmwc-pref-font-help">${esc(labels.webPushHowToTest || "To test mobile push: open this HTTPS chat page, log in, enable mobile push, allow notifications, tap Test mobile push, then lock the screen or leave the browser and send a DM/group message from another account. On iOS/iPadOS, first add the page to the Home Screen and open it as a web app.")}</p>
-          <div class="bmwc-pref-button-row">
-            <button class="bmwc-button" id="bmwc-prefs-web-push-toggle" type="button">${esc(localStorage.getItem("bmwc.webPush.enabled") === "1" ? (labels.webPushDisable || "Disable mobile push") : (labels.webPushEnable || "Enable mobile push"))}</button>
-            <button class="bmwc-button" id="bmwc-prefs-web-push-test" type="button">${esc(labels.webPushTest || "Test mobile push")}</button>
-          </div>
+          <p class="bmwc-pref-font-help">${esc(labels.webPushHowToTest || "Mobile/background push uses the same notification switch and type options. Supported browsers will subscribe automatically when notifications are enabled.")}</p>
           <p class="bmwc-pref-font-help" id="bmwc-prefs-web-push-status" aria-live="polite">${esc(webPushStatusText(labels))}</p>
           <label class="bmwc-pref-label"><span>${esc(labels.notifyTypes || "Notification types")}</span></label>
+          <p class="bmwc-pref-font-help">${esc(labels.notifyTypesHelp || "These type options apply to both browser notifications and mobile/background Web Push on this device.")}</p>
           ${notificationOptionsHtml("bmwc-prefs-notify", labels)}
           <label class="bmwc-pref-label"><span>${esc(labels.notifyKeywordsList || "Keyword alert words")}</span></label>
           <textarea class="bmwc-input bmwc-pref-textarea" id="bmwc-prefs-notify-keywords-list" rows="3" placeholder="keyword1, keyword2">${esc(notificationKeywordsText())}</textarea>
@@ -11276,7 +11347,7 @@
             <button class="bmwc-button" id="bmwc-prefs-notify-keywords-apply" type="button">${esc(labels.notifyKeywordsApply || "Apply keywords")}</button>
             <span class="bmwc-pref-inline-status" id="bmwc-prefs-notify-keywords-status" aria-live="polite"></span>
           </div>
-          <p class="bmwc-pref-font-help">${esc(labels.notifyKeywordsHelp || "Comma or line separated. Stored in this browser; mobile/background push syncs them only with this device's push subscription.")}</p>
+          <p class="bmwc-pref-font-help">${esc(labels.notifyKeywordsHelp || "Comma or line separated. Stored in this browser; Apply keywords also updates this device's mobile/background push subscription.")}</p>
         </details>
 
         <div class="bmwc-pref-section bmwc-pref-static">
@@ -11333,8 +11404,6 @@
     const notificationsToggle = wrap.querySelector("#bmwc-prefs-notifications-toggle");
     const notificationsTest = wrap.querySelector("#bmwc-prefs-notifications-test");
     const notificationsStatus = wrap.querySelector("#bmwc-prefs-notifications-status");
-    const webPushToggle = wrap.querySelector("#bmwc-prefs-web-push-toggle");
-    const webPushTest = wrap.querySelector("#bmwc-prefs-web-push-test");
     const webPushStatus = wrap.querySelector("#bmwc-prefs-web-push-status");
     const presetSelect = wrap.querySelector("#bmwc-prefs-preset-select");
     const presetNameInput = null;
@@ -11449,15 +11518,11 @@
     const updateNotificationStatuses = () => {
       if (notificationsStatus) notificationsStatus.textContent = notificationStatusText(labels);
       if (webPushStatus) webPushStatus.textContent = webPushStatusText(labels);
-      if (notificationsToggle) notificationsToggle.textContent = localStorage.getItem("bmwc.notifications.enabled") === "1" ? (labels.notificationsDisable || "Disable notifications") : (labels.notificationsEnable || "Enable notifications");
-      if (webPushToggle) {
-        webPushToggle.textContent = localStorage.getItem("bmwc.webPush.enabled") === "1" ? (labels.webPushDisable || "Disable mobile push") : (labels.webPushEnable || "Enable mobile push");
-        webPushToggle.disabled = !canUseWebPush() && localStorage.getItem("bmwc.webPush.enabled") !== "1";
-      }
+      if (notificationsToggle) notificationsToggle.textContent = notificationsEnabledLocal() ? (labels.notificationsDisable || "Disable notifications") : (labels.notificationsEnable || "Enable notifications");
     };
     updateNotificationStatuses();
     bindNotificationOptionInputs(wrap, () => {
-      if (localStorage.getItem("bmwc.webPush.enabled") === "1") enableWebPush().catch(() => {});
+      if (notificationsEnabledLocal()) enableWebPush().catch(() => {});
       updateNotificationStatuses();
     });
     const updateNotifyKeywordOptionInputs = () => {
@@ -11474,7 +11539,7 @@
       const keywordAllowed = notificationServerAllows("keywords");
       if (keywordText.trim() && keywordAllowed) setNotificationOption("keywords", true);
       updateNotifyKeywordOptionInputs();
-      if (localStorage.getItem("bmwc.webPush.enabled") === "1") await enableWebPush();
+      if (notificationsEnabledLocal()) await enableWebPush();
       updateNotificationStatuses();
       if (notifyKeywordsStatus) notifyKeywordsStatus.textContent = keywordText.trim() && !keywordAllowed
         ? (labels.notifyDisabledByServer || "Disabled by server configuration.")
@@ -11492,27 +11557,25 @@
       if (notifyKeywordsStatus) notifyKeywordsStatus.textContent = labels.presetSaveFailed || "Save failed. Browser storage may be blocked.";
     }));
     if (notificationsToggle) notificationsToggle.addEventListener("click", async () => {
-      if (localStorage.getItem("bmwc.notifications.enabled") === "1") {
-        localStorage.setItem("bmwc.notifications.enabled", "0");
+      if (notificationsEnabledLocal()) {
+        setNotificationsEnabledLocal(false);
+        await disableWebPush();
       } else {
         const ok = await requestBrowserNotifications();
-        if (ok) localStorage.setItem("bmwc.notifications.enabled", "1");
+        if (ok) {
+          setNotificationsEnabledLocal(true);
+          if (canUseWebPush()) await enableWebPush();
+        }
       }
       updateNotificationStatuses();
     });
     if (notificationsTest) notificationsTest.addEventListener("click", async () => {
       const ok = await requestBrowserNotifications();
-      if (ok) localStorage.setItem("bmwc.notifications.enabled", "1");
+      if (ok) {
+        setNotificationsEnabledLocal(true);
+        if (canUseWebPush()) await enableWebPush();
+      }
       showBrowserNotification(configuredNotificationTitle(), labels.notificationsTest || "Test notification", {tag: "bmwc-test", force: true});
-      updateNotificationStatuses();
-    });
-    if (webPushToggle) webPushToggle.addEventListener("click", async () => {
-      if (localStorage.getItem("bmwc.webPush.enabled") === "1") await disableWebPush();
-      else await enableWebPush();
-      updateNotificationStatuses();
-    });
-    if (webPushTest) webPushTest.addEventListener("click", async () => {
-      await testWebPush();
       updateNotificationStatuses();
     });
 
@@ -14659,24 +14722,24 @@
   }
 
   async function verifyStoredToken() {
-    if (!state.token) return;
+    if (!state.token) return false;
     try {
       const res = await api("/auth/me?token=" + encodeURIComponent(state.token));
       if (!res.ok) {
-        handleAuthExpired("verify");
-        return;
+        handleAuthExpired("verify", {reconnect: false});
+        return false;
       } else {
         state.username = res.username;
         state.role = res.role;
+        localStorage.setItem("bmwc.username", state.username || "");
+        localStorage.setItem("bmwc.role", state.role || "");
       }
-    } catch (_) {}
+    } catch (_) {
+      return false;
+    }
     updateLoginState();
     updateGuestVisibility();
-    await loadPins();
-    await loadCommands();
-    await loadDirectMessageThreads(true);
-    await loadGroupChatRooms(true);
-    if (state.token) connectStream({refreshAfterOpen: true, reason: "token-verify"});
+    return true;
   }
 
   if (typeof navigator !== "undefined" && navigator.serviceWorker) {

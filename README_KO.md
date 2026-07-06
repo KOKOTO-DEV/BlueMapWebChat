@@ -23,7 +23,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-4.5.3.jar
+target/BlueMapWebChat-4.5.4.jar
 ```
 
 ## 기본 설치
