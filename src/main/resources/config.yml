@@ -1,4 +1,4 @@
-# BlueMapWebChat 4.5.4 configuration
+# BlueMapWebChat 4.5.5 configuration
 
 # Master switch for BlueMapWebChat.
 # New generated configs default to false so the plugin creates config.yml first
@@ -139,6 +139,11 @@ chat:
   max-message-length: 120
   max-url-message-length: 2048
 
+  # Format used when web messages are relayed into Minecraft chat.
+  # Supports Minecraft legacy color codes with & in the configured template only.
+  # User message text is not color-translated.
+  # web-user/web-admin placeholders: {player}, {message}
+  # web-guest placeholders: {guest}, {message}
   web-user-to-game-format: "[Web] {player}: {message}"
   web-guest-to-game-format: "[Web Guest] {guest}: {message}"
   web-admin-to-game-format: "[Web Admin] {player}: {message}"
@@ -148,10 +153,30 @@ chat:
   send-web-chat-to-game: true
   clickable-urls-in-game: true
 
+  # When player-display.mode is display-name or custom-name, optionally show the real linked
+  # Minecraft account name when hovering over a web-chat sender name in in-game chat.
+  # Hover is only added when the displayed name differs from the real account name.
+  # Uses Spigot/Bungee chat components, so it works on Spigot/Paper-compatible servers and is not Paper-only.
+  # text supports Minecraft legacy color codes with &, \n for line breaks, and placeholders:
+  # {display} = displayed sender name, {real} = real Minecraft account name,
+  # {uuid} = linked Minecraft UUID, {source} = message source such as web/guest/admin.
+  game-name-hover:
+    enabled: false
+    text: "&f{real}"
+
 announcements:
   broadcast-to-web-chat: true
   # Built-in announcement events are sent with an i18n key.
   # The message below is kept as fallback/custom text; the web UI translates it when a matching lang key exists.
+  # Common placeholders: {server}, {event}
+  # Player events: {player}, {name}, {real_player}, {real_name}, {uuid}, {world}
+  # Extra event placeholders:
+  # - death: {message}, {killer}
+  # - advancement: {advancement}, {advancement_key}
+  # - world-change: {from_world}, {to_world}, {world}
+  # - gamemode-change: {from_gamemode}, {to_gamemode}, {gamemode}
+  # - level-change: {old_level}, {new_level}, {level}
+  # - web-login/web-logout: {name}, {player}
 
   minecraft-join:
     enabled: true
@@ -295,6 +320,7 @@ ui:
   # When sync-bluemap-theme is true, the embedded BlueMap addon can follow BlueMap's current theme.
   theme: "system"
   sync-bluemap-theme: true
+  # Window opacity. Allowed range: 0.20-1.00.
   opacity: 0.92
 
   linkify-urls: true
@@ -305,6 +331,8 @@ ui:
   # with virtual scrolling when images, GIFs, videos, or iframes finish loading.
   image-preview-max-height: 720
   google-drive-image-preview: false
+  # Google Drive image preview mode.
+  # thumbnail = use Google thumbnail URLs; uc = use legacy uc/export style URLs.
   google-drive-preview-mode: "thumbnail"
 
   hide-chat-for-guests-when-guest-disabled: true
@@ -375,14 +403,20 @@ ui:
     preserve-playing-media: true
 
   history-preload:
+    # How far from the top/bottom to start loading more history, in viewport screens.
+    # Allowed range: 0.0-5.0.
     screens: 0.70
+    # Minimum pixel threshold for history preload. Allowed range: 0-1000.
     min-px: 200
 
+  # Distance from the bottom that still counts as following the latest messages. Allowed range: 2-300.
   auto-follow-bottom-threshold-px: 80
+  # After direct user scrolling, wait this many ms before automatic scroll handling. Allowed range: 50-1000.
   scroll-interaction-idle-ms: 160
 
   resume-refresh:
     enabled: true
+    # Minimum seconds between resume refreshes. Allowed range: 1-300.
     min-interval-seconds: 5
     skip-while-media-active: true
     skip-unchanged: true
@@ -428,6 +462,7 @@ web-push:
   # Empty = use standalone-web.app-name.
   notification-title: ""
   subscriptions-file: "web-push-subscriptions.jsonl"
+  # Web Push TTL in seconds. Allowed range: 30-86400.
   ttl-seconds: 300
 
 # Player name shown for Minecraft-origin messages and announcements.
@@ -522,6 +557,7 @@ commands:
   # false = only presets below can be executed. true = users at min-role can run any console command.
   # Keep this false unless the web UI is strongly protected.
   allow-all: false
+  # Minimum web role allowed to run commands. Supported values: USER, MODERATOR, ADMIN.
   min-role: ADMIN
   show-button: true
   # false = commands can only be run from the command button/modal.
@@ -581,6 +617,7 @@ discordsrv:
     prefix-enabled: true
     preview-enabled: true
     preview-max-length: 120
+  # Discord relay format placeholders: {sender}, {name}, {role}, {source}, {message}, {channel}
   web-to-discord-format: "[Web] {sender}: {message}"
   game-to-discord-format: "{sender}: {message}"
   discord-to-web-sender-format: "Discord:{sender}"
@@ -614,8 +651,8 @@ upload:
   #   when http.cors-origin is a real origin; otherwise it becomes "/bmwc/api/uploads".
   # - Full URL: "https://map.example.com/bmwc/api/uploads" is used as-is.
   public-base-url: ""
-  # Default is 0 to avoid deleting uploaded files when config.yml is regenerated.
-  # Set this manually to your server policy, for example 30 or 90, if you want old upload cleanup.
+  # Delete unreferenced uploaded files older than this many days.
+  # 0 = disable age-based upload cleanup. Default: 5.
   retention-days: 5
   allowed-extensions:
     - png
@@ -632,7 +669,10 @@ upload:
     - flac
 
   clipboard-upload-enabled: true
+  # Clipboard upload behavior.
+  # insert = insert uploaded file URL into the current input; send = send immediately.
   clipboard-upload-send-mode: "insert"
+  # Default file extension for pasted image blobs when the browser does not provide a filename.
   clipboard-image-default-extension: "png"
 
   preview-images: true
@@ -662,6 +702,7 @@ preview:
       enabled: false
     x:
       enabled: false
+      # X/Twitter embed theme. Supported values: auto, light, dark.
       theme: "auto"
       dnt: true
       hide-media: false
@@ -673,8 +714,8 @@ preview:
   external-media-cache-directory: "uploads/external-media-cache"
   # 0 = unlimited per external cached media file.
   external-media-cache-max-size-mb: 20
-  # Default is 0 to avoid deleting cached media when config.yml is regenerated.
-  # Set this manually if you want old external media cache cleanup.
+  # Delete unreferenced external media cache files older than this many days.
+  # 0 = disable age-based external media cache cleanup. Default: 5.
   external-media-cache-retention-days: 5
   external-media-cache-timeout-seconds: 6
 
@@ -684,6 +725,11 @@ web-fonts:
   enabled: false
   directory: "fonts"
   items: []
+  # Item fields:
+  # - family: CSS font-family name exposed to the web UI
+  # - file: relative font file path under web-fonts.directory; allowed extensions: woff2, woff, ttf, otf
+  # - weight: 100-900, default 400
+  # - style: normal, italic, or oblique
   # Example:
   # items:
   #   - family: "Pretendard"

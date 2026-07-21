@@ -116,6 +116,17 @@ guest:
 
 访客聊天同时受 `cooldown-seconds` 和 `max-messages-per-minute` 限制。每分钟消息数默认值为 `50`。已有服务器的配置文件不会自动覆盖；如果要在现有安装中使用新的默认值，请手动更新 `plugins/BlueMapWebChat/config.yml`。
 
+## Web→Minecraft 名称 hover
+
+```yaml
+chat:
+  game-name-hover:
+    enabled: false
+    text: "&f{real}"
+```
+
+当 Web 聊天转发到 Minecraft 聊天时，`chat.game-name-hover.enabled` 可以在显示名称上添加 hover 提示。仅当 `player-display.mode` 为 `display-name` 或 `custom-name`，且显示名称与真实 Minecraft 账号名不同时才会应用。该提示使用 Spigot/Bungee 聊天组件，因此不是 Paper 专用，在 Spigot/Paper 兼容服务器上可用。`text` 支持 Minecraft legacy 颜色代码以及 `{display}`, `{real}`, `{uuid}`, `{source}` 占位符。
+
 ## Minecraft 聊天中的回复显示
 
 ```yaml

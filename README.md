@@ -25,7 +25,7 @@ mvn clean package
 ```
 
 ```text
-target/BlueMapWebChat-4.5.4.jar
+target/BlueMapWebChat-4.5.5.jar
 ```
 
 ## Install

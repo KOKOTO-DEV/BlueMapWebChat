@@ -2,6 +2,8 @@ package dev.kokoto.bluemapwebchat;
 
 import net.md_5.bungee.api.chat.BaseComponent;
 import net.md_5.bungee.api.chat.ClickEvent;
+import net.md_5.bungee.api.chat.ComponentBuilder;
+import net.md_5.bungee.api.chat.HoverEvent;
 import net.md_5.bungee.api.chat.TextComponent;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
@@ -5307,13 +5309,15 @@ public class WebChatServer {
         // This keeps user-provided literals such as "&n", "&l", "&a" intact when relayed to game chat.
         String template = translateGameFormatCodes(format);
         String gameMessage = messageForGameChat(msg == null ? "" : msg.message, config);
+        String sender = String.valueOf(msg == null || msg.sender == null ? "" : msg.sender);
         String line = template
-                .replace("{player}", msg.sender)
-                .replace("{guest}", msg.sender)
+                .replace("{player}", sender)
+                .replace("{guest}", sender)
                 .replace("{message}", gameMessage);
         line = applyReplyGameLinePrefix(msg, line, config);
 
         final String finalReplyLine = gameReplyPreviewLine(msg, config);
+        final GameLineHover finalHover = gameLineHover(msg, line, config);
         final String finalLine = line;
         boolean preservePlainForReply = shouldPreservePlainBroadcastForGameEmojiTokens(
                 String.valueOf(msg == null ? "" : msg.replyToPreview), finalReplyLine, config);
@@ -5322,7 +5326,7 @@ public class WebChatServer {
             if (!finalReplyLine.isBlank()) {
                 broadcastGameLine(finalReplyLine, preservePlainForReply, config);
             }
-            broadcastGameLine(finalLine, preservePlainForGameEmojiTokens, config);
+            broadcastGameLine(finalLine, preservePlainForGameEmojiTokens, config, finalHover);
         });
     }
 
@@ -5429,10 +5433,66 @@ public class WebChatServer {
         return raw.substring(0, Math.max(0, maxLength - 1)).trim() + "…";
     }
 
+    private GameLineHover gameLineHover(ChatMessage msg, String renderedLine, ConfigValues config) {
+        if (msg == null || config == null || !config.gameNameHoverEnabled) return GameLineHover.empty();
+        String mode = String.valueOf(config.playerNameMode == null ? "" : config.playerNameMode).trim();
+        if (!("display-name".equalsIgnoreCase(mode) || "custom-name".equalsIgnoreCase(mode))) {
+            return GameLineHover.empty();
+        }
+        String display = String.valueOf(msg.sender == null ? "" : msg.sender);
+        String real = stripControl(msg.realSender, 64).trim();
+        if (display.isBlank() || real.isBlank()) return GameLineHover.empty();
+        String plainDisplay = stripMinecraftFormatting(display).trim();
+        if (plainDisplay.isBlank() || plainDisplay.equalsIgnoreCase(real)) return GameLineHover.empty();
+        String line = String.valueOf(renderedLine == null ? "" : renderedLine);
+        if (!line.contains(display)) return GameLineHover.empty();
+        String uuid = stripControl(msg.playerUuid, 64).trim();
+        String hover = String.valueOf(config.gameNameHoverText == null ? "" : config.gameNameHoverText);
+        if (hover.isBlank()) hover = "&f{real}";
+        hover = hover
+                .replace("{display}", plainDisplay)
+                .replace("{real}", real)
+                .replace("{uuid}", uuid)
+                .replace("{source}", stripControl(msg.source, 32).trim());
+        hover = translateGameFormatCodes(hover.replace("\\n", "\n"));
+        return hover.isBlank() ? GameLineHover.empty() : new GameLineHover(display, hover);
+    }
+
+    private String stripMinecraftFormatting(String value) {
+        return ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', String.valueOf(value == null ? "" : value)));
+    }
+
+    private static final class GameLineHover {
+        final String target;
+        final String text;
+
+        GameLineHover(String target, String text) {
+            this.target = target == null ? "" : target;
+            this.text = text == null ? "" : text;
+        }
+
+        boolean enabled() {
+            return !target.isBlank() && !text.isBlank();
+        }
+
+        static GameLineHover empty() {
+            return new GameLineHover("", "");
+        }
+    }
+
+    private static final class HoverApplyState {
+        boolean applied;
+    }
+
     private void broadcastGameLine(String line, boolean preservePlainForGameEmojiTokens, ConfigValues config) {
+        broadcastGameLine(line, preservePlainForGameEmojiTokens, config, GameLineHover.empty());
+    }
+
+    private void broadcastGameLine(String line, boolean preservePlainForGameEmojiTokens, ConfigValues config, GameLineHover hover) {
         if (line == null || line.isEmpty()) return;
         boolean hasClickableUrl = config != null && config.clickableUrlsInGame && containsUrl(line);
-        if (!hasClickableUrl) {
+        boolean hasHover = hover != null && hover.enabled();
+        if (!hasClickableUrl && !hasHover) {
             Bukkit.broadcastMessage(line);
             return;
         }
@@ -5442,11 +5502,13 @@ public class WebChatServer {
             // plugins can render :pack/name: tokens. Do not repeat URL-only
             // clickable reference lines here; that made URL fallback output appear
             // as duplicated/comment-like two-line chat in Minecraft.
+            // This intentionally disables hover/click metadata for this rare
+            // compatibility path.
             Bukkit.broadcastMessage(line);
             return;
         }
 
-        broadcastClickableLine(line);
+        broadcastInteractiveLine(line, hasClickableUrl, hover);
     }
 
     private boolean containsUrl(String line) {
@@ -5472,8 +5534,12 @@ public class WebChatServer {
     }
 
     private void broadcastClickableLine(String line) {
+        broadcastInteractiveLine(line, true, GameLineHover.empty());
+    }
+
+    private void broadcastInteractiveLine(String line, boolean clickableUrls, GameLineHover hover) {
         try {
-            TextComponent component = buildClickableLine(line);
+            TextComponent component = buildInteractiveLine(line, clickableUrls, hover);
             for (Player player : Bukkit.getOnlinePlayers()) {
                 player.spigot().sendMessage(component);
             }
@@ -5481,17 +5547,22 @@ public class WebChatServer {
                 Bukkit.getConsoleSender().sendMessage(line);
             }
         } catch (Throwable t) {
-            plugin.getLogger().warning("Clickable URL chat failed; falling back to plain broadcast: " + t.getMessage());
+            plugin.getLogger().warning("Interactive game chat failed; falling back to plain broadcast: " + t.getMessage());
             Bukkit.broadcastMessage(line);
         }
     }
 
-    private TextComponent buildClickableLine(String line) {
+    private TextComponent buildInteractiveLine(String line, boolean clickableUrls, GameLineHover hover) {
         TextComponent root = new TextComponent("");
+        HoverApplyState hoverState = new HoverApplyState();
+        if (!clickableUrls) {
+            addLegacyExtra(root, line, hover, hoverState);
+            return root;
+        }
         Matcher matcher = URL_PATTERN.matcher(line);
         int last = 0;
         while (matcher.find()) {
-            addLegacyExtra(root, line.substring(last, matcher.start()));
+            addLegacyExtra(root, line.substring(last, matcher.start()), hover, hoverState);
 
             String raw = matcher.group(1);
             String[] split = splitUrlTrailing(raw);
@@ -5507,18 +5578,50 @@ public class WebChatServer {
                 }
             }
             if (!trailing.isBlank()) {
-                addLegacyExtra(root, trailing);
+                addLegacyExtra(root, trailing, hover, hoverState);
             }
             last = matcher.end();
         }
-        addLegacyExtra(root, line.substring(last));
+        addLegacyExtra(root, line.substring(last), hover, hoverState);
         return root;
     }
 
     private void addLegacyExtra(TextComponent root, String text) {
+        addLegacyExtra(root, text, GameLineHover.empty(), new HoverApplyState());
+    }
+
+    private void addLegacyExtra(TextComponent root, String text, GameLineHover hover, HoverApplyState state) {
         if (text == null || text.isEmpty()) return;
-        for (BaseComponent part : TextComponent.fromLegacyText(text)) {
+        if (hover == null || !hover.enabled() || state == null || state.applied) {
+            for (BaseComponent part : TextComponent.fromLegacyText(text)) {
+                root.addExtra(part);
+            }
+            return;
+        }
+        String target = hover.target;
+        int index = text.indexOf(target);
+        if (index < 0) {
+            for (BaseComponent part : TextComponent.fromLegacyText(text)) {
+                root.addExtra(part);
+            }
+            return;
+        }
+        if (index > 0) {
+            for (BaseComponent part : TextComponent.fromLegacyText(text.substring(0, index))) {
+                root.addExtra(part);
+            }
+        }
+        HoverEvent hoverEvent = new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ComponentBuilder(hover.text).create());
+        for (BaseComponent part : TextComponent.fromLegacyText(target)) {
+            part.setHoverEvent(hoverEvent);
             root.addExtra(part);
+        }
+        state.applied = true;
+        int after = index + target.length();
+        if (after < text.length()) {
+            for (BaseComponent part : TextComponent.fromLegacyText(text.substring(after))) {
+                root.addExtra(part);
+            }
         }
     }
 

@@ -84,6 +84,8 @@ public class ConfigValues {
     public boolean broadcastIngameChatToWeb;
     public boolean sendWebChatToGame;
     public boolean clickableUrlsInGame;
+    public boolean gameNameHoverEnabled;
+    public String gameNameHoverText;
 
     public String uiLanguage;
     public String uiLanguageFallback;
@@ -453,6 +455,8 @@ public class ConfigValues {
         v.broadcastIngameChatToWeb = c.getBoolean("chat.broadcast-ingame-chat-to-web", true);
         v.sendWebChatToGame = c.getBoolean("chat.send-web-chat-to-game", true);
         v.clickableUrlsInGame = c.getBoolean("chat.clickable-urls-in-game", true);
+        v.gameNameHoverEnabled = c.getBoolean("chat.game-name-hover.enabled", false);
+        v.gameNameHoverText = c.getString("chat.game-name-hover.text", "&f{real}");
 
         v.announcementsBroadcastToWebChat = c.getBoolean("announcements.broadcast-to-web-chat", true);
         v.announcements = new LinkedHashMap<>();

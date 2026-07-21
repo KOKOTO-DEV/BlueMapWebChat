@@ -116,6 +116,17 @@ guest:
 
 ゲストチャットは `cooldown-seconds` と `max-messages-per-minute` の両方で制限されます。1分あたりの既定値は `50` メッセージです。既存サーバーの設定ファイルは自動で上書きされないため、既存環境で新しい既定値を使う場合は `plugins/BlueMapWebChat/config.yml` を手動で更新してください。
 
+## Web→Minecraft 名前 hover
+
+```yaml
+chat:
+  game-name-hover:
+    enabled: false
+    text: "&f{real}"
+```
+
+Web チャットを Minecraft チャットへ中継するとき、`chat.game-name-hover.enabled` で表示名に hover ツールチップを追加できます。これは `player-display.mode` が `display-name` または `custom-name` で、表示名が実際の Minecraft アカウント名と異なる場合にのみ適用されます。このツールチップは Spigot/Bungee チャットコンポーネントを使用するため、Paper 専用ではなく Spigot/Paper 互換サーバーで動作します。`text` は Minecraft legacy 色コードと `{display}`, `{real}`, `{uuid}`, `{source}` プレースホルダーに対応します。
+
 ## Minecraft チャットでの返信表示
 
 ```yaml

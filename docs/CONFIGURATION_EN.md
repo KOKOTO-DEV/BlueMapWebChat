@@ -141,6 +141,17 @@ guest:
 
 Guest chat is rate-limited by both `cooldown-seconds` and `max-messages-per-minute`. The default per-minute limit is `50` messages. Existing server configs are not overwritten automatically, so update `plugins/BlueMapWebChat/config.yml` manually if you want the new default on an existing installation.
 
+## Web-to-Minecraft sender hover
+
+```yaml
+chat:
+  game-name-hover:
+    enabled: false
+    text: "&f{real}"
+```
+
+When web chat is relayed into Minecraft, `chat.game-name-hover.enabled` can add a hover tooltip to the displayed sender name. It is only applied when `player-display.mode` is `display-name` or `custom-name` and the displayed name differs from the real Minecraft account name. The tooltip is built with Spigot/Bungee chat components, so it works on Spigot/Paper-compatible servers and is not Paper-only. `text` supports Minecraft legacy color codes and placeholders `{display}`, `{real}`, `{uuid}`, and `{source}`.
+
 ## Reply relay to Minecraft chat
 
 ```yaml

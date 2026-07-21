@@ -129,6 +129,17 @@ guest:
 
 게스트 채팅은 `cooldown-seconds`와 `max-messages-per-minute` 두 설정으로 제한됩니다. 분당 메시지 기본값은 `50`입니다. 이미 생성된 서버의 설정 파일은 자동으로 덮어쓰기 되지 않으므로, 기존 설치에서 새 기본값을 쓰려면 `plugins/BlueMapWebChat/config.yml`을 직접 수정하세요.
 
+## 웹→Minecraft 이름 hover
+
+```yaml
+chat:
+  game-name-hover:
+    enabled: false
+    text: "&f{real}"
+```
+
+웹 채팅이 Minecraft 채팅으로 전달될 때 `chat.game-name-hover.enabled`로 표시 이름에 hover 툴팁을 붙일 수 있습니다. 이 기능은 `player-display.mode`가 `display-name` 또는 `custom-name`이고, 표시 이름이 실제 Minecraft 계정명과 다를 때만 적용됩니다. 이 툴팁은 Spigot/Bungee 채팅 컴포넌트를 사용하므로 Paper 전용이 아니고 Spigot/Paper 호환 서버에서 동작합니다. `text`는 Minecraft legacy 색상 코드와 `{display}`, `{real}`, `{uuid}`, `{source}` placeholder를 지원합니다.
+
 ## Minecraft 채팅 답글 표시
 
 ```yaml

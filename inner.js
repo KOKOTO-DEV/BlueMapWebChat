@@ -562,9 +562,18 @@
     return out;
   }
 
+  let lastExternalLinkOpen = {href: "", time: 0};
+
   function openChatExternalLink(href) {
     href = String(href || "").trim();
     if (!/^https?:\/\//i.test(href)) return false;
+    let key = href;
+    try { key = new URL(href, location.href).href; } catch (_) {}
+    const now = Date.now();
+    if (key && key === lastExternalLinkOpen.href && now - lastExternalLinkOpen.time < 1600) {
+      return true;
+    }
+    lastExternalLinkOpen = {href: key, time: now};
     try {
       const win = window.open(href, "_blank", "noopener,noreferrer");
       if (win) {
@@ -572,6 +581,9 @@
         return true;
       }
     } catch (_) {}
+    // Keep the debounce even when popup creation returns null. On some mobile
+    // browsers the native anchor click can still be delivered after pointerup,
+    // and clearing the guard here can reopen the same link multiple times.
     return false;
   }
 
@@ -780,12 +792,11 @@
 
       const href = target.getAttribute("href") || "";
       if (href && target.matches("a.bmwc-link, a.bmwc-image-link") && /^https?:\/\//i.test(href)) {
-        if (openChatExternalLink(href)) {
-          releasePointerActionScrollState();
-          event.preventDefault();
-          event.stopPropagation();
-          return true;
-        }
+        releasePointerActionScrollState();
+        event.preventDefault();
+        event.stopPropagation();
+        openChatExternalLink(href);
+        return true;
       }
       return false;
     };
