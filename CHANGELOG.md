@@ -3,7 +3,6 @@
 ## 4.5.5
 
 - Expanded `config.yml` inline documentation for supported option values and placeholders beyond the game-name hover text, including Google Drive preview mode, X/Twitter embed theme, clipboard upload behavior, command role values, web font item fields, Web Push TTL range, UI scroll/opacity ranges, and upload/cache retention semantics.
-- Documented missing default `config.yml` placeholder notes for web-to-game chat formats, `chat.game-name-hover.text`, announcement messages, and Discord relay format templates.
 - Fixed duplicate external link openings on mobile browsers by debouncing same-link tap handling and preventing the native anchor fallback before the custom `window.open` path runs.
 - Added an optional Spigot-compatible in-game sender-name hover for web-to-Minecraft chat relays. When `player-display.mode` is `display-name` or `custom-name` and the displayed sender name differs from the real Minecraft account name, hovering the displayed name can show the real account name without requiring Paper-only APIs.
 - Added `chat.game-name-hover.enabled` and `chat.game-name-hover.text` settings. The default hover text is now just `{real}`; the template still supports legacy color codes and `{display}`, `{real}`, `{uuid}`, and `{source}` placeholders for servers that want more detail.
